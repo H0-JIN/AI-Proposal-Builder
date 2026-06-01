@@ -1,9 +1,17 @@
 export const MIN_EXTRACTED_TEXT_LENGTH = 100;
 
+export const MIN_SUFFICIENT_EXTRACTED_TEXT_LENGTH = 300;
+
 export const TEXT_EXTRACTION_FAILED_MESSAGE =
-  "파일에서 텍스트를 추출하지 못했습니다. 텍스트를 직접 입력해주세요.";
+  "텍스트를 추출할 수 없습니다. 스캔본 또는 이미지 중심 자료일 수 있습니다.";
 export const SHORT_EXTRACTED_TEXT_MESSAGE =
   "추출된 텍스트가 부족합니다. 파일이 스캔본이거나 이미지 중심 자료일 수 있습니다.";
+export const PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE =
+  "PDF에서 텍스트를 추출해 브리프 입력창에 반영했습니다.";
+export const PDF_TEXT_EXTRACTION_PARTIAL_SUCCESS_MESSAGE =
+  "일부 페이지는 이미지 중심이라 텍스트 추출이 제한되었지만, 추출 가능한 텍스트를 반영했습니다.";
+export const OCR_UNSUPPORTED_MESSAGE =
+  "이미지/스캔 페이지는 현재 버전에서 OCR을 지원하지 않습니다.";
 
 const binarySignaturePatterns = [
   /^%PDF/i,
@@ -37,6 +45,12 @@ export function normalizeExtractedText(value: string): string {
 function hasBinarySignature(value: string): boolean {
   const firstChunk = value.slice(0, 32).trimStart();
   return binarySignaturePatterns.some((pattern) => pattern.test(firstChunk));
+}
+
+function getReadableCharacterCount(value: string): number {
+  return Array.from(value).filter((character) =>
+    /[\p{Script=Hangul}\p{Script=Latin}\p{Number}]/u.test(character),
+  ).length;
 }
 
 function getTextQuality(value: string) {
@@ -99,10 +113,15 @@ export function validateExtractedText(
   }
 
   const quality = getTextQuality(text);
+  const hasSufficientReadableText =
+    text.length >= MIN_SUFFICIENT_EXTRACTED_TEXT_LENGTH &&
+    getReadableCharacterCount(text) >= MIN_SUFFICIENT_EXTRACTED_TEXT_LENGTH * 0.45;
+
   if (
-    quality.controlRatio > 0.01 ||
-    quality.replacementRatio > 0.005 ||
-    quality.readableRatio < 0.75
+    !hasSufficientReadableText &&
+    (quality.controlRatio > 0.03 ||
+      quality.replacementRatio > 0.02 ||
+      quality.readableRatio < 0.55)
   ) {
     return {
       ok: false,

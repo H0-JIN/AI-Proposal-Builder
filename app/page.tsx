@@ -5,7 +5,12 @@ import pptxgen from 'pptxgenjs';
 import type { AnalysisResult, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
-import { TEXT_EXTRACTION_FAILED_MESSAGE, validateExtractedText } from '@/lib/extractedTextValidation';
+import {
+  OCR_UNSUPPORTED_MESSAGE,
+  PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
+  TEXT_EXTRACTION_FAILED_MESSAGE,
+  validateExtractedText,
+} from '@/lib/extractedTextValidation';
 
 type Step = 'home' | 'create' | 'analysis' | 'outline' | 'slides';
 
@@ -16,8 +21,11 @@ type UploadNotice = {
 
 type ExtractTextResponse = {
   text?: string;
+  status?: 'success' | 'partial';
+  message?: string;
   warning?: string;
   error?: string;
+  ocrNotice?: string;
 };
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -341,7 +349,7 @@ export default function Home() {
   };
 
 
-  const applyExtractedText = (text: string, fileName: string) => {
+  const applyExtractedText = (text: string, fileName: string, message?: string) => {
     setState((current) => ({
       ...current,
       input: {
@@ -355,7 +363,7 @@ export default function Home() {
 
     setUploadNotice({
       type: 'success',
-      message: '파일에서 텍스트를 추출해 브리프 입력창에 반영했습니다. 내용을 확인 후 AI 분석을 진행해주세요.',
+      message: message ?? '파일에서 텍스트를 추출해 브리프 입력창에 반영했습니다. 내용을 확인 후 AI 분석을 진행해주세요.',
     });
   };
 
@@ -398,20 +406,29 @@ export default function Home() {
       const data = (await response.json()) as ExtractTextResponse;
 
       if (!response.ok || !data.text) {
+        const message = [data.warning || data.error || TEXT_EXTRACTION_FAILED_MESSAGE, data.ocrNotice]
+          .filter(Boolean)
+          .join(' ');
         setUploadNotice({
           type: data.warning ? 'warning' : 'error',
-          message: data.warning || data.error || TEXT_EXTRACTION_FAILED_MESSAGE,
+          message,
         });
         return;
       }
 
       const validation = validateExtractedText(data.text);
       if (!validation.ok) {
-        setUploadNotice({ type: validation.reason === 'short' ? 'warning' : 'error', message: validation.message });
+        const message = [validation.message, extension === 'pdf' ? OCR_UNSUPPORTED_MESSAGE : undefined]
+          .filter(Boolean)
+          .join(' ');
+        setUploadNotice({ type: validation.reason === 'short' ? 'warning' : 'error', message });
         return;
       }
 
-      applyExtractedText(validation.text, file.name);
+      const serverMessage = [data.message ?? (extension === 'pdf' ? PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE : undefined), data.ocrNotice]
+        .filter(Boolean)
+        .join(' ');
+      applyExtractedText(validation.text, file.name, serverMessage);
     } catch {
       setUploadNotice({ type: 'error', message: TEXT_EXTRACTION_FAILED_MESSAGE });
     } finally {
