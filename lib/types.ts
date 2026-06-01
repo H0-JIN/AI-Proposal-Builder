@@ -7,6 +7,21 @@ export interface ProjectInput {
   briefText: string;
 }
 
+export type ExtractionStatus =
+  | '텍스트 추출 완료'
+  | '일부 텍스트만 추출'
+  | '이미지 중심 문서 / OCR 필요'
+  | '추출 실패';
+
+export interface UploadedDocument {
+  fileName: string;
+  fileType: string;
+  extractionStatus: ExtractionStatus;
+  extractedText: string;
+  extractedCharCount: number;
+  warningMessage?: string;
+}
+
 export interface SupplementalInfo {
   projectPurpose: string;
   spaceLocationScale: string;
@@ -49,6 +64,7 @@ export interface SlideContent {
 export interface ProposalState {
   input: ProjectInput;
   supplementalInfo?: SupplementalInfo;
+  uploadedDocuments?: UploadedDocument[];
   analysis?: AnalysisResult;
   outline?: SlideOutline[];
   slides?: SlideContent[];

@@ -7,9 +7,9 @@ export const TEXT_EXTRACTION_FAILED_MESSAGE =
 export const SHORT_EXTRACTED_TEXT_MESSAGE =
   "추출된 텍스트가 부족합니다. 파일이 스캔본이거나 이미지 중심 자료일 수 있습니다.";
 export const PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE =
-  "PDF에서 텍스트를 추출해 브리프 입력창에 반영했습니다.";
+  "PDF에서 텍스트를 추출했습니다.";
 export const PDF_TEXT_EXTRACTION_PARTIAL_SUCCESS_MESSAGE =
-  "일부 페이지는 이미지 중심이라 텍스트 추출이 제한되었지만, 추출 가능한 텍스트를 반영했습니다.";
+  "일부 페이지는 이미지 중심이라 텍스트 추출이 제한되었지만, 추출 가능한 텍스트를 사용합니다.";
 export const OCR_UNSUPPORTED_MESSAGE =
   "이미지/스캔 페이지는 현재 버전에서 OCR을 지원하지 않습니다.";
 
