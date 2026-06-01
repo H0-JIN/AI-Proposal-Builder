@@ -59,9 +59,12 @@ http://localhost:3000
 ## 빌드 및 검증
 
 ```bash
+npm run check:conflicts
 npm run typecheck
 npm run build
 ```
+
+- `npm run check:conflicts`: PR merge 과정에서 Git conflict marker가 남아 있는지 확인합니다.
 
 
 ## Vercel 배포 방법
@@ -82,6 +85,7 @@ npm run build
   - `dev`: `next dev`
   - `build`: `next build`
   - `start`: `next start`
+  - `check:conflicts`: `node scripts/check-conflict-markers.mjs`
   - `lint`: 현재 없음
 - Next.js 자동 감지 기준
   - 루트에 `package.json`이 있고 `next` 의존성이 포함되어 있습니다.

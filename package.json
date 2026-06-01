@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:conflicts": "node scripts/check-conflict-markers.mjs"
   },
   "dependencies": {
     "next": "^15.3.3",
