@@ -5,6 +5,7 @@ import pptxgen from 'pptxgenjs';
 import type { AnalysisResult, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
+import { TEXT_EXTRACTION_FAILED_MESSAGE, validateExtractedText } from '@/lib/extractedTextValidation';
 
 type Step = 'home' | 'create' | 'analysis' | 'outline' | 'slides';
 
@@ -20,7 +21,6 @@ type ExtractTextResponse = {
 };
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const MIN_EXTRACTED_TEXT_LENGTH = 100;
 const clientReadableExtensions = ['txt', 'md'];
 const serverReadableExtensions = ['pdf', 'docx'];
 
@@ -341,7 +341,7 @@ export default function Home() {
   };
 
 
-  const applyExtractedText = (text: string, fileName: string, warning = '') => {
+  const applyExtractedText = (text: string, fileName: string) => {
     setState((current) => ({
       ...current,
       input: {
@@ -354,8 +354,8 @@ export default function Home() {
     }));
 
     setUploadNotice({
-      type: warning ? 'warning' : 'success',
-      message: warning || '파일에서 텍스트를 추출해 브리프 입력창에 반영했습니다. 내용을 확인 후 AI 분석을 진행해주세요.',
+      type: 'success',
+      message: '파일에서 텍스트를 추출해 브리프 입력창에 반영했습니다. 내용을 확인 후 AI 분석을 진행해주세요.',
     });
   };
 
@@ -382,17 +382,13 @@ export default function Home() {
 
     try {
       if (clientReadableExtensions.includes(extension)) {
-        const text = (await file.text()).trim();
-        if (!text) {
-          setUploadNotice({ type: 'error', message: '파일에서 텍스트를 추출하지 못했습니다. 텍스트를 직접 입력해주세요.' });
+        const validation = validateExtractedText(await file.text());
+        if (!validation.ok) {
+          setUploadNotice({ type: validation.reason === 'short' ? 'warning' : 'error', message: validation.message });
           return;
         }
 
-        applyExtractedText(
-          text,
-          file.name,
-          text.length < MIN_EXTRACTED_TEXT_LENGTH ? '추출된 텍스트가 부족합니다. 파일이 스캔본이거나 이미지 중심 자료일 수 있습니다.' : '',
-        );
+        applyExtractedText(validation.text, file.name);
         return;
       }
 
@@ -402,13 +398,22 @@ export default function Home() {
       const data = (await response.json()) as ExtractTextResponse;
 
       if (!response.ok || !data.text) {
-        setUploadNotice({ type: 'error', message: data.error || '파일에서 텍스트를 추출하지 못했습니다. 텍스트를 직접 입력해주세요.' });
+        setUploadNotice({
+          type: data.warning ? 'warning' : 'error',
+          message: data.warning || data.error || TEXT_EXTRACTION_FAILED_MESSAGE,
+        });
         return;
       }
 
-      applyExtractedText(data.text, file.name, data.warning || '');
+      const validation = validateExtractedText(data.text);
+      if (!validation.ok) {
+        setUploadNotice({ type: validation.reason === 'short' ? 'warning' : 'error', message: validation.message });
+        return;
+      }
+
+      applyExtractedText(validation.text, file.name);
     } catch {
-      setUploadNotice({ type: 'error', message: '파일에서 텍스트를 추출하지 못했습니다. 텍스트를 직접 입력해주세요.' });
+      setUploadNotice({ type: 'error', message: TEXT_EXTRACTION_FAILED_MESSAGE });
     } finally {
       setLoading('');
     }

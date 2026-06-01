@@ -1,25 +1,15 @@
 import { NextResponse } from 'next/server';
 import JSZip from 'jszip';
 import { inflateSync } from 'node:zlib';
+import { TEXT_EXTRACTION_FAILED_MESSAGE, validateExtractedText } from '@/lib/extractedTextValidation';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const MIN_EXTRACTED_TEXT_LENGTH = 100;
 const supportedExtensions = ['pdf', 'docx'] as const;
 
 type SupportedExtension = (typeof supportedExtensions)[number];
 
 function getExtension(fileName: string): string {
   return fileName.split('.').pop()?.toLowerCase() ?? '';
-}
-
-function normalizeText(value: string): string {
-  return value
-    .replace(/\u0000/g, '')
-    .replace(/[\t\f\v ]+/g, ' ')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
 }
 
 function decodeXmlEntities(value: string): string {
@@ -50,7 +40,7 @@ async function extractDocxText(buffer: Buffer): Promise<string> {
     })
     .join('');
 
-  return normalizeText(text);
+  return text.trim();
 }
 
 function decodePdfLiteralString(value: string): string {
@@ -173,7 +163,7 @@ function extractPdfText(buffer: Buffer): string {
     .join('\n');
 
   const fallbackText = extractPdfTextFromContent(pdfLatin1);
-  return normalizeText(`${streamText}\n${fallbackText}`);
+  return `${streamText}\n${fallbackText}`.trim();
 }
 
 export async function POST(request: Request) {
@@ -196,22 +186,16 @@ export async function POST(request: Request) {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const text = extension === 'docx' ? await extractDocxText(buffer) : extractPdfText(buffer);
+    const extractedText = extension === 'docx' ? await extractDocxText(buffer) : extractPdfText(buffer);
+    const validation = validateExtractedText(extractedText);
 
-    if (!text) {
-      const error = extension === 'pdf'
-        ? '텍스트를 추출할 수 없습니다. 스캔본 또는 이미지 중심 자료일 수 있습니다. 내용을 직접 입력해주세요.'
-        : '파일에서 텍스트를 추출하지 못했습니다. 텍스트를 직접 입력해주세요.';
-      return NextResponse.json({ error }, { status: 422 });
+    if (!validation.ok) {
+      const key = validation.reason === 'short' ? 'warning' : 'error';
+      return NextResponse.json({ [key]: validation.message }, { status: 422 });
     }
 
-    return NextResponse.json({
-      text,
-      warning: text.length < MIN_EXTRACTED_TEXT_LENGTH
-        ? '추출된 텍스트가 부족합니다. 파일이 스캔본이거나 이미지 중심 자료일 수 있습니다.'
-        : '',
-    });
+    return NextResponse.json({ text: validation.text });
   } catch {
-    return NextResponse.json({ error: '파일에서 텍스트를 추출하지 못했습니다. 텍스트를 직접 입력해주세요.' }, { status: 500 });
+    return NextResponse.json({ error: TEXT_EXTRACTION_FAILED_MESSAGE }, { status: 500 });
   }
 }
