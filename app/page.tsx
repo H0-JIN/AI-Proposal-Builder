@@ -378,6 +378,49 @@ function safeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '_').trim() || 'proposal';
 }
 
+function hasText(value?: string) {
+  return Boolean(value?.trim());
+}
+
+function labelValue(label: string, value?: string) {
+  const trimmed = value?.trim();
+  return trimmed ? `${label}: ${trimmed}` : null;
+}
+
+function getImagePlaceholder(slide: SlideContent) {
+  return slide.imagePlaceholder?.trim() || '대표 이미지 삽입 영역';
+}
+
+function buildStructuredSlideLines(slide: SlideContent) {
+  const assetLines = slide.keyExperienceAssets?.slice(0, 3).flatMap((asset, index) => [
+    `[Asset ${index + 1}] ${asset.assetName} (${asset.assetType})`,
+    labelValue('Role', asset.roleInProposal),
+    labelValue('Visitor Action', asset.visitorAction),
+    labelValue('Mechanism', asset.experienceMechanism),
+    labelValue('Placement', asset.spatialPlacement),
+    labelValue('Media/Object', asset.mediaOrObject),
+    labelValue('Output/Reward', asset.outputOrReward),
+    labelValue('Why', asset.whyItMatters),
+  ].filter(Boolean) as string[]) ?? [];
+
+  const productLines = slide.productExperienceDetails?.flatMap((product) => [
+    `[${product.productCode}] ${product.experienceTitle || product.productNameOrRole}`,
+    labelValue('Mission', product.visitorMission),
+    labelValue('Visitor Action', product.visitorAction),
+    labelValue('Mechanism', product.contentMechanism),
+    labelValue('Placement', product.spatialPlacement),
+    labelValue('Media/Object', product.mediaOrObject),
+    labelValue('Output/Reward', product.outputOrReward),
+    labelValue('SNS Share', product.snsSharePoint),
+  ].filter(Boolean) as string[]) ?? [];
+
+  const scenarioLines = slide.experienceScenarioSteps?.map((step) =>
+    `${step.step} | ${step.visitorAction} → ${step.systemResponse} → ${step.output}`
+  ) ?? [];
+
+  return [...assetLines, ...productLines, ...scenarioLines];
+}
+
 async function downloadPptx(input: ProjectInput, slides: SlideContent[], selectedConcept?: ConceptCandidate) {
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE';
@@ -403,21 +446,33 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[], selecte
       slide.addText(`Selected Concept: ${selectedConcept.conceptNameEN} / ${selectedConcept.conceptNameKR} · ${selectedConcept.coreMessage}`, { x: 0.95, y: 6.36, w: 11.45, h: 0.18, fontSize: 8, color: '3730A3', bold: true, fit: 'shrink' });
     }
     slide.addShape(pptx.ShapeType.rect, { x: 6.75, y: 0.72, w: 5.9, h: 3.6, fill: { color: 'E5E7EB' }, line: { color: 'CBD5E1', transparency: 20 } });
-    slide.addText(slideData.imagePlaceholder, { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'middle', fontSize: 14, color: '64748B', bold: true });
+    slide.addText(getImagePlaceholder(slideData), { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'middle', fontSize: 14, color: '64748B', bold: true });
     const detailLines = [
-      `Visitor Action: ${slideData.visitorAction ?? '해당 없음'}`,
-      `Mechanism: ${slideData.contentMechanism ?? '해당 없음'}`,
-      `Placement: ${slideData.spatialPlacement ?? '해당 없음'}`,
-      `Media/Object: ${slideData.mediaOrObject ?? '해당 없음'}`,
-      `Output/Reward: ${slideData.outputOrReward ?? '해당 없음'}`,
-    ];
-    slide.addText(slideData.bodyBullets.map((bullet) => `• ${bullet}`).join('\n'), { x: 0.75, y: 1.9, w: 5.55, h: 2.0, fontSize: 13, color: '111827', breakLine: false, fit: 'shrink', valign: 'top' });
-    slide.addShape(pptx.ShapeType.roundRect, { x: 0.72, y: 4.05, w: 5.8, h: 1.0, rectRadius: 0.08, fill: { color: 'F8FAFC' }, line: { color: 'E2E8F0' } });
-    slide.addText(detailLines.join('\n'), { x: 0.95, y: 4.17, w: 5.35, h: 0.75, fontSize: 7.8, color: '334155', fit: 'shrink', valign: 'top' });
-    slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 5.15, w: 11.95, h: 1.05, rectRadius: 0.08, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE' } });
-    slide.addText(`Visual: ${slideData.visualDirection}`, { x: 0.95, y: 5.27, w: 5.65, h: 0.24, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
-    slide.addText(`Prompt: ${slideData.visualPrompt ?? slideData.imagePlaceholder}`, { x: 6.75, y: 5.27, w: 5.65, h: 0.24, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
-    slide.addText(`Diagram: ${slideData.diagramSuggestion}`, { x: 0.95, y: 5.65, w: 11.45, h: 0.28, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
+      labelValue('Visitor Action', slideData.visitorAction),
+      labelValue('Mechanism', slideData.contentMechanism),
+      labelValue('Placement', slideData.spatialPlacement),
+      labelValue('Media/Object', slideData.mediaOrObject),
+      labelValue('Output/Reward', slideData.outputOrReward),
+    ].filter(Boolean) as string[];
+    const structuredLines = buildStructuredSlideLines(slideData);
+    const bodyText = [...slideData.bodyBullets.map((bullet) => `• ${bullet}`), ...structuredLines.map((line) => `• ${line}`)].join('\n');
+    slide.addText(bodyText, { x: 0.75, y: 1.9, w: 5.55, h: 2.0, fontSize: 13, color: '111827', breakLine: false, fit: 'shrink', valign: 'top' });
+    if (detailLines.length) {
+      slide.addShape(pptx.ShapeType.roundRect, { x: 0.72, y: 4.05, w: 5.8, h: 1.0, rectRadius: 0.08, fill: { color: 'F8FAFC' }, line: { color: 'E2E8F0' } });
+      slide.addText(detailLines.join('\n'), { x: 0.95, y: 4.17, w: 5.35, h: 0.75, fontSize: 7.8, color: '334155', fit: 'shrink', valign: 'top' });
+    }
+    if (hasText(slideData.visualDirection)) {
+      slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 5.15, w: 11.95, h: 0.55, rectRadius: 0.08, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE' } });
+      slide.addText(`Visual: ${slideData.visualDirection}`, { x: 0.95, y: 5.32, w: 11.45, h: 0.18, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
+    }
+    const noteLines = [
+      slideData.speakerNote,
+      labelValue('Visual Prompt', slideData.visualPrompt),
+      labelValue('Diagram Suggestion', slideData.diagramSuggestion),
+    ].filter(Boolean) as string[];
+    if (noteLines.length) {
+      slide.addNotes(noteLines.join('\n'));
+    }
     slide.addText(`${input.clientName} · ${proposalTypeLabels[input.proposalType]}`, { x: 0.55, y: 6.95, w: 5, h: 0.2, fontSize: 8, color: '94A3B8' });
   });
 
@@ -901,17 +956,40 @@ export default function Home() {
                     {slide.bodyBullets.map((bullet, index) => <li key={`${bullet}-${index}`}>{bullet}</li>)}
                   </ul>
                   <div className="mt-4 grid gap-2 text-sm md:grid-cols-2">
-                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Visitor Action</span><br />{slide.visitorAction}</div>
-                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Content Mechanism</span><br />{slide.contentMechanism}</div>
-                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Spatial Placement</span><br />{slide.spatialPlacement}</div>
-                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Media / Object</span><br />{slide.mediaOrObject}</div>
-                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600 md:col-span-2"><span className="font-bold">Output / Reward</span><br />{slide.outputOrReward}</div>
+                    {hasText(slide.visitorAction) && <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Visitor Action</span><br />{slide.visitorAction}</div>}
+                    {hasText(slide.contentMechanism) && <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Content Mechanism</span><br />{slide.contentMechanism}</div>}
+                    {hasText(slide.spatialPlacement) && <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Spatial Placement</span><br />{slide.spatialPlacement}</div>}
+                    {hasText(slide.mediaOrObject) && <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Media / Object</span><br />{slide.mediaOrObject}</div>}
+                    {hasText(slide.outputOrReward) && <div className="rounded-2xl bg-slate-100 p-3 text-slate-600 md:col-span-2"><span className="font-bold">Output / Reward</span><br />{slide.outputOrReward}</div>}
                   </div>
-                  <div className="mt-4 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">비주얼 방향: {slide.visualDirection}</div>
-                  <div className="mt-2 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">이미지: {slide.imagePlaceholder}</div>
-                  <div className="mt-2 rounded-2xl bg-purple-50 p-3 text-sm text-purple-700">Visual Prompt: {slide.visualPrompt}</div>
-                  <div className="mt-2 rounded-2xl bg-blue-50 p-3 text-sm text-blue-700">다이어그램: {slide.diagramSuggestion}</div>
-                  <div className="mt-2 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-700">발표 노트: {slide.speakerNote}</div>
+                  {slide.keyExperienceAssets?.length > 0 && (
+                    <div className="mt-4 rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-800">
+                      <span className="font-black">핵심 체험 자산 1~3</span>
+                      <ul className="mt-2 list-disc space-y-1 pl-5">
+                        {slide.keyExperienceAssets.slice(0, 3).map((asset) => <li key={asset.assetName}>{asset.assetName} · {asset.assetType} · {asset.visitorAction} → {asset.outputOrReward}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {slide.productExperienceDetails?.length > 0 && (
+                    <div className="mt-4 rounded-2xl bg-cyan-50 p-3 text-sm text-cyan-800">
+                      <span className="font-black">제품/콘텐츠 단위별 체험 상세</span>
+                      <ul className="mt-2 list-disc space-y-1 pl-5">
+                        {slide.productExperienceDetails.map((product) => <li key={product.productCode}>{product.productCode} · {product.experienceTitle} · {product.visitorMission} → {product.outputOrReward}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {slide.experienceScenarioSteps?.length > 0 && (
+                    <div className="mt-4 rounded-2xl bg-orange-50 p-3 text-sm text-orange-800">
+                      <span className="font-black">Experience Scenario Flow</span>
+                      <ul className="mt-2 list-disc space-y-1 pl-5">
+                        {slide.experienceScenarioSteps.map((step) => <li key={step.step}>{step.step}: {step.visitorAction} → {step.systemResponse} → {step.output}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {hasText(slide.visualDirection) && <div className="mt-4 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">비주얼 방향: {slide.visualDirection}</div>}
+                  <div className="mt-2 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">이미지: {getImagePlaceholder(slide)}</div>
+                  {(hasText(slide.visualPrompt) || hasText(slide.diagramSuggestion)) && <div className="mt-2 rounded-2xl bg-purple-50 p-3 text-sm text-purple-700">PPT에서는 Visual Prompt / Diagram Suggestion을 본문이 아닌 발표 노트로만 내보냅니다.</div>}
+                  {hasText(slide.speakerNote) && <div className="mt-2 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-700">발표 노트: {slide.speakerNote}</div>}
                   {slide.confirmNeededNote && <div className="mt-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-800">확인 Note: {slide.confirmNeededNote}</div>}
                 </article>
               ))}

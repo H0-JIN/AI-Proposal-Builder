@@ -4,7 +4,7 @@ import type { AnalysisResult, ConceptCandidate, ProjectInput, SlideOutline } fro
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { assessInputQuality } from '@/lib/inputQuality';
-import { expandExperiencePlanOutline } from '@/lib/experiencePlan';
+import { expandExperiencePlanOutline, extractProductCodes } from '@/lib/experiencePlan';
 
 const styleGuides = {
   basic: '프로젝트 이해, 과제 정의, 경험 전략, 콘셉트, 공간/콘텐츠 구성, 운영 및 기대 효과가 이어지는 기본형 구조.',
@@ -24,6 +24,8 @@ export async function POST(request: Request) {
     const inputQuality = assessInputQuality(body.input, body.analysis);
     const missingInfoSummary = inputQuality.missingItems.map((item) => `${item.label}: ${item.description}`);
 
+    const productCodes = extractProductCodes({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept });
+
     const result = await createStructuredJson<{ slides: SlideOutline[] }>({
       schemaName: 'proposal_outline',
       schema: outlineJsonSchema,
@@ -33,13 +35,14 @@ export async function POST(request: Request) {
         '기본 흐름은 Cover, Project Understanding, Key Challenge, Experience Strategy, Core Concept, Key Experience Asset Concept, Visitor Journey, Spatial / Content Plan 복수 장표, Media / Interactive Plan 복수 장표, Viral / Communication Mechanism, Operation Plan, Expected Effect, Closing이다.',
         'RFP 성격에 맞게 슬라이드 제목은 자동 조정하라. 예: 폴더블 제품별 체험 저니, 기업 홍보관 비전 전달 공간, 팝업 포토/바이럴 구조, 미디어 전시 몰입형 시나리오, 의전시설 VIP 동선.',
         '사용자가 이미 선택한 콘셉트를 기준으로 구조를 설계하라. 후보 비교 장표를 다시 만들지 말고, 반드시 Core Concept과 Key Experience Asset Concept을 포함하라. 고정 제목 “Monument Design Concept”은 사용하지 말라.',
-        'Key Experience Asset은 RFP 맥락에 따라 Spatial Zone, Interactive Experience, Media Content, Photo / Viral Spot, Product Trial Kit, Exhibition Object, Digital Signage, Operation Program, Brand Experience Module, Monument, Briefing Space, Immersive Room, Hands-on Demo, Visitor Participation Content 중 하나 또는 복수로 판단하는 장표가 되도록 설계하라.',
+        'Key Experience Asset은 프로젝트를 대표하는 1~3개 핵심 체험 자산만 압축해 보여주는 장표로 설계하라. 일반 assetType 후보 목록을 나열하지 말고, 각 자산의 이름/역할/방문객 행동/작동 방식/공간 배치/결과물을 중심으로 구성하라.',
         '모뉴먼트가 RFP에 명시되지 않았다면 Monument를 핵심 자산으로 고정하지 말라.',
         '확인 필요 사항은 confirmNeededNote에만 작게 넣고 slideTitle, slidePurpose, keyMessage의 중심은 실제 제안 내용으로 구성하라.',
         '근거 없는 정량 효과 예측을 금지한다. RFP에 없는 수치는 Expected Effect에서 KPI 설계 방향 또는 측정 항목 제안으로만 다뤄라.',
-        'Spatial / Content Plan은 절대 1장으로 요약하지 말고 최소 5장(Spatial Overview, Main Experience Image, Zone Detail 01, Zone Detail 02, Experience Scenario)으로 구성하라. RFP와 제안 내용에 핵심 체험 자산이 많으면 Zone Detail을 추가해 5장 이상으로 확장하라.',
+        'Spatial / Content Plan은 절대 1장으로 요약하지 말고 최소 5장(Spatial Overview, Main Experience Image, 실제 체험명 기반 상세 장표 2장 이상, Experience Scenario)으로 구성하라. Zone Detail 01 같은 일반 제목 대신 Q8 멀티태스킹 챌린지, H8 4:3 몰입 콘텐츠 체험, B8 플렉스캠 셀피 스튜디오처럼 실제 체험명을 slideTitle로 사용하라.',
         'Media / Interactive Plan은 절대 1장으로 요약하지 말고 최소 5장(Media Experience Overview, Key Media Scene, Interactive Flow, Content Mechanism, Output & Share)으로 구성하라. 미디어/인터랙션 요소가 많으면 핵심 체험 자산별 상세 장표를 추가하라.',
         '공간 구성과 콘텐츠 구성을 한 장에 뭉뚱그리지 말고 핵심 체험 단위별로 분리하라.',
+        'RFP나 분석 결과에 제품 코드 또는 핵심 콘텐츠 단위가 있으면 각 단위별 Product Experience Detail 장표를 반드시 포함하라. 감지된 제품 코드가 있으면 누락하지 말라.',
         'slideNumber는 1부터 순서대로 부여하라.',
       ].join('\n'),
       user: `제안서 유형: ${proposalTypeLabels[body.input.proposalType]}\n유형별 구조 가이드: ${styleGuides[body.input.proposalType]}\n프로젝트명: ${body.input.projectName}\n클라이언트명: ${body.input.clientName}\n\n분석 결과 JSON:\n${JSON.stringify(body.analysis, null, 2)}\n\n선택된 콘셉트 JSON:\n${JSON.stringify(body.selectedConcept, null, 2)}
@@ -47,10 +50,11 @@ export async function POST(request: Request) {
 입력 품질 진단:
 - 점수: ${inputQuality.score}
 - 부족 항목: ${missingInfoSummary.length ? missingInfoSummary.join(' / ') : '없음'}
-- AI missingInfo: ${body.analysis.missingInfo.length ? body.analysis.missingInfo.join(' / ') : '없음'}`,
+- AI missingInfo: ${body.analysis.missingInfo.length ? body.analysis.missingInfo.join(' / ') : '없음'}
+- 감지된 제품/콘텐츠 코드: ${productCodes.length ? productCodes.join(' / ') : '없음'}`,
     });
 
-    return NextResponse.json(expandExperiencePlanOutline(result.slides));
+    return NextResponse.json(expandExperiencePlanOutline(result.slides, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept }));
   } catch (error) {
     const message = error instanceof Error ? error.message : '아웃라인 생성 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });
