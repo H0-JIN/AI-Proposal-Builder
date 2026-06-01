@@ -34,6 +34,9 @@ export const keyExperienceAssetFields = [
 export const experienceScenarioSteps = ['Entry', 'Select', 'Experience', 'Generate', 'Share', 'Exit'] as const;
 
 const productDetailSlideType = 'Spatial / Content Plan - Product Experience Detail';
+const referenceInsightSlideType = 'Reference Insight';
+
+const scopeCuePattern = /참고 사례|참고|예시|예:|예를 들어|등|기존|기존 운영|기존 사례|상반기|하반기 lesson learned|lesson learned|사례|벤치마크|레퍼런스|활용 가능|유사 사례|이전 캠페인|보유 재원|기존 집기|기존 공간|기존 콘텐츠/i;
 
 const spatialPlanSlides = [
   {
@@ -133,6 +136,17 @@ function buildProductDetailSlide(productCode: string): SlideOutline {
   };
 }
 
+function buildReferenceInsightSlide(): SlideOutline {
+  return {
+    slideNumber: 0,
+    slideType: referenceInsightSlideType,
+    slideTitle: 'Reference Insight',
+    slidePurpose: 'RFP에 언급된 참고 사례를 실제 과업 범위가 아닌 설계 원칙과 주의점으로 정리한다.',
+    keyMessage: '참고 사례는 신규 체험 모듈명이 아니라 임팩트, 참여 방식, 확산 구조를 도출하기 위한 레퍼런스 인사이트로만 활용한다.',
+    confirmNeededNote: '',
+  };
+}
+
 function renumber(slides: SlideOutline[]) {
   return slides.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
 }
@@ -151,11 +165,77 @@ function collectContextText(context?: { input?: ProjectInput; analysis?: Analysi
     .join('\n');
 }
 
-export function extractProductCodes(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
-  const text = collectContextText(context);
+function collectScopedText(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+  const analysis = context?.analysis;
+  if (!analysis) return collectContextText(context);
+
+  const taskDeliverables = analysis.taskSections?.flatMap((section) => section.requiredDeliverables ?? []) ?? [];
+  const scopedParts = [
+    ...taskDeliverables,
+    ...(analysis.requiredScope ?? []),
+    ...(analysis.productInfo ?? []),
+    ...(analysis.requiredItems ?? []),
+  ];
+
+  if (!scopedParts.length) return collectContextText(context);
+
+  return scopedParts.join('\n');
+}
+
+function collectExcludedScopeText(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+  const analysis = context?.analysis;
+  if (!analysis) return '';
+
+  const taskReferences = analysis.taskSections?.flatMap((section) => section.referenceMentions ?? []) ?? [];
+  const taskExistingAssets = analysis.taskSections?.flatMap((section) => section.existingAssets ?? []) ?? [];
+
+  return [
+    ...taskReferences,
+    ...taskExistingAssets,
+    ...(analysis.referenceOnly ?? []),
+    ...(analysis.doNotTreatAsScope ?? []),
+    ...(analysis.existingAssets ?? []),
+  ].join('\n');
+}
+
+function matchProductCodes(text: string) {
   const reserved = new Set(['AI', 'AR', 'VR', 'XR', 'LED', 'LCD', 'OLED', 'SNS', 'KPI', 'RFP', 'VIP', 'UGC', 'QR']);
   const matches = text.match(/\b[A-Z]{1,3}\d{1,3}[A-Z]?\b/g) ?? [];
-  return Array.from(new Set(matches.filter((code) => !reserved.has(code)))).slice(0, 8);
+  return Array.from(new Set(matches.filter((code) => !reserved.has(code))));
+}
+
+export function extractProductCodes(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+  const scopedText = collectScopedText(context);
+  const excludedText = collectExcludedScopeText(context);
+  const productInfoText = context?.analysis?.productInfo?.join('\n') ?? '';
+  const requiredScopeText = context?.analysis?.requiredScope?.join('\n') ?? '';
+  const taskDeliverablesText = context?.analysis?.taskSections?.flatMap((section) => section.requiredDeliverables ?? []).join('\n') ?? '';
+  const explicitScopeText = [taskDeliverablesText, productInfoText, requiredScopeText].join('\n');
+  const explicitCodes = new Set(matchProductCodes(explicitScopeText));
+  const excludedCodes = new Set(matchProductCodes(excludedText));
+
+  return matchProductCodes(scopedText)
+    .filter((code) => explicitCodes.has(code) || !excludedCodes.has(code))
+    .slice(0, 8);
+}
+
+function shouldIncludeReferenceInsight(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+  const references = context?.analysis?.referenceOnly ?? [];
+  const taskReferences = context?.analysis?.taskSections?.flatMap((section) => section.referenceMentions ?? []) ?? [];
+  if (references.length > 0 || taskReferences.length > 0) return true;
+  const text = context?.input?.briefText ?? '';
+  return scopeCuePattern.test(text);
+}
+
+function hasReferenceInsight(slides: SlideOutline[]) {
+  return slides.some((slide) => /reference insight|design reference direction|레퍼런스|참고/i.test(`${slide.slideType} ${slide.slideTitle}`));
+}
+
+function insertReferenceInsight(slides: SlideOutline[], context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+  if (!shouldIncludeReferenceInsight(context) || hasReferenceInsight(slides)) return slides;
+  const insertIndex = slides.findIndex((slide) => /experience strategy|core concept|전략|콘셉트/i.test(`${slide.slideType} ${slide.slideTitle}`));
+  const targetIndex = insertIndex >= 0 ? insertIndex : Math.min(3, slides.length);
+  return [...slides.slice(0, targetIndex), buildReferenceInsightSlide(), ...slides.slice(targetIndex)];
 }
 
 export function expandExperiencePlanOutline(outline: SlideOutline[], context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
@@ -186,7 +266,7 @@ export function expandExperiencePlanOutline(outline: SlideOutline[], context?: {
     expanded.push(slide);
   });
 
-  let completed = expanded;
+  let completed = insertReferenceInsight(expanded, context);
   if (!hasSpatial) {
     const baseSlides = spatialPlanSlides.map((template) => buildExpandedSlide(undefined, template));
     completed = insertBeforeMediaOrClosing(completed, [...baseSlides.slice(0, 2), ...productSlides, ...baseSlides.slice(2)]);

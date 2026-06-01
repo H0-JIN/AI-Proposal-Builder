@@ -1,5 +1,39 @@
 const stringArray = { type: 'array', items: { type: 'string' } } as const;
 
+
+const taskSectionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    taskId: { type: 'string' },
+    taskTitle: { type: 'string' },
+    phase: { type: 'string' },
+    requiredDeliverables: stringArray,
+    target: stringArray,
+    keyRequirements: stringArray,
+    referenceMentions: stringArray,
+    existingAssets: stringArray,
+    constraints: stringArray,
+    kpi: stringArray,
+    schedule: stringArray,
+    confirmNeeded: stringArray,
+  },
+  required: [
+    'taskId',
+    'taskTitle',
+    'phase',
+    'requiredDeliverables',
+    'target',
+    'keyRequirements',
+    'referenceMentions',
+    'existingAssets',
+    'constraints',
+    'kpi',
+    'schedule',
+    'confirmNeeded',
+  ],
+} as const;
+
 const analysisSectionSchema = {
   type: 'object',
   additionalProperties: false,
@@ -17,8 +51,17 @@ export const analysisJsonSchema = {
   properties: {
     projectOverview: { type: 'string' },
     clientChallenge: { type: 'string' },
+    taskSections: { type: 'array', items: taskSectionSchema },
     requiredItems: stringArray,
+    requiredScope: stringArray,
+    referenceOnly: stringArray,
+    existingAssets: stringArray,
+    productInfo: stringArray,
+    kpiObjectives: stringArray,
     constraints: stringArray,
+    schedule: stringArray,
+    doNotTreatAsScope: stringArray,
+    confirmNeeded: stringArray,
     targetInfo: { type: 'string' },
     spatialCondition: { type: 'string' },
     contentCondition: { type: 'string' },
@@ -33,8 +76,17 @@ export const analysisJsonSchema = {
   required: [
     'projectOverview',
     'clientChallenge',
+    'taskSections',
     'requiredItems',
+    'requiredScope',
+    'referenceOnly',
+    'existingAssets',
+    'productInfo',
+    'kpiObjectives',
     'constraints',
+    'schedule',
+    'doNotTreatAsScope',
+    'confirmNeeded',
     'targetInfo',
     'spatialCondition',
     'contentCondition',
@@ -197,6 +249,20 @@ const experienceScenarioStepSchema = {
   required: ['step', 'visitorAction', 'systemResponse', 'mediaOrObject', 'output', 'designNote'],
 } as const;
 
+
+const referenceInsightSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    referenceName: { type: 'string' },
+    referenceType: { type: 'string' },
+    whatToLearn: { type: 'string' },
+    howToApply: { type: 'string' },
+    caution: { type: 'string' },
+  },
+  required: ['referenceName', 'referenceType', 'whatToLearn', 'howToApply', 'caution'],
+} as const;
+
 export const slideContentJsonSchema = {
   type: 'object',
   additionalProperties: false,
@@ -228,6 +294,7 @@ export const slideContentJsonSchema = {
           productExperienceDetails: { type: 'array', items: productExperienceDetailSchema },
           keyExperienceAssets: { type: 'array', maxItems: 3, items: keyExperienceAssetSchema },
           experienceScenarioSteps: { type: 'array', items: experienceScenarioStepSchema },
+          referenceInsights: { type: 'array', items: referenceInsightSchema },
           speakerNote: { type: 'string' },
           confirmNeededNote: { type: 'string' },
         },
@@ -251,6 +318,7 @@ export const slideContentJsonSchema = {
           'productExperienceDetails',
           'keyExperienceAssets',
           'experienceScenarioSteps',
+          'referenceInsights',
           'speakerNote',
           'confirmNeededNote',
         ],
