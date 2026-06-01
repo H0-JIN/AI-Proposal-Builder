@@ -75,7 +75,13 @@ export interface SlideContent {
   mainCopy: string;
   bodyBullets: string[];
   visualDirection: string;
+  visitorAction: string;
+  contentMechanism: string;
+  spatialPlacement: string;
+  mediaOrObject: string;
+  outputOrReward: string;
   imagePlaceholder: string;
+  visualPrompt: string;
   diagramSuggestion: string;
   speakerNote: string;
   confirmNeededNote: string;

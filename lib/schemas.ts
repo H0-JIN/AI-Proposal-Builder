@@ -54,8 +54,8 @@ export const outlineJsonSchema = {
   properties: {
     slides: {
       type: 'array',
-      minItems: 12,
-      maxItems: 16,
+      minItems: 20,
+      maxItems: 40,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -80,8 +80,8 @@ export const slideContentJsonSchema = {
   properties: {
     slides: {
       type: 'array',
-      minItems: 12,
-      maxItems: 16,
+      minItems: 20,
+      maxItems: 40,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -94,7 +94,13 @@ export const slideContentJsonSchema = {
           mainCopy: { type: 'string' },
           bodyBullets: { type: 'array', minItems: 3, maxItems: 7, items: { type: 'string' } },
           visualDirection: { type: 'string' },
+          visitorAction: { type: 'string' },
+          contentMechanism: { type: 'string' },
+          spatialPlacement: { type: 'string' },
+          mediaOrObject: { type: 'string' },
+          outputOrReward: { type: 'string' },
           imagePlaceholder: { type: 'string' },
+          visualPrompt: { type: 'string' },
           diagramSuggestion: { type: 'string' },
           speakerNote: { type: 'string' },
           confirmNeededNote: { type: 'string' },
@@ -108,7 +114,13 @@ export const slideContentJsonSchema = {
           'mainCopy',
           'bodyBullets',
           'visualDirection',
+          'visitorAction',
+          'contentMechanism',
+          'spatialPlacement',
+          'mediaOrObject',
+          'outputOrReward',
           'imagePlaceholder',
+          'visualPrompt',
           'diagramSuggestion',
           'speakerNote',
           'confirmNeededNote',
