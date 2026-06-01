@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import {
@@ -12,7 +12,7 @@ import {
   validateExtractedText,
 } from '@/lib/extractedTextValidation';
 
-type Step = 'home' | 'create' | 'analysis' | 'outline' | 'slides';
+type Step = 'home' | 'create' | 'analysis' | 'concepts' | 'outline' | 'slides';
 
 type UploadNotice = {
   type: 'success' | 'warning' | 'error';
@@ -367,6 +367,8 @@ function appendUploadedDocument(document: UploadedDocument) {
     ...current,
     uploadedDocuments: [...(current.uploadedDocuments ?? []), document],
     analysis: undefined,
+    conceptCandidates: undefined,
+    selectedConcept: undefined,
     outline: undefined,
     slides: undefined,
   });
@@ -376,7 +378,7 @@ function safeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '_').trim() || 'proposal';
 }
 
-async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
+async function downloadPptx(input: ProjectInput, slides: SlideContent[], selectedConcept?: ConceptCandidate) {
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'AI Proposal Builder';
@@ -395,6 +397,11 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
     slide.addText(String(slideData.slideNumber).padStart(2, '0'), { x: 0.55, y: 0.35, w: 0.7, h: 0.3, fontSize: 11, color: '2563EB', bold: true });
     slide.addText(slideData.slideTitle, { x: 0.55, y: 0.7, w: 5.8, h: 0.55, fontSize: 24, bold: true, color: '111827', breakLine: false });
     slide.addText(slideData.keyMessage, { x: 0.58, y: 1.28, w: 5.8, h: 0.45, fontSize: 12, color: '475569' });
+    const shouldShowConcept = selectedConcept && /core concept|key experience asset|spatial \/ content|media \/ interactive|콘셉트|핵심 체험|공간|콘텐츠|미디어|인터랙/i.test(`${slideData.slideType} ${slideData.slideTitle}`);
+    if (shouldShowConcept) {
+      slide.addShape(pptx.ShapeType.roundRect, { x: 0.72, y: 6.25, w: 11.95, h: 0.48, rectRadius: 0.08, fill: { color: 'EEF2FF' }, line: { color: 'C7D2FE' } });
+      slide.addText(`Selected Concept: ${selectedConcept.conceptNameEN} / ${selectedConcept.conceptNameKR} · ${selectedConcept.coreMessage}`, { x: 0.95, y: 6.36, w: 11.45, h: 0.18, fontSize: 8, color: '3730A3', bold: true, fit: 'shrink' });
+    }
     slide.addShape(pptx.ShapeType.rect, { x: 6.75, y: 0.72, w: 5.9, h: 3.6, fill: { color: 'E5E7EB' }, line: { color: 'CBD5E1', transparency: 20 } });
     slide.addText(slideData.imagePlaceholder, { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'middle', fontSize: 14, color: '64748B', bold: true });
     const detailLines = [
@@ -432,6 +439,7 @@ export default function Home() {
         setState(parsed);
         if (parsed.slides?.length) setStep('slides');
         else if (parsed.outline?.length) setStep('outline');
+        else if (parsed.selectedConcept || parsed.conceptCandidates?.length) setStep('concepts');
         else if (parsed.analysis) setStep('analysis');
         else setStep('create');
       } catch {
@@ -453,7 +461,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, conceptCandidates: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -570,7 +578,7 @@ export default function Home() {
     setLoading('RFP/브리프 분석 중...');
     try {
       const analysis = await postJson<AnalysisResult>('/api/analyze', analysisInput);
-      setState((current) => ({ ...current, analysis, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, conceptCandidates: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
@@ -586,7 +594,7 @@ export default function Home() {
     setLoading('추가 정보를 반영해 RFP/브리프 재분석 중...');
     try {
       const analysis = await postJson<AnalysisResult>('/api/analyze', mergedInput);
-      setState((current) => ({ ...current, analysis, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, conceptCandidates: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
@@ -595,12 +603,31 @@ export default function Home() {
     }
   };
 
-  const runOutline = async () => {
+  const runConcepts = async () => {
     if (!state.analysis) return;
+    setError('');
+    setLoading('콘셉트 후보 3안 생성 중...');
+    try {
+      const conceptCandidates = await postJson<ConceptCandidate[]>('/api/concepts', { input: analysisInput, analysis: state.analysis });
+      setState((current) => ({ ...current, conceptCandidates, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setStep('concepts');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '콘셉트 후보 생성 중 오류가 발생했습니다.');
+    } finally {
+      setLoading('');
+    }
+  };
+
+  const selectConcept = (concept: ConceptCandidate) => {
+    setState((current) => ({ ...current, selectedConcept: concept, outline: undefined, slides: undefined }));
+  };
+
+  const runOutline = async () => {
+    if (!state.analysis || !state.selectedConcept) return;
     setError('');
     setLoading('제안서 구조 생성 중...');
     try {
-      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis });
+      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept });
       setState((current) => ({ ...current, outline, slides: undefined }));
       setStep('outline');
     } catch (err) {
@@ -611,11 +638,11 @@ export default function Home() {
   };
 
   const runSlides = async () => {
-    if (!state.analysis || !state.outline) return;
+    if (!state.analysis || !state.selectedConcept || !state.outline) return;
     setError('');
     setLoading('장표별 문안 생성 중...');
     try {
-      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, outline: state.outline });
+      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: state.outline });
       setState((current) => ({ ...current, slides }));
       setStep('slides');
     } catch (err) {
@@ -774,17 +801,69 @@ export default function Home() {
               {hasConfirmationNeeds ? (
                 <>
                   <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
-                  <SecondaryButton onClick={runOutline} disabled={Boolean(loading)}>정보 부족하지만 계속 생성하기</SecondaryButton>
+                  <SecondaryButton onClick={runConcepts} disabled={Boolean(loading)}>정보 부족하지만 콘셉트 생성하기</SecondaryButton>
                 </>
               ) : (
-                <PrimaryButton onClick={runOutline} disabled={Boolean(loading)}>제안서 구조 생성</PrimaryButton>
+                <PrimaryButton onClick={runConcepts} disabled={Boolean(loading)}>콘셉트 후보 생성</PrimaryButton>
               )}
+            </div>
+          </SectionCard>
+        )}
+
+        {step === 'concepts' && state.analysis && state.conceptCandidates && (
+          <SectionCard title="콘셉트 후보 선택">
+            <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 text-blue-950">
+              <p className="text-sm font-black uppercase tracking-[0.2em] text-blue-700">Required Step</p>
+              <h3 className="mt-2 text-xl font-black">제안서 구조 생성 전에 콘셉트 후보 3안 중 하나를 선택해주세요.</h3>
+              <p className="mt-2 text-sm leading-6">
+                선택한 콘셉트는 이후 제안서 구조, 장표별 문안, PPTX의 Core Concept / Key Experience Asset Concept / 공간·콘텐츠 / 미디어·인터랙션 장표 기준으로 저장됩니다.
+              </p>
+              {state.selectedConcept && (
+                <p className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm font-black text-blue-800">
+                  선택된 콘셉트: {state.selectedConcept.conceptNameEN} / {state.selectedConcept.conceptNameKR}
+                </p>
+              )}
+            </div>
+            <div className="mt-6 grid gap-4 lg:grid-cols-3">
+              {state.conceptCandidates.map((concept) => {
+                const selected = state.selectedConcept?.conceptId === concept.conceptId;
+                return (
+                  <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
+                    <h3 className="mt-2 text-2xl font-black text-slate-950">{concept.conceptNameEN}</h3>
+                    <p className="text-lg font-bold text-blue-700">{concept.conceptNameKR}</p>
+                    <p className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm font-semibold leading-6 text-slate-700">{concept.oneLineDefinition}</p>
+                    <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
+                      <div><dt className="font-black text-slate-950">핵심 메시지</dt><dd>{concept.coreMessage}</dd></div>
+                      <div><dt className="font-black text-slate-950">경험 구조</dt><dd>{concept.experienceLogic}</dd></div>
+                      <div><dt className="font-black text-slate-950">왜 적합한지</dt><dd>{concept.whyThisWorks}</dd></div>
+                      <div><dt className="font-black text-slate-950">예상 핵심 체험 자산 방향</dt><dd>{concept.keyExperienceAssetDirection}</dd></div>
+                    </dl>
+                    <button
+                      onClick={() => selectConcept(concept)}
+                      className={`mt-5 rounded-2xl px-4 py-3 font-bold transition ${selected ? 'bg-blue-600 text-white' : 'bg-slate-950 text-white hover:bg-blue-700'}`}
+                    >
+                      {selected ? '선택됨' : '이 콘셉트 선택'}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <SecondaryButton onClick={() => setStep('analysis')}>분석 결과 보기</SecondaryButton>
+              <SecondaryButton onClick={runConcepts} disabled={Boolean(loading)}>콘셉트 다시 생성</SecondaryButton>
+              <PrimaryButton onClick={runOutline} disabled={Boolean(loading) || !state.selectedConcept}>제안서 구조 생성</PrimaryButton>
             </div>
           </SectionCard>
         )}
 
         {step === 'outline' && state.outline && (
           <SectionCard title="제안서 구조 생성 결과">
+            {state.selectedConcept && (
+              <div className="mb-5 rounded-3xl border border-blue-100 bg-blue-50 p-4 text-sm font-black text-blue-800">
+                선택된 콘셉트: {state.selectedConcept.conceptNameEN} / {state.selectedConcept.conceptNameKR}
+              </div>
+            )}
             <div className="space-y-3">
               {state.outline.map((slide) => (
                 <article key={slide.slideNumber} className="rounded-2xl border border-slate-200 p-4">
@@ -797,7 +876,7 @@ export default function Home() {
               ))}
             </div>
             <div className="mt-6 flex gap-3">
-              <SecondaryButton onClick={() => setStep('analysis')}>분석 결과 보기</SecondaryButton>
+              <SecondaryButton onClick={() => setStep('concepts')}>다른 콘셉트 선택</SecondaryButton>
               <PrimaryButton onClick={runSlides} disabled={Boolean(loading)}>장표별 문안 생성</PrimaryButton>
             </div>
           </SectionCard>
@@ -805,6 +884,11 @@ export default function Home() {
 
         {step === 'slides' && state.slides && (
           <SectionCard title="장표별 문안 생성 결과">
+            {state.selectedConcept && (
+              <div className="mb-5 rounded-3xl border border-blue-100 bg-blue-50 p-4 text-sm font-black text-blue-800">
+                선택된 콘셉트: {state.selectedConcept.conceptNameEN} / {state.selectedConcept.conceptNameKR}
+              </div>
+            )}
             <div className="grid gap-4 md:grid-cols-2">
               {state.slides.map((slide) => (
                 <article key={slide.slideNumber} className="rounded-3xl border border-slate-200 p-5">
@@ -834,7 +918,7 @@ export default function Home() {
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('outline')}>구조 보기</SecondaryButton>
-              <PrimaryButton onClick={() => downloadPptx(state.input, state.slides || [])}>PPTX 다운로드</PrimaryButton>
+              <PrimaryButton onClick={() => downloadPptx(state.input, state.slides || [], state.selectedConcept)}>PPTX 다운로드</PrimaryButton>
             </div>
           </SectionCard>
         )}

@@ -57,6 +57,18 @@ export interface AnalysisResult {
   kpiTimelineConstraints: AnalysisSection;
 }
 
+export interface ConceptCandidate {
+  conceptId: string;
+  conceptNameKR: string;
+  conceptNameEN: string;
+  oneLineDefinition: string;
+  coreMessage: string;
+  experienceLogic: string;
+  targetRelevance: string;
+  keyExperienceAssetDirection: string;
+  whyThisWorks: string;
+}
+
 export interface SlideOutline {
   slideNumber: number;
   slideType: string;
@@ -92,6 +104,8 @@ export interface ProposalState {
   supplementalInfo?: SupplementalInfo;
   uploadedDocuments?: UploadedDocument[];
   analysis?: AnalysisResult;
+  conceptCandidates?: ConceptCandidate[];
+  selectedConcept?: ConceptCandidate;
   outline?: SlideOutline[];
   slides?: SlideContent[];
 }
