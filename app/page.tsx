@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import pptxgen from 'pptxgenjs';
 import type { AnalysisResult, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
+import { assessInputQuality } from '@/lib/inputQuality';
 
 type Step = 'home' | 'create' | 'analysis' | 'outline' | 'slides';
 
@@ -57,11 +58,65 @@ function PrimaryButton({ children, onClick, disabled }: { children: React.ReactN
   );
 }
 
-function SecondaryButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+function SecondaryButton({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={onClick} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50">
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-2xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+    >
       {children}
     </button>
+  );
+}
+
+
+function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<typeof assessInputQuality>; compact?: boolean }) {
+  const tone = quality.isInsufficient
+    ? 'border-amber-200 bg-amber-50 text-amber-950'
+    : 'border-emerald-200 bg-emerald-50 text-emerald-950';
+
+  return (
+    <div className={`rounded-3xl border p-5 ${tone}`}>
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.2em]">입력 품질 {quality.score}점 · {quality.level.toUpperCase()}</p>
+          <h3 className="mt-2 text-xl font-black">{quality.isInsufficient ? '추가 정보 입력 권장' : '입력 정보 품질 양호'}</h3>
+          <p className="mt-2 text-sm leading-6">{quality.guidance}</p>
+        </div>
+        <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-semibold shadow-sm">
+          브리프 {quality.briefLength.toLocaleString()}자 · 확인된 항목 {quality.presentItems.length}/9
+        </div>
+      </div>
+
+      {quality.aiMissingInfo.length > 0 && (
+        <div className="mt-4 rounded-2xl bg-white/70 p-4">
+          <p className="text-sm font-bold">AI 분석 missingInfo</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+            {quality.aiMissingInfo.map((item, index) => (
+              <li key={`${item}-${index}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {!compact && (
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {quality.missingItems.map((item) => (
+            <div key={item.key} className="rounded-2xl bg-white/80 p-4 shadow-sm">
+              <p className="font-bold">{item.label}</p>
+              <p className="mt-1 text-sm leading-5 opacity-80">{item.description}</p>
+            </div>
+          ))}
+          {quality.missingItems.length === 0 && (
+            <div className="rounded-2xl bg-white/80 p-4 shadow-sm md:col-span-3">
+              <p className="font-bold">자동 체크리스트 기준 필수 항목이 모두 확인되었습니다.</p>
+              <p className="mt-1 text-sm opacity-80">AI가 표시한 추가 확인 필요 항목이 있다면 장표 생성 시 '확인 필요'로 반영됩니다.</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -163,6 +218,7 @@ export default function Home() {
   }, [state]);
 
   const canAnalyze = useMemo(() => state.input.projectName && state.input.clientName && state.input.briefText, [state.input]);
+  const inputQuality = useMemo(() => assessInputQuality(state.input, step === 'analysis' ? state.analysis : undefined), [state.input, state.analysis, step]);
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
     setState((current) => ({ ...current, input: { ...current.input, [key]: value } }));
@@ -269,6 +325,9 @@ export default function Home() {
                 <textarea value={state.input.briefText} onChange={(event) => updateInput('briefText', event.target.value)} className="min-h-72 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500" placeholder={sampleBrief} />
               </label>
             </div>
+            <div className="mt-5">
+              <InputQualityPanel quality={inputQuality} compact />
+            </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <PrimaryButton onClick={runAnalyze} disabled={!canAnalyze || Boolean(loading)}>AI로 분석하기</PrimaryButton>
               <SecondaryButton onClick={() => updateInput('briefText', sampleBrief)}>샘플 브리프 채우기</SecondaryButton>
@@ -278,10 +337,17 @@ export default function Home() {
 
         {step === 'analysis' && state.analysis && (
           <SectionCard title="AI 분석 결과">
-            <KeyValueList data={state.analysis} />
-            <div className="mt-6 flex gap-3">
+            <div className="space-y-5">
+              <InputQualityPanel quality={inputQuality} />
+              <KeyValueList data={state.analysis} />
+            </div>
+            <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('create')}>입력 수정</SecondaryButton>
-              <PrimaryButton onClick={runOutline} disabled={Boolean(loading)}>제안서 구조 생성</PrimaryButton>
+              {inputQuality.isInsufficient ? (
+                <PrimaryButton onClick={runOutline} disabled={Boolean(loading)}>그래도 생성하기</PrimaryButton>
+              ) : (
+                <PrimaryButton onClick={runOutline} disabled={Boolean(loading)}>제안서 구조 생성</PrimaryButton>
+              )}
             </div>
           </SectionCard>
         )}
