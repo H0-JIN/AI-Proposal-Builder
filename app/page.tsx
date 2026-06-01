@@ -42,7 +42,7 @@ const supplementalInfoFields: { key: keyof SupplementalInfo; label: string; plac
 ];
 
 const supplementalInfoMarker = '--- 보완 입력 정보 ---';
-const shortBriefGuidance = '입력 정보가 부족하면 제안서가 일반적으로 생성될 수 있습니다. 실제 RFP 또는 추가 조건을 입력하면 결과 품질이 개선됩니다.';
+const shortBriefGuidance = '입력 정보가 부족하면 제안서가 일반적으로 생성될 수 있습니다. 아래 정보를 추가하면 결과 품질이 개선됩니다.';
 
 const sampleBrief = `현대 모빌리티 브랜드의 신규 전기차 라인업을 소개하는 4주간의 브랜드 체험관을 제안해 주세요.
 목표는 2030 고객에게 지속가능한 라이프스타일과 기술 혁신 이미지를 전달하는 것입니다.
@@ -444,10 +444,10 @@ export default function Home() {
               <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
                 <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">보완 입력 단계</p>
+                    <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">추가 정보 입력</p>
                     <h3 className="mt-2 text-xl font-black text-amber-950">부족한 정보를 입력하면 AI 분석을 다시 실행할 수 있습니다.</h3>
                     <p className="mt-2 text-sm leading-6 text-amber-900">
-                      missingInfo 또는 “확인 필요”로 표시된 조건을 아래 항목에 입력한 뒤 다시 분석하거나, 정보가 부족한 상태로 제안서 구조 생성을 계속할 수 있습니다.
+                      입력 정보가 부족하면 제안서가 일반적으로 생성될 수 있습니다. 아래 정보를 추가하면 결과 품질이 개선됩니다.
                     </p>
                   </div>
                   <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-bold text-amber-900 shadow-sm">
