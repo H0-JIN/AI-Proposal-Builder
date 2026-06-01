@@ -34,6 +34,12 @@ export interface SupplementalInfo {
   exclusions: string;
 }
 
+export interface AnalysisSection {
+  rfpFact: string[];
+  aiProposal: string[];
+  confirmNeeded: string[];
+}
+
 export interface AnalysisResult {
   projectOverview: string;
   clientChallenge: string;
@@ -42,23 +48,37 @@ export interface AnalysisResult {
   targetInfo: string;
   spatialCondition: string;
   contentCondition: string;
+  operationCondition: string;
+  kpiScheduleConstraints: string[];
   missingInfo: string[];
+  rfpRequirements: AnalysisSection;
+  clientTask: AnalysisSection;
+  targetSpaceContentOperation: AnalysisSection;
+  kpiTimelineConstraints: AnalysisSection;
 }
 
 export interface SlideOutline {
   slideNumber: number;
+  slideType: string;
   slideTitle: string;
   slidePurpose: string;
   keyMessage: string;
+  confirmNeededNote: string;
 }
 
 export interface SlideContent {
   slideNumber: number;
-  title: string;
-  subtitle: string;
+  slideType: string;
+  slideTitle: string;
+  slidePurpose: string;
+  keyMessage: string;
+  mainCopy: string;
   bodyBullets: string[];
+  visualDirection: string;
   imagePlaceholder: string;
   diagramSuggestion: string;
+  speakerNote: string;
+  confirmNeededNote: string;
 }
 
 export interface ProposalState {
