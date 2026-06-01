@@ -7,6 +7,18 @@ export interface ProjectInput {
   briefText: string;
 }
 
+export interface SupplementalInfo {
+  projectPurpose: string;
+  spaceLocationScale: string;
+  targetCustomer: string;
+  experienceElements: string;
+  brandMessage: string;
+  schedule: string;
+  budgetScope: string;
+  designTone: string;
+  exclusions: string;
+}
+
 export interface AnalysisResult {
   projectOverview: string;
   clientChallenge: string;
@@ -36,6 +48,7 @@ export interface SlideContent {
 
 export interface ProposalState {
   input: ProjectInput;
+  supplementalInfo?: SupplementalInfo;
   analysis?: AnalysisResult;
   outline?: SlideOutline[];
   slides?: SlideContent[];

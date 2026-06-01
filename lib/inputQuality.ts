@@ -36,12 +36,12 @@ const REQUIRED_INFO_ITEMS: MissingInfoItem[] = [
   },
   {
     key: 'spaceLocationScale',
-    label: '공간 위치/규모',
+    label: '공간 위치 및 규모',
     description: '도시/상권/행사 장소, 면적, 예상 동선, 운영 기간 또는 공간 조건',
   },
   {
     key: 'target',
-    label: '타깃',
+    label: '타깃 고객층',
     description: '핵심 방문자/고객군, 연령대, 관심사, 초청 대상 또는 페르소나',
   },
   {
@@ -51,7 +51,7 @@ const REQUIRED_INFO_ITEMS: MissingInfoItem[] = [
   },
   {
     key: 'brandMessage',
-    label: '제품/브랜드 핵심 메시지',
+    label: '제품 및 브랜드 핵심 메시지',
     description: '전달해야 하는 브랜드 가치, 제품 USP, 캠페인 슬로건, 커뮤니케이션 메시지',
   },
   {
@@ -61,7 +61,7 @@ const REQUIRED_INFO_ITEMS: MissingInfoItem[] = [
   },
   {
     key: 'budgetScope',
-    label: '예산/제작 범위',
+    label: '예산 및 제작 범위',
     description: '예산 수준, 포함/제외 제작 범위, 운영 범위, 산출물 범위',
   },
   {
