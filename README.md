@@ -37,12 +37,10 @@ cp .env.example .env.local
 ```
 
 ```env
-OPENAI_API_KEY=sk-your-openai-api-key
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-- `OPENAI_API_KEY`: 필수입니다.
-- `OPENAI_MODEL`: 선택값이며, 설정하지 않으면 `gpt-4.1-mini`를 사용합니다.
+- `OPENAI_API_KEY`: 필수입니다. 서버 API route에서만 사용되며, 브라우저 번들에 노출되지 않습니다.
 
 ## 실행 방법
 
@@ -64,6 +62,22 @@ http://localhost:3000
 npm run typecheck
 npm run build
 ```
+
+
+## Vercel 배포 방법
+
+1. GitHub 저장소를 Vercel 프로젝트로 Import합니다.
+2. Vercel의 **Project Settings → Environment Variables**에서 `OPENAI_API_KEY`를 추가합니다.
+3. Production, Preview, Development 환경에 필요한 범위를 선택한 뒤 저장합니다.
+4. 기본 빌드 명령어는 `npm run build`를 사용합니다.
+5. 배포 후에는 브라우저 개발자 도구에서 OpenAI API Key가 노출되지 않는지 확인하고, API route 호출이 정상 동작하는지 점검합니다.
+
+### Vercel 배포 주의사항
+
+- `OPENAI_API_KEY`는 클라이언트 컴포넌트 또는 `NEXT_PUBLIC_` 환경 변수로 전달하지 마세요.
+- `.env.local`은 로컬 개발 전용이며 저장소에 커밋하지 마세요.
+- API Key를 변경한 경우 Vercel에서 재배포해야 서버 런타임에 새 값이 반영됩니다.
+- OpenAI API 사용량과 과금 한도를 배포 전에 확인하세요.
 
 ## 사용 흐름
 
