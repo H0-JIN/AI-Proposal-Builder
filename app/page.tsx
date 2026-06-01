@@ -268,15 +268,24 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
       ))}
       <div className="grid gap-4 md:grid-cols-3">
         {[
+          ['과제별 필수 산출물', data.taskSections?.flatMap((section) => section.requiredDeliverables.map((deliverable) => `${section.taskTitle || section.taskId}: ${deliverable}`)) ?? []],
           ['필수 항목', data.requiredItems],
+          ['실제 과업', data.requiredScope],
+          ['제품/서비스 정보', data.productInfo],
+          ['참고 사례 / Reference Only', data.referenceOnly],
+          ['기존 자산', data.existingAssets],
+          ['과업 범위 제외', data.doNotTreatAsScope],
+          ['KPI', data.kpiObjectives],
+          ['일정', data.schedule],
           ['제약 조건', data.constraints],
           ['KPI/일정/제약', data.kpiScheduleConstraints],
+          ['범위 확인 필요', data.confirmNeeded],
           ['추가 확인 필요', data.missingInfo],
         ].map(([label, items]) => (
           <div key={label as string} className="rounded-2xl border border-slate-200 p-4">
             <p className="text-sm font-semibold text-blue-700">{label as string}</p>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-              {(items as string[]).map((item, index) => (
+              {((items as string[] | undefined) ?? []).map((item, index) => (
                 <li key={`${item}-${index}`}>{item}</li>
               ))}
             </ul>
@@ -302,12 +311,29 @@ function hasAnalysisConfirmationNeeds(analysis?: AnalysisResult) {
     analysis.spatialCondition,
     analysis.contentCondition,
     ...analysis.requiredItems,
+    ...(analysis.requiredScope ?? []),
+    ...(analysis.productInfo ?? []),
+    ...(analysis.taskSections?.flatMap((section) => [
+      ...section.requiredDeliverables,
+      ...section.referenceMentions,
+      ...section.existingAssets,
+      ...section.constraints,
+      ...section.kpi,
+      ...section.schedule,
+      ...section.confirmNeeded,
+    ]) ?? []),
+    ...(analysis.referenceOnly ?? []),
+    ...(analysis.existingAssets ?? []),
+    ...(analysis.doNotTreatAsScope ?? []),
+    ...(analysis.kpiObjectives ?? []),
+    ...(analysis.schedule ?? []),
+    ...(analysis.confirmNeeded ?? []),
     ...analysis.constraints,
     ...(analysis.kpiScheduleConstraints ?? []),
     ...analysis.missingInfo,
   ];
 
-  return analysis.missingInfo.length > 0 || valuesToCheck.some((value) => value.includes('확인 필요'));
+  return analysis.missingInfo.length > 0 || (analysis.confirmNeeded?.length ?? 0) > 0 || valuesToCheck.some((value) => value.includes('확인 필요'));
 }
 
 function buildSupplementalInfoBlock(info: SupplementalInfo) {
@@ -418,7 +444,15 @@ function buildStructuredSlideLines(slide: SlideContent) {
     `${step.step} | ${step.visitorAction} → ${step.systemResponse} → ${step.output}`
   ) ?? [];
 
-  return [...assetLines, ...productLines, ...scenarioLines];
+  const referenceLines = slide.referenceInsights?.flatMap((reference, index) => [
+    `[Reference ${index + 1}] ${reference.referenceName}`,
+    labelValue('Reference Type', reference.referenceType),
+    labelValue('What to Learn', reference.whatToLearn),
+    labelValue('How to Apply', reference.howToApply),
+    labelValue('Caution', reference.caution),
+  ].filter(Boolean) as string[]) ?? [];
+
+  return [...assetLines, ...productLines, ...scenarioLines, ...referenceLines];
 }
 
 async function downloadPptx(input: ProjectInput, slides: SlideContent[], selectedConcept?: ConceptCandidate) {

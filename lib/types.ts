@@ -40,11 +40,35 @@ export interface AnalysisSection {
   confirmNeeded: string[];
 }
 
+export interface TaskSection {
+  taskId: string;
+  taskTitle: string;
+  phase: string;
+  requiredDeliverables: string[];
+  target: string[];
+  keyRequirements: string[];
+  referenceMentions: string[];
+  existingAssets: string[];
+  constraints: string[];
+  kpi: string[];
+  schedule: string[];
+  confirmNeeded: string[];
+}
+
 export interface AnalysisResult {
   projectOverview: string;
   clientChallenge: string;
+  taskSections: TaskSection[];
   requiredItems: string[];
+  requiredScope: string[];
+  referenceOnly: string[];
+  existingAssets: string[];
+  productInfo: string[];
+  kpiObjectives: string[];
   constraints: string[];
+  schedule: string[];
+  doNotTreatAsScope: string[];
+  confirmNeeded: string[];
   targetInfo: string;
   spatialCondition: string;
   contentCondition: string;
@@ -109,6 +133,14 @@ export interface KeyExperienceAsset {
   visualDirection: string;
 }
 
+export interface ReferenceInsight {
+  referenceName: string;
+  referenceType: string;
+  whatToLearn: string;
+  howToApply: string;
+  caution: string;
+}
+
 export interface ExperienceScenarioStep {
   step: 'Entry' | 'Select' | 'Experience' | 'Generate' | 'Share' | 'Exit';
   visitorAction: string;
@@ -138,6 +170,7 @@ export interface SlideContent {
   productExperienceDetails: ProductExperienceDetail[];
   keyExperienceAssets: KeyExperienceAsset[];
   experienceScenarioSteps: ExperienceScenarioStep[];
+  referenceInsights: ReferenceInsight[];
   speakerNote: string;
   confirmNeededNote: string;
 }
