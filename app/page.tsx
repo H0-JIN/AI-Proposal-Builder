@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo } from '@/lib/types';
+import type { AnalysisResult, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import {
@@ -176,6 +176,52 @@ function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<t
   );
 }
 
+
+function UploadedDocumentsList({ documents }: { documents: UploadedDocument[] }) {
+  const statusTone: Record<ExtractionStatus, string> = {
+    '텍스트 추출 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    '일부 텍스트만 추출': 'bg-amber-50 text-amber-800 ring-amber-200',
+    '이미지 중심 문서 / OCR 필요': 'bg-slate-100 text-slate-700 ring-slate-200',
+    '추출 실패': 'bg-red-50 text-red-700 ring-red-200',
+  };
+
+  if (!documents.length) {
+    return (
+      <div className="mt-4 rounded-2xl border border-dashed border-blue-200 bg-white/70 p-4 text-sm font-semibold text-slate-600">
+        아직 업로드된 파일이 없습니다. 파일을 업로드하면 추출 원문 대신 파일별 추출 상태만 표시됩니다.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-blue-100 bg-white">
+      <div className="grid grid-cols-12 gap-3 border-b border-blue-100 bg-blue-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-blue-700">
+        <span className="col-span-5">파일명</span>
+        <span className="col-span-2">형식</span>
+        <span className="col-span-3">추출 상태</span>
+        <span className="col-span-2 text-right">글자 수</span>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {documents.map((document, index) => (
+          <div key={`${document.fileName}-${index}`} className="grid grid-cols-12 gap-3 px-4 py-4 text-sm text-slate-700">
+            <div className="col-span-12 font-bold text-slate-950 md:col-span-5">{document.fileName}</div>
+            <div className="col-span-3 md:col-span-2">{document.fileType}</div>
+            <div className="col-span-6 md:col-span-3">
+              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusTone[document.extractionStatus]}`}>
+                {document.extractionStatus}
+              </span>
+              {document.warningMessage && <p className="mt-2 text-xs leading-5 text-slate-500">{document.warningMessage}</p>}
+            </div>
+            <div className="col-span-3 text-right font-semibold tabular-nums md:col-span-2">
+              {document.extractedCharCount.toLocaleString()}자
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function KeyValueList({ data }: { data: AnalysisResult }) {
   const rows = [
     ['프로젝트 개요', data.projectOverview],
@@ -259,15 +305,38 @@ function getFileExtension(fileName: string) {
   return fileName.split('.').pop()?.toLowerCase() ?? '';
 }
 
-function buildUploadedBriefText(currentText: string, extractedText: string, fileName: string) {
-  const trimmedCurrentText = currentText.trim();
-  const trimmedExtractedText = extractedText.trim();
-  const uploadedBlock = `--- 업로드 파일: ${fileName} ---
-${trimmedExtractedText}`;
+function getFileTypeLabel(fileName: string) {
+  const extension = getFileExtension(fileName);
+  return extension ? extension.toUpperCase() : '알 수 없음';
+}
 
-  return trimmedCurrentText ? `${trimmedCurrentText}
+function getSuccessfulUploadedDocuments(documents: UploadedDocument[] = []) {
+  return documents.filter((document) =>
+    (document.extractionStatus === '텍스트 추출 완료' || document.extractionStatus === '일부 텍스트만 추출') &&
+    document.extractedText.trim(),
+  );
+}
 
-${uploadedBlock}` : trimmedExtractedText;
+function buildAnalysisBriefText(input: ProjectInput, documents: UploadedDocument[] = []) {
+  const documentBlocks = getSuccessfulUploadedDocuments(documents).map((document, index) =>
+    `[업로드 자료 ${index + 1}: ${document.fileName}]\n${document.extractedText.trim()}`,
+  );
+  const memo = input.briefText.trim();
+  if (memo) {
+    documentBlocks.push(`[사용자 추가 메모]\n${memo}`);
+  }
+
+  return documentBlocks.join('\n\n').trim();
+}
+
+function appendUploadedDocument(document: UploadedDocument) {
+  return (current: ProposalState): ProposalState => ({
+    ...current,
+    uploadedDocuments: [...(current.uploadedDocuments ?? []), document],
+    analysis: undefined,
+    outline: undefined,
+    slides: undefined,
+  });
 }
 
 function safeFileName(value: string) {
@@ -306,7 +375,7 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
 
 export default function Home() {
   const [step, setStep] = useState<Step>('home');
-  const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo });
+  const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [] });
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
@@ -332,13 +401,15 @@ export default function Home() {
   }, [state]);
 
   const supplementalInfo = state.supplementalInfo ?? initialSupplementalInfo;
-  const canAnalyze = useMemo(() => state.input.projectName && state.input.clientName && state.input.briefText, [state.input]);
-  const inputQuality = useMemo(() => assessInputQuality(state.input, step === 'analysis' ? state.analysis : undefined), [state.input, state.analysis, step]);
+  const uploadedDocuments = state.uploadedDocuments ?? [];
+  const analysisInput = useMemo(() => ({ ...state.input, briefText: buildAnalysisBriefText(state.input, uploadedDocuments) }), [state.input, uploadedDocuments]);
+  const canAnalyze = useMemo(() => Boolean(state.input.projectName && state.input.clientName && analysisInput.briefText), [state.input.clientName, state.input.projectName, analysisInput.briefText]);
+  const inputQuality = useMemo(() => assessInputQuality(analysisInput, step === 'analysis' ? state.analysis : undefined), [analysisInput, state.analysis, step]);
   const hasConfirmationNeeds = useMemo(() => hasAnalysisConfirmationNeeds(state.analysis), [state.analysis]);
-  const shouldShowShortBriefGuidance = state.input.briefText.trim().length > 0 && state.input.briefText.trim().length < 220;
+  const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value } }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -349,23 +420,24 @@ export default function Home() {
   };
 
 
-  const applyExtractedText = (text: string, fileName: string, message?: string) => {
-    setState((current) => ({
-      ...current,
-      input: {
-        ...current.input,
-        briefText: buildUploadedBriefText(current.input.briefText, text, fileName),
-      },
-      analysis: undefined,
-      outline: undefined,
-      slides: undefined,
-    }));
-
-    setUploadNotice({
-      type: 'success',
-      message: message ?? '파일에서 텍스트를 추출해 브리프 입력창에 반영했습니다. 내용을 확인 후 AI 분석을 진행해주세요.',
-    });
+  const addUploadedDocument = (document: UploadedDocument, noticeType: UploadNotice['type'], message: string) => {
+    setState(appendUploadedDocument(document));
+    setUploadNotice({ type: noticeType, message });
   };
+
+  const createUploadedDocument = (
+    file: File,
+    extractionStatus: ExtractionStatus,
+    extractedText = '',
+    warningMessage?: string,
+  ): UploadedDocument => ({
+    fileName: file.name,
+    fileType: getFileTypeLabel(file.name),
+    extractionStatus,
+    extractedText,
+    extractedCharCount: extractedText.length,
+    warningMessage,
+  });
 
   const handleBriefFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -392,11 +464,20 @@ export default function Home() {
       if (clientReadableExtensions.includes(extension)) {
         const validation = validateExtractedText(await file.text());
         if (!validation.ok) {
-          setUploadNotice({ type: validation.reason === 'short' ? 'warning' : 'error', message: validation.message });
+          const status: ExtractionStatus = validation.reason === 'short' ? '이미지 중심 문서 / OCR 필요' : '추출 실패';
+          addUploadedDocument(
+            createUploadedDocument(file, status, '', validation.message),
+            validation.reason === 'short' ? 'warning' : 'error',
+            validation.message,
+          );
           return;
         }
 
-        applyExtractedText(validation.text, file.name);
+        addUploadedDocument(
+          createUploadedDocument(file, '텍스트 추출 완료', validation.text),
+          'success',
+          '파일에서 텍스트를 추출했습니다. 추출 원문은 화면에 표시하지 않고 AI 분석 입력에만 사용합니다.',
+        );
         return;
       }
 
@@ -409,10 +490,8 @@ export default function Home() {
         const message = [data.warning || data.error || TEXT_EXTRACTION_FAILED_MESSAGE, data.ocrNotice]
           .filter(Boolean)
           .join(' ');
-        setUploadNotice({
-          type: data.warning ? 'warning' : 'error',
-          message,
-        });
+        const status: ExtractionStatus = data.warning ? '이미지 중심 문서 / OCR 필요' : '추출 실패';
+        addUploadedDocument(createUploadedDocument(file, status, '', message), data.warning ? 'warning' : 'error', message);
         return;
       }
 
@@ -421,16 +500,22 @@ export default function Home() {
         const message = [validation.message, extension === 'pdf' ? OCR_UNSUPPORTED_MESSAGE : undefined]
           .filter(Boolean)
           .join(' ');
-        setUploadNotice({ type: validation.reason === 'short' ? 'warning' : 'error', message });
+        const status: ExtractionStatus = validation.reason === 'short' ? '이미지 중심 문서 / OCR 필요' : '추출 실패';
+        addUploadedDocument(createUploadedDocument(file, status, '', message), validation.reason === 'short' ? 'warning' : 'error', message);
         return;
       }
 
+      const status: ExtractionStatus = data.status === 'partial' ? '일부 텍스트만 추출' : '텍스트 추출 완료';
       const serverMessage = [data.message ?? (extension === 'pdf' ? PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE : undefined), data.ocrNotice]
         .filter(Boolean)
         .join(' ');
-      applyExtractedText(validation.text, file.name, serverMessage);
+      addUploadedDocument(
+        createUploadedDocument(file, status, validation.text, data.status === 'partial' ? serverMessage : undefined),
+        data.status === 'partial' ? 'warning' : 'success',
+        serverMessage || '파일에서 텍스트를 추출했습니다. 추출 원문은 화면에 표시하지 않고 AI 분석 입력에만 사용합니다.',
+      );
     } catch {
-      setUploadNotice({ type: 'error', message: TEXT_EXTRACTION_FAILED_MESSAGE });
+      addUploadedDocument(createUploadedDocument(file, '추출 실패', '', TEXT_EXTRACTION_FAILED_MESSAGE), 'error', TEXT_EXTRACTION_FAILED_MESSAGE);
     } finally {
       setLoading('');
     }
@@ -440,7 +525,7 @@ export default function Home() {
     setError('');
     setLoading('RFP/브리프 분석 중...');
     try {
-      const analysis = await postJson<AnalysisResult>('/api/analyze', state.input);
+      const analysis = await postJson<AnalysisResult>('/api/analyze', analysisInput);
       setState((current) => ({ ...current, analysis, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
@@ -451,13 +536,13 @@ export default function Home() {
   };
 
   const rerunAnalyzeWithSupplementalInfo = async () => {
-    const mergedInput = mergeInputWithSupplementalInfo(state.input, supplementalInfo);
+    const mergedInput = mergeInputWithSupplementalInfo(analysisInput, supplementalInfo);
 
     setError('');
     setLoading('추가 정보를 반영해 RFP/브리프 재분석 중...');
     try {
       const analysis = await postJson<AnalysisResult>('/api/analyze', mergedInput);
-      setState((current) => ({ ...current, input: mergedInput, analysis, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
@@ -471,7 +556,7 @@ export default function Home() {
     setError('');
     setLoading('제안서 구조 생성 중...');
     try {
-      const outline = await postJson<SlideOutline[]>('/api/outline', { input: state.input, analysis: state.analysis });
+      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis });
       setState((current) => ({ ...current, outline, slides: undefined }));
       setStep('outline');
     } catch (err) {
@@ -486,7 +571,7 @@ export default function Home() {
     setError('');
     setLoading('장표별 문안 생성 중...');
     try {
-      const slides = await postJson<SlideContent[]>('/api/slides', { input: state.input, analysis: state.analysis, outline: state.outline });
+      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, outline: state.outline });
       setState((current) => ({ ...current, slides }));
       setStep('slides');
     } catch (err) {
@@ -498,7 +583,7 @@ export default function Home() {
 
   const reset = () => {
     window.localStorage.removeItem(STORAGE_KEY);
-    setState({ input: initialInput, supplementalInfo: initialSupplementalInfo });
+    setState({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [] });
     setStep('create');
     setError('');
     setUploadNotice(null);
@@ -523,7 +608,7 @@ export default function Home() {
           <section className="rounded-[2rem] bg-gradient-to-br from-blue-600 to-slate-950 p-8 text-white shadow-2xl shadow-blue-900/20 md:p-12">
             <p className="text-blue-100">전시/브랜드 체험관 제안서 자동 생성 MVP</p>
             <h2 className="mt-4 max-w-3xl text-4xl font-black leading-tight md:text-6xl">브리프 입력부터 PPTX 초안까지 한 번에 생성하세요.</h2>
-            <p className="mt-5 max-w-2xl text-lg text-blue-50">제안서 유형을 선택하고 RFP를 붙여넣으면 AI가 분석, 목차, 장표 문안, 시각화 지시문을 단계별로 생성합니다.</p>
+            <p className="mt-5 max-w-2xl text-lg text-blue-50">제안서 유형을 선택하고 자료를 업로드한 뒤 추가 메모를 입력하면 AI가 분석, 목차, 장표 문안, 시각화 지시문을 단계별로 생성합니다.</p>
             <button onClick={() => setStep('create')} className="mt-8 rounded-2xl bg-white px-6 py-4 font-bold text-blue-700 shadow-xl transition hover:bg-blue-50">
               새 제안서 만들기
             </button>
@@ -567,6 +652,7 @@ export default function Home() {
                     />
                   </label>
                 </div>
+                <UploadedDocumentsList documents={uploadedDocuments} />
                 {uploadNotice && (
                   <div
                     className={`mt-4 rounded-2xl border p-4 text-sm font-semibold leading-6 ${
@@ -582,8 +668,8 @@ export default function Home() {
                 )}
               </div>
               <label className="block md:col-span-2">
-                <span className="mb-2 block text-sm font-semibold text-slate-700">RFP / 프로젝트 브리프</span>
-                <textarea value={state.input.briefText} onChange={(event) => updateInput('briefText', event.target.value)} className="min-h-72 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500" placeholder={sampleBrief} />
+                <span className="mb-2 block text-sm font-semibold text-slate-700">추가 메모 / 보완 설명</span>
+                <textarea value={state.input.briefText} onChange={(event) => updateInput('briefText', event.target.value)} className="min-h-72 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500" placeholder="업로드 자료에 없는 추가 요구사항, 배경 설명, 강조점만 직접 입력하세요." />
               </label>
               {shouldShowShortBriefGuidance && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-900 md:col-span-2">
@@ -595,8 +681,8 @@ export default function Home() {
               <InputQualityPanel quality={inputQuality} compact />
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
-              <PrimaryButton onClick={runAnalyze} disabled={!canAnalyze || Boolean(loading)}>AI로 분석하기</PrimaryButton>
-              <SecondaryButton onClick={() => updateInput('briefText', sampleBrief)}>샘플 브리프 채우기</SecondaryButton>
+              <PrimaryButton onClick={runAnalyze} disabled={!canAnalyze || Boolean(loading)}>업로드 자료와 메모로 AI 분석하기</PrimaryButton>
+              <SecondaryButton onClick={() => updateInput('briefText', sampleBrief)}>샘플 메모 채우기</SecondaryButton>
             </div>
           </SectionCard>
         )}
