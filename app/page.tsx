@@ -99,6 +99,11 @@ function SecondaryButton({ children, onClick, disabled }: { children: React.Reac
 
 
 function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<typeof assessInputQuality>; compact?: boolean }) {
+  const levelLabels: Record<typeof quality.level, string> = {
+    low: '낮음',
+    medium: '보통',
+    high: '높음',
+  };
   const tone = quality.isInsufficient
     ? 'border-amber-200 bg-amber-50 text-amber-950'
     : 'border-emerald-200 bg-emerald-50 text-emerald-950';
@@ -107,18 +112,18 @@ function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<t
     <div className={`rounded-3xl border p-5 ${tone}`}>
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-black uppercase tracking-[0.2em]">입력 품질 {quality.score}점 · {quality.level.toUpperCase()}</p>
+          <p className="text-sm font-black">입력 정보 충분도: {levelLabels[quality.level]}</p>
           <h3 className="mt-2 text-xl font-black">{quality.isInsufficient ? '추가 정보 입력 권장' : '입력 정보 품질 양호'}</h3>
           <p className="mt-2 text-sm leading-6">{quality.guidance}</p>
         </div>
         <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-semibold shadow-sm">
-          브리프 {quality.briefLength.toLocaleString()}자 · 확인된 항목 {quality.presentItems.length}/9
+          브리프 {quality.briefLength.toLocaleString()}자 · 확인된 정보 {quality.presentItems.length}/9
         </div>
       </div>
 
       {quality.aiMissingInfo.length > 0 && (
         <div className="mt-4 rounded-2xl bg-white/70 p-4">
-          <p className="text-sm font-bold">AI 분석 missingInfo</p>
+          <p className="text-sm font-bold">추가 확인이 필요한 정보</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
             {quality.aiMissingInfo.map((item, index) => (
               <li key={`${item}-${index}`}>{item}</li>
@@ -448,6 +453,9 @@ export default function Home() {
                     <h3 className="mt-2 text-xl font-black text-amber-950">부족한 정보를 입력하면 AI 분석을 다시 실행할 수 있습니다.</h3>
                     <p className="mt-2 text-sm leading-6 text-amber-900">
                       입력 정보가 부족하면 제안서가 일반적으로 생성될 수 있습니다. 아래 정보를 추가하면 결과 품질이 개선됩니다.
+                    </p>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-amber-950">
+                      모든 항목을 입력할 필요는 없습니다. 확인 가능한 정보만 입력해도 분석 품질이 개선됩니다.
                     </p>
                   </div>
                   <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-bold text-amber-900 shadow-sm">
