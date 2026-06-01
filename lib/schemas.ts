@@ -95,7 +95,7 @@ export const outlineJsonSchema = {
     slides: {
       type: 'array',
       minItems: 20,
-      maxItems: 40,
+      maxItems: 60,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -114,6 +114,89 @@ export const outlineJsonSchema = {
   required: ['slides'],
 } as const;
 
+
+const productExperienceDetailSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    productCode: { type: 'string' },
+    productNameOrRole: { type: 'string' },
+    coreValue: { type: 'string' },
+    experienceTitle: { type: 'string' },
+    oneLineExperience: { type: 'string' },
+    visitorMission: { type: 'string' },
+    visitorAction: { type: 'string' },
+    contentMechanism: { type: 'string' },
+    mediaOrObject: { type: 'string' },
+    spatialPlacement: { type: 'string' },
+    outputOrReward: { type: 'string' },
+    snsSharePoint: { type: 'string' },
+    visualDirection: { type: 'string' },
+    imagePlaceholder: { type: 'string' },
+    diagramSuggestion: { type: 'string' },
+  },
+  required: [
+    'productCode',
+    'productNameOrRole',
+    'coreValue',
+    'experienceTitle',
+    'oneLineExperience',
+    'visitorMission',
+    'visitorAction',
+    'contentMechanism',
+    'mediaOrObject',
+    'spatialPlacement',
+    'outputOrReward',
+    'snsSharePoint',
+    'visualDirection',
+    'imagePlaceholder',
+    'diagramSuggestion',
+  ],
+} as const;
+
+const keyExperienceAssetSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    assetName: { type: 'string' },
+    assetType: { type: 'string' },
+    roleInProposal: { type: 'string' },
+    visitorAction: { type: 'string' },
+    experienceMechanism: { type: 'string' },
+    spatialPlacement: { type: 'string' },
+    mediaOrObject: { type: 'string' },
+    outputOrReward: { type: 'string' },
+    whyItMatters: { type: 'string' },
+    visualDirection: { type: 'string' },
+  },
+  required: [
+    'assetName',
+    'assetType',
+    'roleInProposal',
+    'visitorAction',
+    'experienceMechanism',
+    'spatialPlacement',
+    'mediaOrObject',
+    'outputOrReward',
+    'whyItMatters',
+    'visualDirection',
+  ],
+} as const;
+
+const experienceScenarioStepSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    step: { type: 'string', enum: ['Entry', 'Select', 'Experience', 'Generate', 'Share', 'Exit'] },
+    visitorAction: { type: 'string' },
+    systemResponse: { type: 'string' },
+    mediaOrObject: { type: 'string' },
+    output: { type: 'string' },
+    designNote: { type: 'string' },
+  },
+  required: ['step', 'visitorAction', 'systemResponse', 'mediaOrObject', 'output', 'designNote'],
+} as const;
+
 export const slideContentJsonSchema = {
   type: 'object',
   additionalProperties: false,
@@ -121,7 +204,7 @@ export const slideContentJsonSchema = {
     slides: {
       type: 'array',
       minItems: 20,
-      maxItems: 40,
+      maxItems: 60,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -142,6 +225,9 @@ export const slideContentJsonSchema = {
           imagePlaceholder: { type: 'string' },
           visualPrompt: { type: 'string' },
           diagramSuggestion: { type: 'string' },
+          productExperienceDetails: { type: 'array', items: productExperienceDetailSchema },
+          keyExperienceAssets: { type: 'array', maxItems: 3, items: keyExperienceAssetSchema },
+          experienceScenarioSteps: { type: 'array', items: experienceScenarioStepSchema },
           speakerNote: { type: 'string' },
           confirmNeededNote: { type: 'string' },
         },
@@ -162,6 +248,9 @@ export const slideContentJsonSchema = {
           'imagePlaceholder',
           'visualPrompt',
           'diagramSuggestion',
+          'productExperienceDetails',
+          'keyExperienceAssets',
+          'experienceScenarioSteps',
           'speakerNote',
           'confirmNeededNote',
         ],

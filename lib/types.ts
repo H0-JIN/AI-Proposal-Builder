@@ -78,6 +78,46 @@ export interface SlideOutline {
   confirmNeededNote: string;
 }
 
+export interface ProductExperienceDetail {
+  productCode: string;
+  productNameOrRole: string;
+  coreValue: string;
+  experienceTitle: string;
+  oneLineExperience: string;
+  visitorMission: string;
+  visitorAction: string;
+  contentMechanism: string;
+  mediaOrObject: string;
+  spatialPlacement: string;
+  outputOrReward: string;
+  snsSharePoint: string;
+  visualDirection: string;
+  imagePlaceholder: string;
+  diagramSuggestion: string;
+}
+
+export interface KeyExperienceAsset {
+  assetName: string;
+  assetType: string;
+  roleInProposal: string;
+  visitorAction: string;
+  experienceMechanism: string;
+  spatialPlacement: string;
+  mediaOrObject: string;
+  outputOrReward: string;
+  whyItMatters: string;
+  visualDirection: string;
+}
+
+export interface ExperienceScenarioStep {
+  step: 'Entry' | 'Select' | 'Experience' | 'Generate' | 'Share' | 'Exit';
+  visitorAction: string;
+  systemResponse: string;
+  mediaOrObject: string;
+  output: string;
+  designNote: string;
+}
+
 export interface SlideContent {
   slideNumber: number;
   slideType: string;
@@ -95,6 +135,9 @@ export interface SlideContent {
   imagePlaceholder: string;
   visualPrompt: string;
   diagramSuggestion: string;
+  productExperienceDetails: ProductExperienceDetail[];
+  keyExperienceAssets: KeyExperienceAsset[];
+  experienceScenarioSteps: ExperienceScenarioStep[];
   speakerNote: string;
   confirmNeededNote: string;
 }

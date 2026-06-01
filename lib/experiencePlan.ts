@@ -1,18 +1,39 @@
-import type { SlideOutline } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ProjectInput, SlideOutline } from '@/lib/types';
 
 export const experienceDetailFields = [
-  'slideTitle',
-  'keyMessage',
-  'mainCopy',
+  'productCode',
+  'productNameOrRole',
+  'coreValue',
+  'experienceTitle',
+  'oneLineExperience',
+  'visitorMission',
   'visitorAction',
   'contentMechanism',
+  'mediaOrObject',
+  'spatialPlacement',
+  'outputOrReward',
+  'snsSharePoint',
+  'visualDirection',
+  'imagePlaceholder',
+  'diagramSuggestion',
+] as const;
+
+export const keyExperienceAssetFields = [
+  'assetName',
+  'assetType',
+  'roleInProposal',
+  'visitorAction',
+  'experienceMechanism',
   'spatialPlacement',
   'mediaOrObject',
   'outputOrReward',
-  'imagePlaceholder',
-  'visualPrompt',
-  'diagramSuggestion',
+  'whyItMatters',
+  'visualDirection',
 ] as const;
+
+export const experienceScenarioSteps = ['Entry', 'Select', 'Experience', 'Generate', 'Share', 'Exit'] as const;
+
+const productDetailSlideType = 'Spatial / Content Plan - Product Experience Detail';
 
 const spatialPlanSlides = [
   {
@@ -29,21 +50,21 @@ const spatialPlanSlides = [
   },
   {
     slideType: 'Spatial / Content Plan - Zone Detail 01',
-    slideTitle: 'Zone Detail 01',
+    slideTitle: '핵심 체험 상세 01',
     slidePurpose: '첫 번째 핵심 체험 존의 관람객 행동, 콘텐츠 장치, 산출물을 상세화한다.',
     keyMessage: '핵심 체험 단위별로 공간 배치와 콘텐츠 메커니즘을 분리해 실행 가능한 존 기획으로 전개한다.',
   },
   {
     slideType: 'Spatial / Content Plan - Zone Detail 02',
-    slideTitle: 'Zone Detail 02',
+    slideTitle: '핵심 체험 상세 02',
     slidePurpose: '두 번째 핵심 체험 존의 관람객 행동, 콘텐츠 장치, 산출물을 상세화한다.',
     keyMessage: '후속 체험 존은 앞선 경험의 감정과 데이터를 이어받아 더 깊은 참여 또는 공유 행동으로 연결한다.',
   },
   {
     slideType: 'Spatial / Content Plan - Experience Scenario',
     slideTitle: 'Experience Scenario',
-    slidePurpose: 'Entry, Attention, Interaction, Feedback, Output, Share 단계의 관람객 흐름을 정리한다.',
-    keyMessage: '관람객 여정은 진입부터 공유까지 끊기지 않는 행동-반응-보상 구조로 설계한다.',
+    slidePurpose: 'Entry, Select, Experience, Generate, Share, Exit 단계의 관람객 행동과 시스템 반응을 플로우로 정리한다.',
+    keyMessage: '관람객 여정은 진입부터 공유와 퇴장까지 끊기지 않는 행동-반응-보상 구조로 설계한다.',
   },
 ] as const;
 
@@ -57,7 +78,7 @@ const mediaPlanSlides = [
   {
     slideType: 'Media / Interactive Plan - Key Media Scene',
     slideTitle: 'Key Media Scene',
-    slidePurpose: '대표 미디어 장면과 이미지 생성용 프롬프트를 제시한다.',
+    slidePurpose: '대표 미디어 장면과 이미지 삽입 방향을 제시한다.',
     keyMessage: '핵심 미디어 장면은 공간의 첫인상, 체류 이유, 촬영 욕구를 동시에 만드는 시그니처 씬이 되어야 한다.',
   },
   {
@@ -101,6 +122,17 @@ function buildExpandedSlide(base: SlideOutline | undefined, template: (typeof sp
   };
 }
 
+function buildProductDetailSlide(productCode: string): SlideOutline {
+  return {
+    slideNumber: 0,
+    slideType: productDetailSlideType,
+    slideTitle: `${productCode} 체험 상세`,
+    slidePurpose: `${productCode} 단위에서 방문객이 수행할 미션, 행동, 반응형 콘텐츠, 결과물을 실제 체험 장표로 상세화한다.`,
+    keyMessage: `${productCode}는 단순 제품 설명이 아니라 방문객이 직접 시도하고 결과를 얻는 개별 체험 모듈로 설계한다.`,
+    confirmNeededNote: '',
+  };
+}
+
 function renumber(slides: SlideOutline[]) {
   return slides.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
 }
@@ -112,15 +144,32 @@ function insertBeforeMediaOrClosing(slides: SlideOutline[], additions: SlideOutl
   return [...slides.slice(0, insertIndex), ...additions, ...slides.slice(insertIndex)];
 }
 
-export function expandExperiencePlanOutline(outline: SlideOutline[]) {
+function collectContextText(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+  if (!context) return '';
+  return [context.input, context.analysis, context.selectedConcept]
+    .map((item) => (item ? JSON.stringify(item) : ''))
+    .join('\n');
+}
+
+export function extractProductCodes(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+  const text = collectContextText(context);
+  const reserved = new Set(['AI', 'AR', 'VR', 'XR', 'LED', 'LCD', 'OLED', 'SNS', 'KPI', 'RFP', 'VIP', 'UGC', 'QR']);
+  const matches = text.match(/\b[A-Z]{1,3}\d{1,3}[A-Z]?\b/g) ?? [];
+  return Array.from(new Set(matches.filter((code) => !reserved.has(code)))).slice(0, 8);
+}
+
+export function expandExperiencePlanOutline(outline: SlideOutline[], context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
   let hasSpatial = false;
   let hasMedia = false;
+  const productCodes = extractProductCodes(context);
+  const productSlides = productCodes.map(buildProductDetailSlide);
   const expanded: SlideOutline[] = [];
 
   outline.forEach((slide) => {
     if (isSpatialPlan(slide)) {
       if (!hasSpatial) {
-        expanded.push(...spatialPlanSlides.map((template) => buildExpandedSlide(slide, template)));
+        const baseSlides = spatialPlanSlides.map((template) => buildExpandedSlide(slide, template));
+        expanded.push(...baseSlides.slice(0, 2), ...productSlides, ...baseSlides.slice(2));
         hasSpatial = true;
       }
       return;
@@ -139,7 +188,8 @@ export function expandExperiencePlanOutline(outline: SlideOutline[]) {
 
   let completed = expanded;
   if (!hasSpatial) {
-    completed = insertBeforeMediaOrClosing(completed, spatialPlanSlides.map((template) => buildExpandedSlide(undefined, template)));
+    const baseSlides = spatialPlanSlides.map((template) => buildExpandedSlide(undefined, template));
+    completed = insertBeforeMediaOrClosing(completed, [...baseSlides.slice(0, 2), ...productSlides, ...baseSlides.slice(2)]);
   }
   if (!hasMedia) {
     const closingIndex = completed.findIndex((slide) => /closing|마무리|expected|effect|기대|operation|운영/i.test(`${slide.slideType} ${slide.slideTitle}`));
