@@ -48,6 +48,46 @@ export const analysisJsonSchema = {
   ],
 } as const;
 
+
+export const conceptCandidatesJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    concepts: {
+      type: 'array',
+      minItems: 3,
+      maxItems: 3,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          conceptId: { type: 'string' },
+          conceptNameKR: { type: 'string' },
+          conceptNameEN: { type: 'string' },
+          oneLineDefinition: { type: 'string' },
+          coreMessage: { type: 'string' },
+          experienceLogic: { type: 'string' },
+          targetRelevance: { type: 'string' },
+          keyExperienceAssetDirection: { type: 'string' },
+          whyThisWorks: { type: 'string' },
+        },
+        required: [
+          'conceptId',
+          'conceptNameKR',
+          'conceptNameEN',
+          'oneLineDefinition',
+          'coreMessage',
+          'experienceLogic',
+          'targetRelevance',
+          'keyExperienceAssetDirection',
+          'whyThisWorks',
+        ],
+      },
+    },
+  },
+  required: ['concepts'],
+} as const;
+
 export const outlineJsonSchema = {
   type: 'object',
   additionalProperties: false,
