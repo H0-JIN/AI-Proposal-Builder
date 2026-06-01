@@ -222,6 +222,32 @@ function UploadedDocumentsList({ documents }: { documents: UploadedDocument[] })
   );
 }
 
+
+function AnalysisSectionPanel({ title, section }: { title: string; section?: AnalysisResult['rfpRequirements'] }) {
+  const safeSection = section ?? { rfpFact: [], aiProposal: [], confirmNeeded: [] };
+  const columns = [
+    ['RFP Fact', safeSection.rfpFact, 'border-slate-200 bg-slate-50 text-slate-700'],
+    ['AI Proposal', safeSection.aiProposal, 'border-blue-100 bg-blue-50 text-blue-800'],
+    ['Confirm Needed', safeSection.confirmNeeded, 'border-amber-100 bg-amber-50 text-amber-900'],
+  ] as const;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 p-4">
+      <p className="text-sm font-bold text-slate-950">{title}</p>
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        {columns.map(([label, items, tone]) => (
+          <div key={label} className={`rounded-2xl border p-3 ${tone}`}>
+            <p className="text-xs font-black uppercase tracking-[0.12em]">{label}</p>
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5">
+              {items.length ? items.map((item, index) => <li key={`${label}-${item}-${index}`}>{item}</li>) : <li>해당 없음</li>}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function KeyValueList({ data }: { data: AnalysisResult }) {
   const rows = [
     ['프로젝트 개요', data.projectOverview],
@@ -229,6 +255,7 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
     ['타깃 정보', data.targetInfo],
     ['공간 조건', data.spatialCondition],
     ['콘텐츠 조건', data.contentCondition],
+    ['운영 조건', data.operationCondition],
   ];
 
   return (
@@ -243,6 +270,7 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
         {[
           ['필수 항목', data.requiredItems],
           ['제약 조건', data.constraints],
+          ['KPI/일정/제약', data.kpiScheduleConstraints],
           ['추가 확인 필요', data.missingInfo],
         ].map(([label, items]) => (
           <div key={label as string} className="rounded-2xl border border-slate-200 p-4">
@@ -255,6 +283,10 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
           </div>
         ))}
       </div>
+      <AnalysisSectionPanel title="RFP 요구사항 / 제안 방향 / 확인 Note" section={data.rfpRequirements} />
+      <AnalysisSectionPanel title="클라이언트 과제" section={data.clientTask} />
+      <AnalysisSectionPanel title="타깃·공간·콘텐츠·운영 조건" section={data.targetSpaceContentOperation} />
+      <AnalysisSectionPanel title="KPI·일정·제약 조건" section={data.kpiTimelineConstraints} />
     </div>
   );
 }
@@ -271,6 +303,7 @@ function hasAnalysisConfirmationNeeds(analysis?: AnalysisResult) {
     analysis.contentCondition,
     ...analysis.requiredItems,
     ...analysis.constraints,
+    ...(analysis.kpiScheduleConstraints ?? []),
     ...analysis.missingInfo,
   ];
 
@@ -360,13 +393,14 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
     slide.background = { color: 'FFFFFF' };
     slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 0.18, fill: { color: '2563EB' }, line: { color: '2563EB' } });
     slide.addText(String(slideData.slideNumber).padStart(2, '0'), { x: 0.55, y: 0.35, w: 0.7, h: 0.3, fontSize: 11, color: '2563EB', bold: true });
-    slide.addText(slideData.title, { x: 0.55, y: 0.7, w: 5.8, h: 0.55, fontSize: 24, bold: true, color: '111827', breakLine: false });
-    slide.addText(slideData.subtitle, { x: 0.58, y: 1.28, w: 5.8, h: 0.45, fontSize: 12, color: '475569' });
+    slide.addText(slideData.slideTitle, { x: 0.55, y: 0.7, w: 5.8, h: 0.55, fontSize: 24, bold: true, color: '111827', breakLine: false });
+    slide.addText(slideData.keyMessage, { x: 0.58, y: 1.28, w: 5.8, h: 0.45, fontSize: 12, color: '475569' });
     slide.addShape(pptx.ShapeType.rect, { x: 6.75, y: 0.72, w: 5.9, h: 3.6, fill: { color: 'E5E7EB' }, line: { color: 'CBD5E1', transparency: 20 } });
     slide.addText(slideData.imagePlaceholder, { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'middle', fontSize: 14, color: '64748B', bold: true });
     slide.addText(slideData.bodyBullets.map((bullet) => `• ${bullet}`).join('\n'), { x: 0.75, y: 2.05, w: 5.55, h: 2.7, fontSize: 14, color: '111827', breakLine: false, fit: 'shrink', valign: 'top' });
-    slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 5.25, w: 11.95, h: 0.82, rectRadius: 0.08, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE' } });
-    slide.addText(`Diagram: ${slideData.diagramSuggestion}`, { x: 0.95, y: 5.47, w: 11.45, h: 0.35, fontSize: 11, color: '1D4ED8', fit: 'shrink' });
+    slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 5.08, w: 11.95, h: 1.05, rectRadius: 0.08, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE' } });
+    slide.addText(`Visual: ${slideData.visualDirection}`, { x: 0.95, y: 5.22, w: 11.45, h: 0.28, fontSize: 9.5, color: '1D4ED8', fit: 'shrink' });
+    slide.addText(`Diagram: ${slideData.diagramSuggestion}`, { x: 0.95, y: 5.55, w: 11.45, h: 0.28, fontSize: 9.5, color: '1D4ED8', fit: 'shrink' });
     slide.addText(`${input.clientName} · ${proposalTypeLabels[input.proposalType]}`, { x: 0.55, y: 6.95, w: 5, h: 0.2, fontSize: 8, color: '94A3B8' });
   });
 
@@ -748,6 +782,7 @@ export default function Home() {
                   <h3 className="mt-1 text-lg font-bold text-slate-950">{slide.slideTitle}</h3>
                   <p className="mt-1 text-sm text-slate-600">목적: {slide.slidePurpose}</p>
                   <p className="mt-2 font-medium text-slate-800">{slide.keyMessage}</p>
+                  {slide.confirmNeededNote && <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Note: {slide.confirmNeededNote}</p>}
                 </article>
               ))}
             </div>
@@ -764,13 +799,18 @@ export default function Home() {
               {state.slides.map((slide) => (
                 <article key={slide.slideNumber} className="rounded-3xl border border-slate-200 p-5">
                   <p className="text-xs font-bold text-blue-600">SLIDE {String(slide.slideNumber).padStart(2, '0')}</p>
-                  <h3 className="mt-2 text-xl font-black text-slate-950">{slide.title}</h3>
-                  <p className="mt-1 text-sm text-slate-500">{slide.subtitle}</p>
+                  <div className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{slide.slideType}</div>
+                  <h3 className="mt-2 text-xl font-black text-slate-950">{slide.slideTitle}</h3>
+                  <p className="mt-1 text-sm font-semibold text-blue-700">{slide.keyMessage}</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{slide.mainCopy}</p>
                   <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-700">
                     {slide.bodyBullets.map((bullet, index) => <li key={`${bullet}-${index}`}>{bullet}</li>)}
                   </ul>
-                  <div className="mt-4 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">이미지: {slide.imagePlaceholder}</div>
+                  <div className="mt-4 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">비주얼 방향: {slide.visualDirection}</div>
+                  <div className="mt-2 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">이미지: {slide.imagePlaceholder}</div>
                   <div className="mt-2 rounded-2xl bg-blue-50 p-3 text-sm text-blue-700">다이어그램: {slide.diagramSuggestion}</div>
+                  <div className="mt-2 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-700">발표 노트: {slide.speakerNote}</div>
+                  {slide.confirmNeededNote && <div className="mt-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-800">확인 Note: {slide.confirmNeededNote}</div>}
                 </article>
               ))}
             </div>

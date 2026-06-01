@@ -1,15 +1,34 @@
+const stringArray = { type: 'array', items: { type: 'string' } } as const;
+
+const analysisSectionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    rfpFact: stringArray,
+    aiProposal: stringArray,
+    confirmNeeded: stringArray,
+  },
+  required: ['rfpFact', 'aiProposal', 'confirmNeeded'],
+} as const;
+
 export const analysisJsonSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
     projectOverview: { type: 'string' },
     clientChallenge: { type: 'string' },
-    requiredItems: { type: 'array', items: { type: 'string' } },
-    constraints: { type: 'array', items: { type: 'string' } },
+    requiredItems: stringArray,
+    constraints: stringArray,
     targetInfo: { type: 'string' },
     spatialCondition: { type: 'string' },
     contentCondition: { type: 'string' },
-    missingInfo: { type: 'array', items: { type: 'string' } },
+    operationCondition: { type: 'string' },
+    kpiScheduleConstraints: stringArray,
+    missingInfo: stringArray,
+    rfpRequirements: analysisSectionSchema,
+    clientTask: analysisSectionSchema,
+    targetSpaceContentOperation: analysisSectionSchema,
+    kpiTimelineConstraints: analysisSectionSchema,
   },
   required: [
     'projectOverview',
@@ -19,7 +38,13 @@ export const analysisJsonSchema = {
     'targetInfo',
     'spatialCondition',
     'contentCondition',
+    'operationCondition',
+    'kpiScheduleConstraints',
     'missingInfo',
+    'rfpRequirements',
+    'clientTask',
+    'targetSpaceContentOperation',
+    'kpiTimelineConstraints',
   ],
 } as const;
 
@@ -29,18 +54,20 @@ export const outlineJsonSchema = {
   properties: {
     slides: {
       type: 'array',
-      minItems: 8,
-      maxItems: 12,
+      minItems: 12,
+      maxItems: 16,
       items: {
         type: 'object',
         additionalProperties: false,
         properties: {
           slideNumber: { type: 'number' },
+          slideType: { type: 'string' },
           slideTitle: { type: 'string' },
           slidePurpose: { type: 'string' },
           keyMessage: { type: 'string' },
+          confirmNeededNote: { type: 'string' },
         },
-        required: ['slideNumber', 'slideTitle', 'slidePurpose', 'keyMessage'],
+        required: ['slideNumber', 'slideType', 'slideTitle', 'slidePurpose', 'keyMessage', 'confirmNeededNote'],
       },
     },
   },
@@ -53,18 +80,39 @@ export const slideContentJsonSchema = {
   properties: {
     slides: {
       type: 'array',
+      minItems: 12,
+      maxItems: 16,
       items: {
         type: 'object',
         additionalProperties: false,
         properties: {
           slideNumber: { type: 'number' },
-          title: { type: 'string' },
-          subtitle: { type: 'string' },
-          bodyBullets: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string' } },
+          slideType: { type: 'string' },
+          slideTitle: { type: 'string' },
+          slidePurpose: { type: 'string' },
+          keyMessage: { type: 'string' },
+          mainCopy: { type: 'string' },
+          bodyBullets: { type: 'array', minItems: 3, maxItems: 7, items: { type: 'string' } },
+          visualDirection: { type: 'string' },
           imagePlaceholder: { type: 'string' },
           diagramSuggestion: { type: 'string' },
+          speakerNote: { type: 'string' },
+          confirmNeededNote: { type: 'string' },
         },
-        required: ['slideNumber', 'title', 'subtitle', 'bodyBullets', 'imagePlaceholder', 'diagramSuggestion'],
+        required: [
+          'slideNumber',
+          'slideType',
+          'slideTitle',
+          'slidePurpose',
+          'keyMessage',
+          'mainCopy',
+          'bodyBullets',
+          'visualDirection',
+          'imagePlaceholder',
+          'diagramSuggestion',
+          'speakerNote',
+          'confirmNeededNote',
+        ],
       },
     },
   },

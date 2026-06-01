@@ -6,10 +6,10 @@ import { createStructuredJson } from '@/lib/openai';
 import { assessInputQuality } from '@/lib/inputQuality';
 
 const styleGuides = {
-  basic: '문제 정의, 전략, 공간/콘텐츠 구성, 실행 계획, 기대효과가 균형 있게 이어지는 범용 제안서 구조.',
-  cheil: '브랜드 인사이트와 캠페인 아이디어를 강하게 제시하고, 경험 시나리오와 통합 커뮤니케이션 관점을 강조하는 구조.',
-  innocean: '모빌리티/라이프스타일 맥락, 고객 여정, 체험 콘텐츠 운영성, 성과 측정 지표를 체계적으로 제시하는 구조.',
-  hyundai: '그룹 브랜드 톤에 맞춰 비전, 고객 가치, 기술/공간 완성도, 안전/운영 리스크 관리까지 명확히 보여주는 구조.',
+  basic: '프로젝트 이해, 과제 정의, 경험 전략, 콘셉트, 공간/콘텐츠 구성, 운영 및 기대 효과가 이어지는 기본형 구조.',
+  cheil: '브랜드 과제, 소비자 인사이트, 경험 전략, 캠페인형 공간 아이디어, 확산/바이럴 포인트, 실행 계획을 강조하는 제일기획형 구조.',
+  innocean: '브랜드/제품 맥락, 타깃 행동 분석, 체험 시나리오, 공간/미디어 연출, 운영 및 실행 가능성을 강조하는 이노션형 구조.',
+  hyundai: '기업 비전, 기술/사업 가치, 신뢰감 있는 체험 구조, 공간/콘텐츠 전달 방식, 의전/운영 고려사항을 강조하는 현대차그룹형 구조.',
 };
 
 export async function POST(request: Request) {
@@ -27,11 +27,16 @@ export async function POST(request: Request) {
       schemaName: 'proposal_outline',
       schema: outlineJsonSchema,
       system: [
-        '너는 한국어 제안서 전체 구조를 설계하는 크리에이티브 디렉터다.',
-        '8~12장의 슬라이드 아웃라인을 만들고 slideNumber는 1부터 순서대로 부여하라.',
-        '각 장표는 중복 없이 설득 흐름이 이어져야 한다.',
-        '분석 결과의 missingInfo와 입력 품질 진단에서 부족하다고 표시된 항목을 적극적으로 반영하라.',
-        '확인되지 않은 조건은 임의로 가정하지 말고 keyMessage나 slidePurpose에 확인 필요라고 명시하라.',
+        '너는 한국어 전시/브랜드 체험관 제안서 전체 구조를 설계하는 크리에이티브 디렉터다.',
+        '이 단계는 제안 생성 단계의 아웃라인 설계다. RFP 요약이나 확인 필요 장표가 아니라 실제 제안 내용을 담을 12~16장 슬라이드 구조를 만든다.',
+        '기본 흐름은 Cover, Project Understanding, Key Challenge, Experience Strategy, Core Concept, Concept Candidates, Key Experience Asset Concept, Visitor Journey, Spatial / Content Plan, Media / Interactive Plan, Viral / Communication Mechanism, Operation Plan, Expected Effect, Closing이다.',
+        'RFP 성격에 맞게 슬라이드 제목은 자동 조정하라. 예: 폴더블 제품별 체험 저니, 기업 홍보관 비전 전달 공간, 팝업 포토/바이럴 구조, 미디어 전시 몰입형 시나리오, 의전시설 VIP 동선.',
+        '반드시 Concept Candidates와 Key Experience Asset Concept을 포함하라. 고정 제목 “Monument Design Concept”은 사용하지 말라.',
+        'Key Experience Asset은 RFP 맥락에 따라 Spatial Zone, Interactive Experience, Media Content, Photo / Viral Spot, Product Trial Kit, Exhibition Object, Digital Signage, Operation Program, Brand Experience Module, Monument, Briefing Space, Immersive Room, Hands-on Demo, Visitor Participation Content 중 하나 또는 복수로 판단하는 장표가 되도록 설계하라.',
+        '모뉴먼트가 RFP에 명시되지 않았다면 Monument를 핵심 자산으로 고정하지 말라.',
+        '확인 필요 사항은 confirmNeededNote에만 작게 넣고 slideTitle, slidePurpose, keyMessage의 중심은 실제 제안 내용으로 구성하라.',
+        '근거 없는 정량 효과 예측을 금지한다. RFP에 없는 수치는 Expected Effect에서 KPI 설계 방향 또는 측정 항목 제안으로만 다뤄라.',
+        'slideNumber는 1부터 순서대로 부여하라.',
       ].join('\n'),
       user: `제안서 유형: ${proposalTypeLabels[body.input.proposalType]}\n유형별 구조 가이드: ${styleGuides[body.input.proposalType]}\n프로젝트명: ${body.input.projectName}\n클라이언트명: ${body.input.clientName}\n\n분석 결과 JSON:\n${JSON.stringify(body.analysis, null, 2)}
 
