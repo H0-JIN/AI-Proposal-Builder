@@ -397,10 +397,20 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
     slide.addText(slideData.keyMessage, { x: 0.58, y: 1.28, w: 5.8, h: 0.45, fontSize: 12, color: '475569' });
     slide.addShape(pptx.ShapeType.rect, { x: 6.75, y: 0.72, w: 5.9, h: 3.6, fill: { color: 'E5E7EB' }, line: { color: 'CBD5E1', transparency: 20 } });
     slide.addText(slideData.imagePlaceholder, { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'middle', fontSize: 14, color: '64748B', bold: true });
-    slide.addText(slideData.bodyBullets.map((bullet) => `• ${bullet}`).join('\n'), { x: 0.75, y: 2.05, w: 5.55, h: 2.7, fontSize: 14, color: '111827', breakLine: false, fit: 'shrink', valign: 'top' });
-    slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 5.08, w: 11.95, h: 1.05, rectRadius: 0.08, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE' } });
-    slide.addText(`Visual: ${slideData.visualDirection}`, { x: 0.95, y: 5.22, w: 11.45, h: 0.28, fontSize: 9.5, color: '1D4ED8', fit: 'shrink' });
-    slide.addText(`Diagram: ${slideData.diagramSuggestion}`, { x: 0.95, y: 5.55, w: 11.45, h: 0.28, fontSize: 9.5, color: '1D4ED8', fit: 'shrink' });
+    const detailLines = [
+      `Visitor Action: ${slideData.visitorAction ?? '해당 없음'}`,
+      `Mechanism: ${slideData.contentMechanism ?? '해당 없음'}`,
+      `Placement: ${slideData.spatialPlacement ?? '해당 없음'}`,
+      `Media/Object: ${slideData.mediaOrObject ?? '해당 없음'}`,
+      `Output/Reward: ${slideData.outputOrReward ?? '해당 없음'}`,
+    ];
+    slide.addText(slideData.bodyBullets.map((bullet) => `• ${bullet}`).join('\n'), { x: 0.75, y: 1.9, w: 5.55, h: 2.0, fontSize: 13, color: '111827', breakLine: false, fit: 'shrink', valign: 'top' });
+    slide.addShape(pptx.ShapeType.roundRect, { x: 0.72, y: 4.05, w: 5.8, h: 1.0, rectRadius: 0.08, fill: { color: 'F8FAFC' }, line: { color: 'E2E8F0' } });
+    slide.addText(detailLines.join('\n'), { x: 0.95, y: 4.17, w: 5.35, h: 0.75, fontSize: 7.8, color: '334155', fit: 'shrink', valign: 'top' });
+    slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 5.15, w: 11.95, h: 1.05, rectRadius: 0.08, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE' } });
+    slide.addText(`Visual: ${slideData.visualDirection}`, { x: 0.95, y: 5.27, w: 5.65, h: 0.24, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
+    slide.addText(`Prompt: ${slideData.visualPrompt ?? slideData.imagePlaceholder}`, { x: 6.75, y: 5.27, w: 5.65, h: 0.24, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
+    slide.addText(`Diagram: ${slideData.diagramSuggestion}`, { x: 0.95, y: 5.65, w: 11.45, h: 0.28, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
     slide.addText(`${input.clientName} · ${proposalTypeLabels[input.proposalType]}`, { x: 0.55, y: 6.95, w: 5, h: 0.2, fontSize: 8, color: '94A3B8' });
   });
 
@@ -806,8 +816,16 @@ export default function Home() {
                   <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-700">
                     {slide.bodyBullets.map((bullet, index) => <li key={`${bullet}-${index}`}>{bullet}</li>)}
                   </ul>
+                  <div className="mt-4 grid gap-2 text-sm md:grid-cols-2">
+                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Visitor Action</span><br />{slide.visitorAction}</div>
+                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Content Mechanism</span><br />{slide.contentMechanism}</div>
+                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Spatial Placement</span><br />{slide.spatialPlacement}</div>
+                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Media / Object</span><br />{slide.mediaOrObject}</div>
+                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600 md:col-span-2"><span className="font-bold">Output / Reward</span><br />{slide.outputOrReward}</div>
+                  </div>
                   <div className="mt-4 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">비주얼 방향: {slide.visualDirection}</div>
                   <div className="mt-2 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">이미지: {slide.imagePlaceholder}</div>
+                  <div className="mt-2 rounded-2xl bg-purple-50 p-3 text-sm text-purple-700">Visual Prompt: {slide.visualPrompt}</div>
                   <div className="mt-2 rounded-2xl bg-blue-50 p-3 text-sm text-blue-700">다이어그램: {slide.diagramSuggestion}</div>
                   <div className="mt-2 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-700">발표 노트: {slide.speakerNote}</div>
                   {slide.confirmNeededNote && <div className="mt-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-800">확인 Note: {slide.confirmNeededNote}</div>}
