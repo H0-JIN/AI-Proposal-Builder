@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import {
@@ -12,7 +12,7 @@ import {
   validateExtractedText,
 } from '@/lib/extractedTextValidation';
 
-type Step = 'home' | 'create' | 'analysis' | 'outline' | 'slides';
+type Step = 'home' | 'create' | 'analysis' | 'concepts' | 'outline' | 'slides';
 
 type UploadNotice = {
   type: 'success' | 'warning' | 'error';
@@ -367,6 +367,8 @@ function appendUploadedDocument(document: UploadedDocument) {
     ...current,
     uploadedDocuments: [...(current.uploadedDocuments ?? []), document],
     analysis: undefined,
+    conceptCandidates: undefined,
+    selectedConcept: undefined,
     outline: undefined,
     slides: undefined,
   });
@@ -376,7 +378,7 @@ function safeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '_').trim() || 'proposal';
 }
 
-async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
+async function downloadPptx(input: ProjectInput, slides: SlideContent[], selectedConcept?: ConceptCandidate) {
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'AI Proposal Builder';
@@ -388,6 +390,8 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
     bodyFontFace: 'Arial',
   };
 
+  const selectedConceptLabel = selectedConcept ? `${selectedConcept.conceptNameKR} (${selectedConcept.conceptNameEN})` : '';
+
   slides.forEach((slideData) => {
     const slide = pptx.addSlide();
     slide.background = { color: 'FFFFFF' };
@@ -395,12 +399,25 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
     slide.addText(String(slideData.slideNumber).padStart(2, '0'), { x: 0.55, y: 0.35, w: 0.7, h: 0.3, fontSize: 11, color: '2563EB', bold: true });
     slide.addText(slideData.slideTitle, { x: 0.55, y: 0.7, w: 5.8, h: 0.55, fontSize: 24, bold: true, color: '111827', breakLine: false });
     slide.addText(slideData.keyMessage, { x: 0.58, y: 1.28, w: 5.8, h: 0.45, fontSize: 12, color: '475569' });
+    if (selectedConceptLabel && /core concept|key experience asset|spatial|content plan|media|interactive|콘셉트|핵심 체험|공간|콘텐츠|미디어|인터랙/i.test(`${slideData.slideType} ${slideData.slideTitle}`)) {
+      slide.addText(`Selected Concept: ${selectedConceptLabel}`, { x: 0.58, y: 1.68, w: 5.8, h: 0.22, fontSize: 8.5, color: '7C3AED', bold: true, fit: 'shrink' });
+    }
     slide.addShape(pptx.ShapeType.rect, { x: 6.75, y: 0.72, w: 5.9, h: 3.6, fill: { color: 'E5E7EB' }, line: { color: 'CBD5E1', transparency: 20 } });
     slide.addText(slideData.imagePlaceholder, { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'middle', fontSize: 14, color: '64748B', bold: true });
-    slide.addText(slideData.bodyBullets.map((bullet) => `• ${bullet}`).join('\n'), { x: 0.75, y: 2.05, w: 5.55, h: 2.7, fontSize: 14, color: '111827', breakLine: false, fit: 'shrink', valign: 'top' });
-    slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 5.08, w: 11.95, h: 1.05, rectRadius: 0.08, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE' } });
-    slide.addText(`Visual: ${slideData.visualDirection}`, { x: 0.95, y: 5.22, w: 11.45, h: 0.28, fontSize: 9.5, color: '1D4ED8', fit: 'shrink' });
-    slide.addText(`Diagram: ${slideData.diagramSuggestion}`, { x: 0.95, y: 5.55, w: 11.45, h: 0.28, fontSize: 9.5, color: '1D4ED8', fit: 'shrink' });
+    const detailLines = [
+      `Visitor Action: ${slideData.visitorAction ?? '해당 없음'}`,
+      `Mechanism: ${slideData.contentMechanism ?? '해당 없음'}`,
+      `Placement: ${slideData.spatialPlacement ?? '해당 없음'}`,
+      `Media/Object: ${slideData.mediaOrObject ?? '해당 없음'}`,
+      `Output/Reward: ${slideData.outputOrReward ?? '해당 없음'}`,
+    ];
+    slide.addText(slideData.bodyBullets.map((bullet) => `• ${bullet}`).join('\n'), { x: 0.75, y: 1.9, w: 5.55, h: 2.0, fontSize: 13, color: '111827', breakLine: false, fit: 'shrink', valign: 'top' });
+    slide.addShape(pptx.ShapeType.roundRect, { x: 0.72, y: 4.05, w: 5.8, h: 1.0, rectRadius: 0.08, fill: { color: 'F8FAFC' }, line: { color: 'E2E8F0' } });
+    slide.addText(detailLines.join('\n'), { x: 0.95, y: 4.17, w: 5.35, h: 0.75, fontSize: 7.8, color: '334155', fit: 'shrink', valign: 'top' });
+    slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 5.15, w: 11.95, h: 1.05, rectRadius: 0.08, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE' } });
+    slide.addText(`Visual: ${slideData.visualDirection}`, { x: 0.95, y: 5.27, w: 5.65, h: 0.24, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
+    slide.addText(`Prompt: ${slideData.visualPrompt ?? slideData.imagePlaceholder}`, { x: 6.75, y: 5.27, w: 5.65, h: 0.24, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
+    slide.addText(`Diagram: ${slideData.diagramSuggestion}`, { x: 0.95, y: 5.65, w: 11.45, h: 0.28, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
     slide.addText(`${input.clientName} · ${proposalTypeLabels[input.proposalType]}`, { x: 0.55, y: 6.95, w: 5, h: 0.2, fontSize: 8, color: '94A3B8' });
   });
 
@@ -422,6 +439,7 @@ export default function Home() {
         setState(parsed);
         if (parsed.slides?.length) setStep('slides');
         else if (parsed.outline?.length) setStep('outline');
+        else if (parsed.conceptCandidates?.length || parsed.selectedConcept) setStep('concepts');
         else if (parsed.analysis) setStep('analysis');
         else setStep('create');
       } catch {
@@ -443,7 +461,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, conceptCandidates: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -560,7 +578,7 @@ export default function Home() {
     setLoading('RFP/브리프 분석 중...');
     try {
       const analysis = await postJson<AnalysisResult>('/api/analyze', analysisInput);
-      setState((current) => ({ ...current, analysis, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, conceptCandidates: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
@@ -576,7 +594,7 @@ export default function Home() {
     setLoading('추가 정보를 반영해 RFP/브리프 재분석 중...');
     try {
       const analysis = await postJson<AnalysisResult>('/api/analyze', mergedInput);
-      setState((current) => ({ ...current, analysis, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, conceptCandidates: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
@@ -585,12 +603,31 @@ export default function Home() {
     }
   };
 
-  const runOutline = async () => {
+  const runConcepts = async () => {
     if (!state.analysis) return;
+    setError('');
+    setLoading('콘셉트 후보 생성 중...');
+    try {
+      const conceptCandidates = await postJson<ConceptCandidate[]>('/api/concepts', { input: analysisInput, analysis: state.analysis });
+      setState((current) => ({ ...current, conceptCandidates, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setStep('concepts');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '콘셉트 후보 생성 중 오류가 발생했습니다.');
+    } finally {
+      setLoading('');
+    }
+  };
+
+  const selectConcept = (concept: ConceptCandidate) => {
+    setState((current) => ({ ...current, selectedConcept: concept, outline: undefined, slides: undefined }));
+  };
+
+  const runOutline = async () => {
+    if (!state.analysis || !state.selectedConcept) return;
     setError('');
     setLoading('제안서 구조 생성 중...');
     try {
-      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis });
+      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept });
       setState((current) => ({ ...current, outline, slides: undefined }));
       setStep('outline');
     } catch (err) {
@@ -601,11 +638,11 @@ export default function Home() {
   };
 
   const runSlides = async () => {
-    if (!state.analysis || !state.outline) return;
+    if (!state.analysis || !state.outline || !state.selectedConcept) return;
     setError('');
     setLoading('장표별 문안 생성 중...');
     try {
-      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, outline: state.outline });
+      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, outline: state.outline, selectedConcept: state.selectedConcept });
       setState((current) => ({ ...current, slides }));
       setStep('slides');
     } catch (err) {
@@ -764,17 +801,82 @@ export default function Home() {
               {hasConfirmationNeeds ? (
                 <>
                   <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
-                  <SecondaryButton onClick={runOutline} disabled={Boolean(loading)}>정보 부족하지만 계속 생성하기</SecondaryButton>
+                  <SecondaryButton onClick={runConcepts} disabled={Boolean(loading)}>정보 부족하지만 콘셉트 후보 생성하기</SecondaryButton>
                 </>
               ) : (
-                <PrimaryButton onClick={runOutline} disabled={Boolean(loading)}>제안서 구조 생성</PrimaryButton>
+                <PrimaryButton onClick={runConcepts} disabled={Boolean(loading)}>콘셉트 후보 생성</PrimaryButton>
               )}
+            </div>
+          </SectionCard>
+        )}
+
+
+        {step === 'concepts' && state.analysis && (
+          <SectionCard title="콘셉트 후보 선택">
+            <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 text-blue-950">
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">Selected Concept</p>
+              {state.selectedConcept ? (
+                <div className="mt-2">
+                  <h3 className="text-2xl font-black">선택된 콘셉트: {state.selectedConcept.conceptNameEN}</h3>
+                  <p className="mt-1 font-bold">{state.selectedConcept.conceptNameKR}</p>
+                  <p className="mt-2 text-sm leading-6">{state.selectedConcept.oneLineDefinition}</p>
+                </div>
+              ) : (
+                <div className="mt-2">
+                  <h3 className="text-2xl font-black">제안서 구조 생성 전 콘셉트를 선택해주세요.</h3>
+                  <p className="mt-2 text-sm leading-6">선택한 콘셉트를 기준으로 Core Concept, 핵심 체험 자산, 공간/콘텐츠 구성, 미디어/인터랙션 계획과 장표 문안이 생성됩니다.</p>
+                </div>
+              )}
+            </div>
+
+            {state.conceptCandidates?.length ? (
+              <div className="mt-5 grid gap-4 md:grid-cols-3">
+                {state.conceptCandidates.map((concept) => {
+                  const isSelected = state.selectedConcept?.conceptId === concept.conceptId;
+                  return (
+                    <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${isSelected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-500/10' : 'border-slate-200 bg-white'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-600">{concept.conceptId}</p>
+                          <h3 className="mt-2 text-xl font-black text-slate-950">{concept.conceptNameKR}</h3>
+                          <p className="mt-1 text-sm font-bold text-slate-500">{concept.conceptNameEN}</p>
+                        </div>
+                        {isSelected && <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-bold text-white">선택됨</span>}
+                      </div>
+                      <div className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
+                        <p><span className="font-bold text-slate-950">한 줄 정의</span><br />{concept.oneLineDefinition}</p>
+                        <p><span className="font-bold text-slate-950">핵심 메시지</span><br />{concept.coreMessage}</p>
+                        <p><span className="font-bold text-slate-950">경험 구조</span><br />{concept.experienceLogic}</p>
+                        <p><span className="font-bold text-slate-950">타깃 적합성</span><br />{concept.targetRelevance}</p>
+                        <p><span className="font-bold text-slate-950">왜 적합한지</span><br />{concept.whyThisWorks}</p>
+                        <p><span className="font-bold text-slate-950">예상 핵심 체험 자산 방향</span><br />{concept.keyExperienceAssetDirection}</p>
+                      </div>
+                      <div className="mt-auto pt-5">
+                        <PrimaryButton onClick={() => selectConcept(concept)} disabled={Boolean(loading)}>{isSelected ? '선택 유지' : '이 콘셉트 선택'}</PrimaryButton>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-5 rounded-2xl border border-dashed border-slate-300 p-5 text-sm font-semibold text-slate-600">아직 생성된 콘셉트 후보가 없습니다. 콘셉트 후보를 다시 생성해주세요.</div>
+            )}
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <SecondaryButton onClick={() => setStep('analysis')}>분석 결과 보기</SecondaryButton>
+              <SecondaryButton onClick={runConcepts} disabled={Boolean(loading)}>콘셉트 다시 생성</SecondaryButton>
+              <PrimaryButton onClick={runOutline} disabled={Boolean(loading) || !state.selectedConcept}>제안서 구조 생성</PrimaryButton>
             </div>
           </SectionCard>
         )}
 
         {step === 'outline' && state.outline && (
           <SectionCard title="제안서 구조 생성 결과">
+            {state.selectedConcept && (
+              <div className="mb-5 rounded-2xl bg-purple-50 p-4 text-sm font-bold text-purple-800">
+                선택된 콘셉트: {state.selectedConcept.conceptNameEN} · {state.selectedConcept.conceptNameKR}
+              </div>
+            )}
             <div className="space-y-3">
               {state.outline.map((slide) => (
                 <article key={slide.slideNumber} className="rounded-2xl border border-slate-200 p-4">
@@ -787,7 +889,7 @@ export default function Home() {
               ))}
             </div>
             <div className="mt-6 flex gap-3">
-              <SecondaryButton onClick={() => setStep('analysis')}>분석 결과 보기</SecondaryButton>
+              <SecondaryButton onClick={() => setStep('concepts')}>콘셉트 선택 보기</SecondaryButton>
               <PrimaryButton onClick={runSlides} disabled={Boolean(loading)}>장표별 문안 생성</PrimaryButton>
             </div>
           </SectionCard>
@@ -795,6 +897,11 @@ export default function Home() {
 
         {step === 'slides' && state.slides && (
           <SectionCard title="장표별 문안 생성 결과">
+            {state.selectedConcept && (
+              <div className="mb-5 rounded-2xl bg-purple-50 p-4 text-sm font-bold text-purple-800">
+                선택된 콘셉트: {state.selectedConcept.conceptNameEN} · {state.selectedConcept.conceptNameKR}
+              </div>
+            )}
             <div className="grid gap-4 md:grid-cols-2">
               {state.slides.map((slide) => (
                 <article key={slide.slideNumber} className="rounded-3xl border border-slate-200 p-5">
@@ -806,8 +913,16 @@ export default function Home() {
                   <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-700">
                     {slide.bodyBullets.map((bullet, index) => <li key={`${bullet}-${index}`}>{bullet}</li>)}
                   </ul>
+                  <div className="mt-4 grid gap-2 text-sm md:grid-cols-2">
+                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Visitor Action</span><br />{slide.visitorAction}</div>
+                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Content Mechanism</span><br />{slide.contentMechanism}</div>
+                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Spatial Placement</span><br />{slide.spatialPlacement}</div>
+                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600"><span className="font-bold">Media / Object</span><br />{slide.mediaOrObject}</div>
+                    <div className="rounded-2xl bg-slate-100 p-3 text-slate-600 md:col-span-2"><span className="font-bold">Output / Reward</span><br />{slide.outputOrReward}</div>
+                  </div>
                   <div className="mt-4 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">비주얼 방향: {slide.visualDirection}</div>
                   <div className="mt-2 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">이미지: {slide.imagePlaceholder}</div>
+                  <div className="mt-2 rounded-2xl bg-purple-50 p-3 text-sm text-purple-700">Visual Prompt: {slide.visualPrompt}</div>
                   <div className="mt-2 rounded-2xl bg-blue-50 p-3 text-sm text-blue-700">다이어그램: {slide.diagramSuggestion}</div>
                   <div className="mt-2 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-700">발표 노트: {slide.speakerNote}</div>
                   {slide.confirmNeededNote && <div className="mt-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-800">확인 Note: {slide.confirmNeededNote}</div>}
@@ -816,7 +931,8 @@ export default function Home() {
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('outline')}>구조 보기</SecondaryButton>
-              <PrimaryButton onClick={() => downloadPptx(state.input, state.slides || [])}>PPTX 다운로드</PrimaryButton>
+              <SecondaryButton onClick={() => setStep('concepts')}>다른 콘셉트 선택</SecondaryButton>
+              <PrimaryButton onClick={() => downloadPptx(state.input, state.slides || [], state.selectedConcept)}>PPTX 다운로드</PrimaryButton>
             </div>
           </SectionCard>
         )}
