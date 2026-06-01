@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline } from '@/lib/types';
+import type { AnalysisResult, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 
@@ -16,6 +16,33 @@ const initialInput: ProjectInput = {
   clientName: '',
   briefText: '',
 };
+
+const initialSupplementalInfo: SupplementalInfo = {
+  projectPurpose: '',
+  spaceLocationScale: '',
+  targetCustomer: '',
+  experienceElements: '',
+  brandMessage: '',
+  schedule: '',
+  budgetScope: '',
+  designTone: '',
+  exclusions: '',
+};
+
+const supplementalInfoFields: { key: keyof SupplementalInfo; label: string; placeholder: string }[] = [
+  { key: 'projectPurpose', label: '프로젝트 목적', placeholder: '예: 신규 제품 인지도 확대, 방문 예약 전환, 브랜드 선호도 제고' },
+  { key: 'spaceLocationScale', label: '공간 위치 및 규모', placeholder: '예: 서울 성수동 150평, 4주 운영, 1층 단독 팝업 공간' },
+  { key: 'targetCustomer', label: '타깃 고객층', placeholder: '예: 25~35세 얼리어답터, 라이프스타일 관심 고객, VIP 초청객' },
+  { key: 'experienceElements', label: '필수 체험 요소', placeholder: '예: 인터랙티브 미디어월, 제품 데모, SNS 이벤트, 굿즈 존' },
+  { key: 'brandMessage', label: '제품 및 브랜드 핵심 메시지', placeholder: '예: 지속가능한 기술 혁신과 일상 속 프리미엄 경험' },
+  { key: 'schedule', label: '일정', placeholder: '예: 8월 말 오픈, 6주 준비, 2주 설치, 4주 운영' },
+  { key: 'budgetScope', label: '예산 및 제작 범위', placeholder: '예: 중간 규모 예산, 기획/디자인/시공/운영 포함, 매체 집행 제외' },
+  { key: 'designTone', label: '디자인 톤앤매너', placeholder: '예: 미니멀, 미래적, 친환경 소재감, 블루/실버 포인트' },
+  { key: 'exclusions', label: '제외 사항', placeholder: '예: 대규모 구조 변경 제외, 외부 광고 집행 제외, 과도한 사은품 지양' },
+];
+
+const supplementalInfoMarker = '--- 보완 입력 정보 ---';
+const shortBriefGuidance = '입력 정보가 부족하면 제안서가 일반적으로 생성될 수 있습니다. 실제 RFP 또는 추가 조건을 입력하면 결과 품질이 개선됩니다.';
 
 const sampleBrief = `현대 모빌리티 브랜드의 신규 전기차 라인업을 소개하는 4주간의 브랜드 체험관을 제안해 주세요.
 목표는 2030 고객에게 지속가능한 라이프스타일과 기술 혁신 이미지를 전달하는 것입니다.
@@ -157,6 +184,47 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
   );
 }
 
+
+function hasAnalysisConfirmationNeeds(analysis?: AnalysisResult) {
+  if (!analysis) return false;
+
+  const valuesToCheck = [
+    analysis.projectOverview,
+    analysis.clientChallenge,
+    analysis.targetInfo,
+    analysis.spatialCondition,
+    analysis.contentCondition,
+    ...analysis.requiredItems,
+    ...analysis.constraints,
+    ...analysis.missingInfo,
+  ];
+
+  return analysis.missingInfo.length > 0 || valuesToCheck.some((value) => value.includes('확인 필요'));
+}
+
+function buildSupplementalInfoBlock(info: SupplementalInfo) {
+  const lines = supplementalInfoFields
+    .map((field) => {
+      const value = info[field.key].trim();
+      return value ? `${field.label}: ${value}` : '';
+    })
+    .filter(Boolean);
+
+  return lines.length ? `${supplementalInfoMarker}\n${lines.join('\n')}` : '';
+}
+
+function mergeInputWithSupplementalInfo(input: ProjectInput, info: SupplementalInfo): ProjectInput {
+  const supplementalBlock = buildSupplementalInfoBlock(info);
+  if (!supplementalBlock) return input;
+
+  const originalBrief = input.briefText.split(supplementalInfoMarker)[0].trim();
+
+  return {
+    ...input,
+    briefText: `${originalBrief}\n\n${supplementalBlock}`.trim(),
+  };
+}
+
 function safeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '_').trim() || 'proposal';
 }
@@ -193,7 +261,7 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
 
 export default function Home() {
   const [step, setStep] = useState<Step>('home');
-  const [state, setState] = useState<ProposalState>({ input: initialInput });
+  const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo });
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
 
@@ -217,11 +285,21 @@ export default function Home() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
+  const supplementalInfo = state.supplementalInfo ?? initialSupplementalInfo;
   const canAnalyze = useMemo(() => state.input.projectName && state.input.clientName && state.input.briefText, [state.input]);
   const inputQuality = useMemo(() => assessInputQuality(state.input, step === 'analysis' ? state.analysis : undefined), [state.input, state.analysis, step]);
+  const hasConfirmationNeeds = useMemo(() => hasAnalysisConfirmationNeeds(state.analysis), [state.analysis]);
+  const shouldShowShortBriefGuidance = state.input.briefText.trim().length > 0 && state.input.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
     setState((current) => ({ ...current, input: { ...current.input, [key]: value } }));
+  };
+
+  const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
+    setState((current) => ({
+      ...current,
+      supplementalInfo: { ...(current.supplementalInfo ?? initialSupplementalInfo), [key]: value },
+    }));
   };
 
   const runAnalyze = async () => {
@@ -233,6 +311,22 @@ export default function Home() {
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
+    } finally {
+      setLoading('');
+    }
+  };
+
+  const rerunAnalyzeWithSupplementalInfo = async () => {
+    const mergedInput = mergeInputWithSupplementalInfo(state.input, supplementalInfo);
+
+    setError('');
+    setLoading('추가 정보를 반영해 RFP/브리프 재분석 중...');
+    try {
+      const analysis = await postJson<AnalysisResult>('/api/analyze', mergedInput);
+      setState((current) => ({ ...current, input: mergedInput, analysis, outline: undefined, slides: undefined }));
+      setStep('analysis');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
     } finally {
       setLoading('');
     }
@@ -270,7 +364,7 @@ export default function Home() {
 
   const reset = () => {
     window.localStorage.removeItem(STORAGE_KEY);
-    setState({ input: initialInput });
+    setState({ input: initialInput, supplementalInfo: initialSupplementalInfo });
     setStep('create');
     setError('');
   };
@@ -324,6 +418,11 @@ export default function Home() {
                 <span className="mb-2 block text-sm font-semibold text-slate-700">RFP / 프로젝트 브리프</span>
                 <textarea value={state.input.briefText} onChange={(event) => updateInput('briefText', event.target.value)} className="min-h-72 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500" placeholder={sampleBrief} />
               </label>
+              {shouldShowShortBriefGuidance && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-900 md:col-span-2">
+                  {shortBriefGuidance}
+                </div>
+              )}
             </div>
             <div className="mt-5">
               <InputQualityPanel quality={inputQuality} compact />
@@ -341,10 +440,42 @@ export default function Home() {
               <InputQualityPanel quality={inputQuality} />
               <KeyValueList data={state.analysis} />
             </div>
+            {hasConfirmationNeeds && (
+              <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">보완 입력 단계</p>
+                    <h3 className="mt-2 text-xl font-black text-amber-950">부족한 정보를 입력하면 AI 분석을 다시 실행할 수 있습니다.</h3>
+                    <p className="mt-2 text-sm leading-6 text-amber-900">
+                      missingInfo 또는 “확인 필요”로 표시된 조건을 아래 항목에 입력한 뒤 다시 분석하거나, 정보가 부족한 상태로 제안서 구조 생성을 계속할 수 있습니다.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-bold text-amber-900 shadow-sm">
+                    확인 필요 {state.analysis.missingInfo.length}건
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  {supplementalInfoFields.map((field) => (
+                    <label key={field.key} className="block">
+                      <span className="mb-2 block text-sm font-bold text-slate-800">{field.label}</span>
+                      <textarea
+                        value={supplementalInfo[field.key]}
+                        onChange={(event) => updateSupplementalInfo(field.key, event.target.value)}
+                        className="min-h-28 w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                        placeholder={field.placeholder}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('create')}>입력 수정</SecondaryButton>
-              {inputQuality.isInsufficient ? (
-                <PrimaryButton onClick={runOutline} disabled={Boolean(loading)}>그래도 생성하기</PrimaryButton>
+              {hasConfirmationNeeds ? (
+                <>
+                  <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
+                  <SecondaryButton onClick={runOutline} disabled={Boolean(loading)}>정보 부족하지만 계속 생성하기</SecondaryButton>
+                </>
               ) : (
                 <PrimaryButton onClick={runOutline} disabled={Boolean(loading)}>제안서 구조 생성</PrimaryButton>
               )}
