@@ -8,6 +8,24 @@ import { assessInputQuality } from '@/lib/inputQuality';
 
 type Step = 'home' | 'create' | 'analysis' | 'outline' | 'slides';
 
+type UploadNotice = {
+  type: 'success' | 'warning' | 'error';
+  message: string;
+};
+
+type ExtractTextResponse = {
+  text?: string;
+  warning?: string;
+  error?: string;
+};
+
+const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const MIN_EXTRACTED_TEXT_LENGTH = 100;
+const clientReadableExtensions = ['txt', 'md'];
+const serverReadableExtensions = ['pdf', 'docx'];
+const genericExtractionFailureMessage = '파일에서 텍스트를 추출하지 못했습니다. 텍스트를 직접 입력해주세요.';
+const shortExtractedTextWarningMessage = '추출된 텍스트가 부족합니다. 파일이 스캔본이거나 이미지 중심 자료일 수 있습니다.';
+
 const STORAGE_KEY = 'ai-proposal-builder-state';
 
 const initialInput: ProjectInput = {
@@ -230,6 +248,58 @@ function mergeInputWithSupplementalInfo(input: ProjectInput, info: SupplementalI
   };
 }
 
+
+function getFileExtension(fileName: string) {
+  return fileName.split('.').pop()?.toLowerCase() ?? '';
+}
+
+function getUploadExtension(file: File) {
+  const extension = getFileExtension(file.name);
+
+  if (file.type === 'application/pdf') return 'pdf';
+  if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
+
+  return extension;
+}
+
+function getTextValidityIssue(text: string) {
+  const trimmedText = text.trim();
+  const firstChunk = trimmedText.slice(0, 16);
+
+  if (/^(%PDF|PK\u0003\u0004|PK\u0005\u0006|PK\u0007\u0008)/.test(firstChunk)) {
+    return genericExtractionFailureMessage;
+  }
+
+  if (trimmedText.length < MIN_EXTRACTED_TEXT_LENGTH) {
+    return shortExtractedTextWarningMessage;
+  }
+
+  const nonWhitespaceChars = Array.from(trimmedText).filter((character) => !/\s/.test(character));
+  if (!nonWhitespaceChars.length) return genericExtractionFailureMessage;
+
+  const readableChars = nonWhitespaceChars.filter((character) => /[A-Za-z0-9가-힣ㄱ-ㅎㅏ-ㅣ.,!?;:'"()\[\]{}<>/@#$%^&*_=+\-~`|\\·…•、。！？；：，.《》〈〉「」『』‐-―‘-”　]/u.test(character));
+  const suspiciousChars = nonWhitespaceChars.filter((character) => /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\uFFFD]/u.test(character));
+  const readableRatio = readableChars.length / nonWhitespaceChars.length;
+  const suspiciousRatio = suspiciousChars.length / nonWhitespaceChars.length;
+
+  if (readableRatio < 0.65 || suspiciousRatio > 0.02) {
+    return genericExtractionFailureMessage;
+  }
+
+  return '';
+}
+
+function buildUploadedBriefText(currentText: string, extractedText: string, fileName: string) {
+  const trimmedCurrentText = currentText.trim();
+  const trimmedExtractedText = extractedText.trim();
+  const uploadedBlock = `--- 업로드 파일: ${fileName} ---
+${trimmedExtractedText}`;
+
+  return trimmedCurrentText ? `${trimmedCurrentText}
+
+${uploadedBlock}` : trimmedExtractedText;
+}
+
 function safeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '_').trim() || 'proposal';
 }
@@ -269,6 +339,7 @@ export default function Home() {
   const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo });
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -305,6 +376,85 @@ export default function Home() {
       ...current,
       supplementalInfo: { ...(current.supplementalInfo ?? initialSupplementalInfo), [key]: value },
     }));
+  };
+
+
+  const applyExtractedText = (text: string, fileName: string) => {
+    const validityIssue = getTextValidityIssue(text);
+    if (validityIssue) {
+      setUploadNotice({
+        type: validityIssue === shortExtractedTextWarningMessage ? 'warning' : 'error',
+        message: validityIssue,
+      });
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      input: {
+        ...current.input,
+        briefText: buildUploadedBriefText(current.input.briefText, text, fileName),
+      },
+      analysis: undefined,
+      outline: undefined,
+      slides: undefined,
+    }));
+
+    setUploadNotice({
+      type: 'success',
+      message: '파일에서 텍스트를 추출해 브리프 입력창에 반영했습니다. 내용을 확인 후 AI 분석을 진행해주세요.',
+    });
+  };
+
+  const handleBriefFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setError('');
+    setUploadNotice(null);
+
+    if (file.size > MAX_UPLOAD_FILE_SIZE_BYTES) {
+      setUploadNotice({ type: 'error', message: '파일 크기가 너무 큽니다. 10MB 이하 파일을 업로드해주세요.' });
+      return;
+    }
+
+    const extension = getUploadExtension(file);
+    if (![...clientReadableExtensions, ...serverReadableExtensions].includes(extension)) {
+      setUploadNotice({ type: 'error', message: '지원하지 않는 파일 형식입니다. PDF, DOCX, TXT, MD 파일을 업로드해주세요.' });
+      return;
+    }
+
+    setLoading('파일 텍스트 추출 중...');
+
+    try {
+      if (clientReadableExtensions.includes(extension)) {
+        const text = (await file.text()).trim();
+        if (!text) {
+          setUploadNotice({ type: 'error', message: genericExtractionFailureMessage });
+          return;
+        }
+
+        applyExtractedText(text, file.name);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch('/api/extract-text', { method: 'POST', body: formData });
+      const data = (await response.json()) as ExtractTextResponse;
+
+      if (!response.ok || !data.text) {
+        setUploadNotice({ type: data.error === shortExtractedTextWarningMessage ? 'warning' : 'error', message: data.error || genericExtractionFailureMessage });
+        return;
+      }
+
+      applyExtractedText(data.text, file.name);
+    } catch {
+      setUploadNotice({ type: 'error', message: genericExtractionFailureMessage });
+    } finally {
+      setLoading('');
+    }
   };
 
   const runAnalyze = async () => {
@@ -372,6 +522,7 @@ export default function Home() {
     setState({ input: initialInput, supplementalInfo: initialSupplementalInfo });
     setStep('create');
     setError('');
+    setUploadNotice(null);
   };
 
   return (
@@ -419,6 +570,38 @@ export default function Home() {
                 <span className="mb-2 block text-sm font-semibold text-slate-700">클라이언트명</span>
                 <input value={state.input.clientName} onChange={(event) => updateInput('clientName', event.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500" placeholder="예: Hyundai Motor Company" />
               </label>
+              <div className="rounded-3xl border border-dashed border-blue-200 bg-blue-50/60 p-5 md:col-span-2">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">RFP / 전달자료 업로드</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, DOCX, TXT, MD</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">업로드된 파일은 텍스트 추출에만 사용되며 원본 파일은 저장하지 않습니다.</p>
+                  </div>
+                  <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-bold text-blue-700 shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50">
+                    파일 선택
+                    <input
+                      type="file"
+                      accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+                      onChange={handleBriefFileUpload}
+                      disabled={Boolean(loading)}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
+                {uploadNotice && (
+                  <div
+                    className={`mt-4 rounded-2xl border p-4 text-sm font-semibold leading-6 ${
+                      uploadNotice.type === 'success'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                        : uploadNotice.type === 'warning'
+                          ? 'border-amber-200 bg-amber-50 text-amber-900'
+                          : 'border-red-200 bg-red-50 text-red-700'
+                    }`}
+                  >
+                    {uploadNotice.message}
+                  </div>
+                )}
+              </div>
               <label className="block md:col-span-2">
                 <span className="mb-2 block text-sm font-semibold text-slate-700">RFP / 프로젝트 브리프</span>
                 <textarea value={state.input.briefText} onChange={(event) => updateInput('briefText', event.target.value)} className="min-h-72 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500" placeholder={sampleBrief} />
