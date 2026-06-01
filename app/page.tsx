@@ -113,11 +113,9 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
   pptx.subject = `${input.clientName} ${input.projectName}`;
   pptx.title = input.projectName;
   pptx.company = input.clientName;
-  pptx.lang = 'ko-KR';
   pptx.theme = {
     headFontFace: 'Arial',
     bodyFontFace: 'Arial',
-    lang: 'ko-KR',
   };
 
   slides.forEach((slideData) => {
@@ -128,7 +126,7 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[]) {
     slide.addText(slideData.title, { x: 0.55, y: 0.7, w: 5.8, h: 0.55, fontSize: 24, bold: true, color: '111827', breakLine: false });
     slide.addText(slideData.subtitle, { x: 0.58, y: 1.28, w: 5.8, h: 0.45, fontSize: 12, color: '475569' });
     slide.addShape(pptx.ShapeType.rect, { x: 6.75, y: 0.72, w: 5.9, h: 3.6, fill: { color: 'E5E7EB' }, line: { color: 'CBD5E1', transparency: 20 } });
-    slide.addText(slideData.imagePlaceholder, { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'mid', fontSize: 14, color: '64748B', bold: true });
+    slide.addText(slideData.imagePlaceholder, { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'middle', fontSize: 14, color: '64748B', bold: true });
     slide.addText(slideData.bodyBullets.map((bullet) => `• ${bullet}`).join('\n'), { x: 0.75, y: 2.05, w: 5.55, h: 2.7, fontSize: 14, color: '111827', breakLine: false, fit: 'shrink', valign: 'top' });
     slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 5.25, w: 11.95, h: 0.82, rectRadius: 0.08, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE' } });
     slide.addText(`Diagram: ${slideData.diagramSuggestion}`, { x: 0.95, y: 5.47, w: 11.45, h: 0.35, fontSize: 11, color: '1D4ED8', fit: 'shrink' });
