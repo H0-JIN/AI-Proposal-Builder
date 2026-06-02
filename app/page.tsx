@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import {
@@ -275,7 +275,12 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
           ['참고 사례 / Reference Only', data.referenceOnly],
           ['기존 자산', data.existingAssets],
           ['과업 범위 제외', data.doNotTreatAsScope],
-          ['KPI', data.kpiObjectives],
+          ['목표 KPI (targetKPI)', data.numericInfo?.targetKPI ?? data.kpiObjectives],
+          ['측정 항목 제안', data.numericInfo?.proposedMeasurement ?? []],
+          ['기존 성과 수치', data.numericInfo?.pastPerformance ?? []],
+          ['레슨런드 수치', data.numericInfo?.lessonLearned ?? []],
+          ['현재 문제 수치', data.numericInfo?.currentIssue ?? []],
+          ['참고 지표', data.numericInfo?.referenceMetric ?? []],
           ['일정', data.schedule],
           ['제약 조건', data.constraints],
           ['KPI/일정/제약', data.kpiScheduleConstraints],
@@ -300,6 +305,68 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
   );
 }
 
+
+
+function scoreSummary(concept: ConceptCandidate) {
+  const scores = concept.evaluationScores;
+  if (!scores) return '평가 점수 없음';
+
+  return [
+    `RFP ${scores.rfpFitScore}`,
+    `타깃 ${scores.targetFitScore}`,
+    `차별화 ${scores.differentiationScore}`,
+    `공간 ${scores.spatialFeasibilityScore}`,
+    `확산 ${scores.viralPotentialScore}`,
+    `운영 ${scores.operationFeasibilityScore}`,
+  ].join(' / ');
+}
+
+function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLogic }) {
+  if (!logic) return null;
+
+  const rows = [
+    ['핵심 과제', logic.coreChallenge],
+    ['타깃 인사이트', logic.targetInsight],
+    ['브랜드/제품 가치', logic.brandOrProductValue],
+    ['공간 기회', logic.spatialOpportunity],
+    ['경험 기회', logic.experienceOpportunity],
+  ];
+
+  return (
+    <div className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50 p-5 text-indigo-950">
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Concept Development Logic</p>
+      <h3 className="mt-2 text-xl font-black">RFP 분석 기반 콘셉트 도출 기준</h3>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="rounded-2xl bg-white/80 p-3 text-sm leading-6">
+            <p className="font-black text-indigo-800">{label}</p>
+            <p>{value}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-2xl bg-white/80 p-3 text-sm leading-6">
+        <p className="font-black text-indigo-800">컨셉 개발 기준</p>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          {logic.conceptDevelopmentCriteria.map((criterion, index) => <li key={`${criterion}-${index}`}>{criterion}</li>)}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function ConceptRecommendationPanel({ recommendation }: { recommendation?: ConceptRecommendation }) {
+  if (!recommendation) return null;
+
+  return (
+    <div className="mt-6 rounded-3xl border border-emerald-100 bg-emerald-50 p-5 text-emerald-950">
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-emerald-700">AI Recommendation</p>
+      <h3 className="mt-2 text-xl font-black">AI 추천 콘셉트: {recommendation.recommendedConceptId}</h3>
+      <p className="mt-3 text-sm leading-6"><span className="font-black">추천 이유</span><br />{recommendation.recommendationReason}</p>
+      <p className="mt-3 text-sm leading-6"><span className="font-black">다른 후보 보류 이유</span><br />{recommendation.whyNotOthers}</p>
+      <p className="mt-3 rounded-2xl bg-white/80 px-4 py-3 text-sm font-bold text-emerald-800">AI 추천은 참고용이며, 최종 선택은 사용자가 직접 진행합니다.</p>
+    </div>
+  );
+}
 
 function hasAnalysisConfirmationNeeds(analysis?: AnalysisResult) {
   if (!analysis) return false;
@@ -326,6 +393,8 @@ function hasAnalysisConfirmationNeeds(analysis?: AnalysisResult) {
     ...(analysis.existingAssets ?? []),
     ...(analysis.doNotTreatAsScope ?? []),
     ...(analysis.kpiObjectives ?? []),
+    ...(analysis.numericInfo?.targetKPI ?? []),
+    ...(analysis.numericInfo?.proposedMeasurement ?? []),
     ...(analysis.schedule ?? []),
     ...(analysis.confirmNeeded ?? []),
     ...analysis.constraints,
@@ -393,7 +462,9 @@ function appendUploadedDocument(document: UploadedDocument) {
     ...current,
     uploadedDocuments: [...(current.uploadedDocuments ?? []), document],
     analysis: undefined,
+    conceptDevelopmentLogic: undefined,
     conceptCandidates: undefined,
+    conceptRecommendation: undefined,
     selectedConcept: undefined,
     outline: undefined,
     slides: undefined,
@@ -430,10 +501,10 @@ function buildStructuredSlideLines(slide: SlideContent) {
   ].filter(Boolean) as string[]) ?? [];
 
   const productLines = slide.productExperienceDetails?.flatMap((product) => [
-    `[${product.productCode}] ${product.experienceTitle || product.productNameOrRole}`,
+    `[${product.productCode}] ${product.experienceTitle || product.productRole}`,
     labelValue('Mission', product.visitorMission),
     labelValue('Visitor Action', product.visitorAction),
-    labelValue('Mechanism', product.contentMechanism),
+    labelValue('System Response', product.systemResponse),
     labelValue('Placement', product.spatialPlacement),
     labelValue('Media/Object', product.mediaOrObject),
     labelValue('Output/Reward', product.outputOrReward),
@@ -550,7 +621,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, conceptCandidates: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -667,7 +738,7 @@ export default function Home() {
     setLoading('RFP/브리프 분석 중...');
     try {
       const analysis = await postJson<AnalysisResult>('/api/analyze', analysisInput);
-      setState((current) => ({ ...current, analysis, conceptCandidates: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
@@ -683,7 +754,7 @@ export default function Home() {
     setLoading('추가 정보를 반영해 RFP/브리프 재분석 중...');
     try {
       const analysis = await postJson<AnalysisResult>('/api/analyze', mergedInput);
-      setState((current) => ({ ...current, analysis, conceptCandidates: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
@@ -697,8 +768,16 @@ export default function Home() {
     setError('');
     setLoading('콘셉트 후보 3안 생성 중...');
     try {
-      const conceptCandidates = await postJson<ConceptCandidate[]>('/api/concepts', { input: analysisInput, analysis: state.analysis });
-      setState((current) => ({ ...current, conceptCandidates, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', { input: analysisInput, analysis: state.analysis });
+      setState((current) => ({
+        ...current,
+        conceptDevelopmentLogic: conceptResult.conceptDevelopmentLogic,
+        conceptCandidates: conceptResult.concepts,
+        conceptRecommendation: conceptResult.recommendation,
+        selectedConcept: undefined,
+        outline: undefined,
+        slides: undefined,
+      }));
       setStep('concepts');
     } catch (err) {
       setError(err instanceof Error ? err.message : '콘셉트 후보 생성 중 오류가 발생했습니다.');
@@ -716,7 +795,7 @@ export default function Home() {
     setError('');
     setLoading('제안서 구조 생성 중...');
     try {
-      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept });
+      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptCandidates: state.conceptCandidates, conceptRecommendation: state.conceptRecommendation });
       setState((current) => ({ ...current, outline, slides: undefined }));
       setStep('outline');
     } catch (err) {
@@ -731,7 +810,7 @@ export default function Home() {
     setError('');
     setLoading('장표별 문안 생성 중...');
     try {
-      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: state.outline });
+      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: state.outline, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptCandidates: state.conceptCandidates, conceptRecommendation: state.conceptRecommendation });
       setState((current) => ({ ...current, slides }));
       setStep('slides');
     } catch (err) {
@@ -913,6 +992,8 @@ export default function Home() {
                 </p>
               )}
             </div>
+            <ConceptDevelopmentLogicPanel logic={state.conceptDevelopmentLogic} />
+            <ConceptRecommendationPanel recommendation={state.conceptRecommendation} />
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
               {state.conceptCandidates.map((concept) => {
                 const selected = state.selectedConcept?.conceptId === concept.conceptId;
@@ -925,8 +1006,10 @@ export default function Home() {
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
                       <div><dt className="font-black text-slate-950">핵심 메시지</dt><dd>{concept.coreMessage}</dd></div>
                       <div><dt className="font-black text-slate-950">경험 구조</dt><dd>{concept.experienceLogic}</dd></div>
-                      <div><dt className="font-black text-slate-950">왜 적합한지</dt><dd>{concept.whyThisWorks}</dd></div>
                       <div><dt className="font-black text-slate-950">예상 핵심 체험 자산 방향</dt><dd>{concept.keyExperienceAssetDirection}</dd></div>
+                      <div><dt className="font-black text-slate-950">강점</dt><dd>{concept.whyThisWorks}</dd></div>
+                      <div><dt className="font-black text-slate-950">리스크</dt><dd>{concept.riskOrCaution}</dd></div>
+                      <div><dt className="font-black text-slate-950">평가 점수 요약</dt><dd>{scoreSummary(concept)}</dd></div>
                     </dl>
                     <button
                       onClick={() => selectConcept(concept)}

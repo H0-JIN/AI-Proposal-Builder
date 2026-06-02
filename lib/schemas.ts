@@ -34,6 +34,21 @@ const taskSectionSchema = {
   ],
 } as const;
 
+
+const numericInfoSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    pastPerformance: stringArray,
+    lessonLearned: stringArray,
+    currentIssue: stringArray,
+    targetKPI: stringArray,
+    referenceMetric: stringArray,
+    proposedMeasurement: stringArray,
+  },
+  required: ['pastPerformance', 'lessonLearned', 'currentIssue', 'targetKPI', 'referenceMetric', 'proposedMeasurement'],
+} as const;
+
 const analysisSectionSchema = {
   type: 'object',
   additionalProperties: false,
@@ -58,6 +73,7 @@ export const analysisJsonSchema = {
     existingAssets: stringArray,
     productInfo: stringArray,
     kpiObjectives: stringArray,
+    numericInfo: numericInfoSchema,
     constraints: stringArray,
     schedule: stringArray,
     doNotTreatAsScope: stringArray,
@@ -83,6 +99,7 @@ export const analysisJsonSchema = {
     'existingAssets',
     'productInfo',
     'kpiObjectives',
+    'numericInfo',
     'constraints',
     'schedule',
     'doNotTreatAsScope',
@@ -101,10 +118,53 @@ export const analysisJsonSchema = {
 } as const;
 
 
+const conceptDevelopmentLogicSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    coreChallenge: { type: 'string' },
+    targetInsight: { type: 'string' },
+    brandOrProductValue: { type: 'string' },
+    spatialOpportunity: { type: 'string' },
+    experienceOpportunity: { type: 'string' },
+    conceptDevelopmentCriteria: { type: 'array', minItems: 4, maxItems: 6, items: { type: 'string' } },
+  },
+  required: [
+    'coreChallenge',
+    'targetInsight',
+    'brandOrProductValue',
+    'spatialOpportunity',
+    'experienceOpportunity',
+    'conceptDevelopmentCriteria',
+  ],
+} as const;
+
+const conceptEvaluationScoresSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    rfpFitScore: { type: 'number', minimum: 1, maximum: 5 },
+    targetFitScore: { type: 'number', minimum: 1, maximum: 5 },
+    differentiationScore: { type: 'number', minimum: 1, maximum: 5 },
+    spatialFeasibilityScore: { type: 'number', minimum: 1, maximum: 5 },
+    viralPotentialScore: { type: 'number', minimum: 1, maximum: 5 },
+    operationFeasibilityScore: { type: 'number', minimum: 1, maximum: 5 },
+  },
+  required: [
+    'rfpFitScore',
+    'targetFitScore',
+    'differentiationScore',
+    'spatialFeasibilityScore',
+    'viralPotentialScore',
+    'operationFeasibilityScore',
+  ],
+} as const;
+
 export const conceptCandidatesJsonSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    conceptDevelopmentLogic: conceptDevelopmentLogicSchema,
     concepts: {
       type: 'array',
       minItems: 3,
@@ -119,9 +179,15 @@ export const conceptCandidatesJsonSchema = {
           oneLineDefinition: { type: 'string' },
           coreMessage: { type: 'string' },
           experienceLogic: { type: 'string' },
-          targetRelevance: { type: 'string' },
           keyExperienceAssetDirection: { type: 'string' },
+          targetRelevance: { type: 'string' },
+          spatialApplication: { type: 'string' },
+          mediaInteractionPotential: { type: 'string' },
+          viralPotential: { type: 'string' },
+          executionFeasibility: { type: 'string' },
           whyThisWorks: { type: 'string' },
+          riskOrCaution: { type: 'string' },
+          evaluationScores: conceptEvaluationScoresSchema,
         },
         required: [
           'conceptId',
@@ -130,14 +196,30 @@ export const conceptCandidatesJsonSchema = {
           'oneLineDefinition',
           'coreMessage',
           'experienceLogic',
-          'targetRelevance',
           'keyExperienceAssetDirection',
+          'targetRelevance',
+          'spatialApplication',
+          'mediaInteractionPotential',
+          'viralPotential',
+          'executionFeasibility',
           'whyThisWorks',
+          'riskOrCaution',
+          'evaluationScores',
         ],
       },
     },
+    recommendation: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        recommendedConceptId: { type: 'string' },
+        recommendationReason: { type: 'string' },
+        whyNotOthers: { type: 'string' },
+      },
+      required: ['recommendedConceptId', 'recommendationReason', 'whyNotOthers'],
+    },
   },
-  required: ['concepts'],
+  required: ['conceptDevelopmentLogic', 'concepts', 'recommendation'],
 } as const;
 
 export const outlineJsonSchema = {
@@ -172,13 +254,13 @@ const productExperienceDetailSchema = {
   additionalProperties: false,
   properties: {
     productCode: { type: 'string' },
-    productNameOrRole: { type: 'string' },
+    productRole: { type: 'string' },
     coreValue: { type: 'string' },
     experienceTitle: { type: 'string' },
     oneLineExperience: { type: 'string' },
     visitorMission: { type: 'string' },
     visitorAction: { type: 'string' },
-    contentMechanism: { type: 'string' },
+    systemResponse: { type: 'string' },
     mediaOrObject: { type: 'string' },
     spatialPlacement: { type: 'string' },
     outputOrReward: { type: 'string' },
@@ -189,13 +271,13 @@ const productExperienceDetailSchema = {
   },
   required: [
     'productCode',
-    'productNameOrRole',
+    'productRole',
     'coreValue',
     'experienceTitle',
     'oneLineExperience',
     'visitorMission',
     'visitorAction',
-    'contentMechanism',
+    'systemResponse',
     'mediaOrObject',
     'spatialPlacement',
     'outputOrReward',
