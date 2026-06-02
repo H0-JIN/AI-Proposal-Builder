@@ -6,13 +6,10 @@ import {
   validateExtractedText,
 } from '@/lib/extractedTextValidation';
 import { getOpenAIClient } from '@/lib/openai';
+import { DEFAULT_VISION_MODE, DEFAULT_VISION_PAGE_LIMIT, getVisionPageLimit, VISION_ROUTE_TIMEOUT_MS, type VisionMode } from '@/lib/visionConfig';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const DEFAULT_PAGE_LIMIT = 10;
-
 export const maxDuration = 60;
-
-type VisionMode = 'first10';
 
 type VisionErrorCode =
   | 'PDF_RECEIVE_FAILED'
@@ -37,8 +34,6 @@ type VisionJsonPayload = {
   status?: 'success' | 'partial' | 'failed';
   guidance?: string;
 };
-
-const VISION_ROUTE_TIMEOUT_MS = 52_000;
 
 function jsonSuccess(payload: Omit<VisionJsonPayload, 'ok'>, status = 200) {
   return NextResponse.json({ ok: true, ...payload }, { status });
@@ -184,7 +179,7 @@ export async function POST(request: Request) {
     try {
       formData = await request.formData();
       file = formData.get('file');
-      mode = (formData.get('mode')?.toString() || 'first10') as VisionMode;
+      mode = (formData.get('mode')?.toString() || DEFAULT_VISION_MODE) as VisionMode;
     } catch (receiveError) {
       const details = getErrorMessage(receiveError, 'PDF 파일 수신 중 알 수 없는 오류가 발생했습니다.');
       console.error('pdf receive failed', { error: details });
@@ -207,8 +202,9 @@ export async function POST(request: Request) {
       return jsonFailure('PDF_RECEIVE_FAILED', 'Vision 분석은 PDF 파일만 지원합니다.', `received extension: ${getExtension(file.name) || 'none'}`, 400);
     }
 
-    if (mode !== 'first10') {
-      return jsonFailure('PDF_RECEIVE_FAILED', '현재 MVP에서는 앞 10페이지 Vision 분석만 지원합니다.', `received mode: ${mode}`, 400);
+    const pageLimit = getVisionPageLimit(mode);
+    if (!pageLimit) {
+      return jsonFailure('PDF_RECEIVE_FAILED', `현재 MVP에서는 앞 ${DEFAULT_VISION_PAGE_LIMIT}페이지 Vision 분석만 지원합니다.`, `received mode: ${mode}`, 400);
     }
 
     let buffer: Buffer;
@@ -217,7 +213,7 @@ export async function POST(request: Request) {
       console.info('pdf image conversion started', { fileName, mode });
       buffer = Buffer.from(await file.arrayBuffer());
       pageCount = getPageCount(buffer);
-      processedPageCount = Math.min(pageCount ?? DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_LIMIT);
+      processedPageCount = Math.min(pageCount ?? pageLimit, pageLimit);
       console.info('pdf image conversion completed', { fileName, pageCount, processedPageCount });
     } catch (conversionError) {
       const details = getErrorMessage(conversionError, 'PDF 페이지 이미지 변환 중 알 수 없는 오류가 발생했습니다.');
