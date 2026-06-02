@@ -52,6 +52,7 @@ export interface UploadedDocument {
   extractedCharCount: number;
   visionUsed?: boolean;
   visionPageCount?: number;
+  visionTotalPageCount?: number;
   visionAnalysis?: VisionPageAnalysis[];
   ocrUsed?: boolean;
   ocrAvailable?: boolean;

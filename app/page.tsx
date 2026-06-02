@@ -43,6 +43,7 @@ type VisionPdfResponse = {
   error?: string;
   guidance?: string;
   processedPageCount?: number;
+  pageCount?: number;
 };
 
 
@@ -195,6 +196,23 @@ function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<t
 }
 
 
+function getVisionAnalysisLabel(document: UploadedDocument) {
+  if (document.extractionStatus === '이미지 중심 PDF로 판단' && document.visionUsed) return '분석 중';
+  if (document.extractionStatus === 'Vision 분석 완료') return '사용';
+  if (document.extractionStatus === 'Vision 분석 실패') return '실패';
+  return document.visionUsed ? '사용' : '미사용';
+}
+
+function getVisionPageLabel(document: UploadedDocument) {
+  if (document.extractionStatus === '이미지 중심 PDF로 판단' && document.visionUsed) {
+    return `${document.visionPageCount ?? 0}/${document.visionTotalPageCount ?? 10}`;
+  }
+
+  if (document.visionPageCount !== undefined) return `${document.visionPageCount}p`;
+
+  return '-';
+}
+
 function UploadedDocumentsList({
   documents,
 }: {
@@ -250,10 +268,10 @@ function UploadedDocumentsList({
               {document.warningMessage && <p className="mt-2 text-xs leading-5 text-slate-500">{document.warningMessage}</p>}
             </div>
             <div className="col-span-4 text-center text-xs font-bold md:col-span-2">
-              {document.visionUsed ? '사용' : '미사용'}
+              {getVisionAnalysisLabel(document)}
             </div>
             <div className="col-span-4 text-center text-xs font-bold tabular-nums md:col-span-1">
-              {document.visionPageCount ? `${document.visionPageCount}p` : '-'}
+              {getVisionPageLabel(document)}
             </div>
             <div className="col-span-4 text-right font-semibold tabular-nums md:col-span-2">
               {document.extractedCharCount.toLocaleString()}자
@@ -707,7 +725,7 @@ export default function Home() {
     extractionStatus: ExtractionStatus,
     extractedText = '',
     warningMessage?: string,
-    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionUsed' | 'visionPageCount' | 'documentAnalysisText' | 'visionAnalysis'> = {},
+    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'documentAnalysisText' | 'visionAnalysis'> = {},
   ): UploadedDocument => ({
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     fileName: file.name,
@@ -718,6 +736,7 @@ export default function Home() {
     extractedCharCount: (options.documentAnalysisText || extractedText).length,
     visionUsed: options.visionUsed ?? false,
     visionPageCount: options.visionPageCount,
+    visionTotalPageCount: options.visionTotalPageCount,
     visionAnalysis: options.visionAnalysis,
     ocrUsed: options.ocrUsed ?? false,
     ocrAvailable: options.ocrAvailable ?? false,
@@ -725,21 +744,21 @@ export default function Home() {
   });
 
   const runAutomaticVisionAnalysis = async (documentId: string, file: File, textPrefix = '') => {
-    updateUploadedDocument(documentId, {
-      extractionStatus: '이미지 중심 PDF로 판단',
-      warningMessage: `${VISION_REQUIRED_MESSAGE} · ${VISION_PROCESSING_PAGE_LIMIT_MESSAGE}`,
-    });
-    setUploadNotice({
-      type: 'warning',
-      message: `${VISION_PROCESSING_GUIDANCE} ${VISION_PROCESSING_PAGE_LIMIT_MESSAGE}`,
-    });
-    setLoading('PDF Vision 분석 중...');
+    const targetPageCount = 10;
+    const processingMessage = `${VISION_PROCESSING_GUIDANCE} ${VISION_PROCESSING_PAGE_LIMIT_MESSAGE}`;
 
     updateUploadedDocument(documentId, {
-      extractionStatus: 'Vision 분석 중',
+      extractionStatus: '이미지 중심 PDF로 판단',
+      extractedText: textPrefix,
+      extractedCharCount: textPrefix.length,
       visionUsed: true,
-      warningMessage: `${VISION_PROCESSING_GUIDANCE} ${VISION_PROCESSING_PAGE_LIMIT_MESSAGE}`,
+      visionPageCount: 0,
+      visionTotalPageCount: targetPageCount,
+      ocrAvailable: false,
+      warningMessage: processingMessage,
     });
+    setUploadNotice({ type: 'warning', message: processingMessage });
+    setLoading('PDF Vision 분석 중...');
 
     try {
       const formData = new FormData();
@@ -749,11 +768,16 @@ export default function Home() {
       const data = (await response.json()) as VisionPdfResponse;
       const visionText = data.documentAnalysisText || data.text || '';
       const validation = validateExtractedText(visionText);
-      const nextStatus: ExtractionStatus = response.ok && data.status === 'success' && validation.ok ? 'Vision 분석 완료' : 'Vision 분석 실패';
-      const combinedText = [textPrefix.trim(), validation.ok ? validation.text : visionText.trim()].filter(Boolean).join('\n\n');
       const processedPageCount = data.processedPageCount ?? data.pages?.length ?? 0;
+      const totalPageCount = Math.min(data.pageCount ?? targetPageCount, targetPageCount);
+      const hasUsableVisionText = Boolean(visionText.trim());
+      const nextStatus: ExtractionStatus = response.ok && data.status === 'success' && validation.ok ? 'Vision 분석 완료' : 'Vision 분석 실패';
+      const normalizedVisionText = validation.ok ? validation.text : visionText.trim();
+      const failedText = [textPrefix.trim(), hasUsableVisionText ? normalizedVisionText : ''].filter(Boolean).join('\n\n');
+      const combinedText = [textPrefix.trim(), normalizedVisionText].filter(Boolean).join('\n\n');
+      const fallbackError = hasUsableVisionText ? 'Vision 분석 결과 검증 실패' : '분석 결과 없음';
       const message = [
-        data.message || data.error || (nextStatus === 'Vision 분석 실패' ? 'Vision 분석 실패 · 추가 메모 입력 필요' : 'Vision 분석 완료'),
+        (nextStatus === 'Vision 분석 실패' ? data.error || data.message : data.message || data.error) || (nextStatus === 'Vision 분석 실패' ? fallbackError : 'Vision 분석 완료'),
         processedPageCount ? `${processedPageCount}페이지 분석` : undefined,
         data.guidance,
       ]
@@ -762,26 +786,30 @@ export default function Home() {
 
       updateUploadedDocument(documentId, {
         extractionStatus: nextStatus,
-        extractedText: nextStatus === 'Vision 분석 완료' ? combinedText : textPrefix,
+        extractedText: nextStatus === 'Vision 분석 완료' ? combinedText : failedText,
         documentAnalysisText: nextStatus === 'Vision 분석 완료' ? combinedText : undefined,
-        extractedCharCount: nextStatus === 'Vision 분석 완료' ? combinedText.length : textPrefix.length,
+        extractedCharCount: nextStatus === 'Vision 분석 완료' ? combinedText.length : failedText.length,
         visionUsed: true,
-        visionPageCount: processedPageCount || undefined,
+        visionPageCount: processedPageCount,
+        visionTotalPageCount: totalPageCount,
         visionAnalysis: data.pages,
         ocrAvailable: false,
         warningMessage: nextStatus === 'Vision 분석 완료' ? undefined : message,
       });
       setUploadNotice({ type: nextStatus === 'Vision 분석 완료' ? 'success' : 'error', message });
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? `Vision API 호출 실패: ${err.message}` : 'Vision API 호출 실패';
       updateUploadedDocument(documentId, {
         extractionStatus: 'Vision 분석 실패',
         extractedText: textPrefix,
         extractedCharCount: textPrefix.length,
         visionUsed: true,
+        visionPageCount: 0,
+        visionTotalPageCount: targetPageCount,
         ocrAvailable: false,
-        warningMessage: 'Vision 분석 실패 · 추가 메모 입력 필요',
+        warningMessage: message,
       });
-      setUploadNotice({ type: 'error', message: 'Vision 분석 실패 · 추가 메모 입력 필요' });
+      setUploadNotice({ type: 'error', message });
     }
   };
 

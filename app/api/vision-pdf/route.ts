@@ -10,6 +10,8 @@ import { getOpenAIClient } from '@/lib/openai';
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_PAGE_LIMIT = 10;
 
+export const maxDuration = 60;
+
 type VisionMode = 'first10';
 
 type VisionPageAnalysis = {
@@ -130,7 +132,9 @@ export async function POST(request: Request) {
     const client = getOpenAIClient();
     const model = process.env.OPENAI_VISION_MODEL || process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 
-    const response = await client.responses.create({
+    let response;
+    try {
+      response = await client.responses.create({
       model,
       input: [
         {
@@ -154,10 +158,71 @@ export async function POST(request: Request) {
           ],
         },
       ],
-    });
+      });
+    } catch (apiError) {
+      const apiMessage = apiError instanceof Error ? apiError.message : '알 수 없는 OpenAI API 오류';
+      return NextResponse.json(
+        {
+          error: `Vision API 호출 실패: ${apiMessage}`,
+          status: 'failed',
+          message: 'OpenAI API 오류 · Vision 분석 실패',
+          processedPageCount: 0,
+          pageCount,
+          guidance: VISION_PROCESSING_GUIDANCE,
+        },
+        { status: 502 },
+      );
+    }
 
     const outputText = response.output_text?.trim() ?? '';
-    const pages = parseVisionJson(outputText).slice(0, processedPageCount);
+    if (!outputText) {
+      return NextResponse.json(
+        {
+          error: '분석 결과 없음',
+          status: 'failed',
+          message: '분석 결과 없음 · Vision 분석 실패',
+          processedPageCount: 0,
+          pageCount,
+          guidance: VISION_PROCESSING_GUIDANCE,
+        },
+        { status: 422 },
+      );
+    }
+
+    let pages: VisionPageAnalysis[];
+    try {
+      pages = parseVisionJson(outputText).slice(0, processedPageCount);
+    } catch (parseError) {
+      const parseMessage = parseError instanceof Error ? parseError.message : 'Vision 분석 응답 파싱 실패';
+      return NextResponse.json(
+        {
+          text: outputText,
+          documentAnalysisText: outputText,
+          pages: [],
+          error: parseMessage,
+          status: 'failed',
+          message: '분석 결과 없음 · Vision 분석 응답 형식 오류',
+          processedPageCount: 0,
+          pageCount,
+          guidance: VISION_PROCESSING_GUIDANCE,
+        },
+        { status: 422 },
+      );
+    }
+
+    if (!pages.length) {
+      return NextResponse.json(
+        {
+          error: '분석 결과 없음',
+          status: 'failed',
+          message: '분석 결과 없음 · Vision 분석 실패',
+          processedPageCount: 0,
+          pageCount,
+          guidance: VISION_PROCESSING_GUIDANCE,
+        },
+        { status: 422 },
+      );
+    }
     const documentAnalysisText = buildDocumentAnalysisText(pages);
     const validation = validateExtractedText(documentAnalysisText);
 
@@ -188,7 +253,10 @@ export async function POST(request: Request) {
       guidance: `${VISION_PROCESSING_GUIDANCE} ${VISION_PROCESSING_PAGE_LIMIT_MESSAGE}`,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : TEXT_EXTRACTION_FAILED_MESSAGE;
-    return NextResponse.json({ error: message, status: 'failed', message: 'Vision 분석 실패 · 추가 메모 입력 필요' }, { status: 500 });
+    const rawMessage = error instanceof Error ? error.message : TEXT_EXTRACTION_FAILED_MESSAGE;
+    const message = /timeout|timed out|deadline|duration/i.test(rawMessage)
+      ? `Vercel 실행 시간 초과: ${rawMessage}`
+      : rawMessage;
+    return NextResponse.json({ error: message, status: 'failed', message: 'Vision 분석 실패 · 추가 메모 입력 필요', processedPageCount: 0 }, { status: 500 });
   }
 }
