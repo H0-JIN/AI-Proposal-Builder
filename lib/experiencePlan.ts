@@ -1,14 +1,14 @@
-import type { AnalysisResult, ConceptCandidate, ProjectInput, SlideOutline } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ConceptRecommendation, ProjectInput, SlideOutline } from '@/lib/types';
 
 export const experienceDetailFields = [
   'productCode',
-  'productNameOrRole',
+  'productRole',
   'coreValue',
   'experienceTitle',
   'oneLineExperience',
   'visitorMission',
   'visitorAction',
-  'contentMechanism',
+  'systemResponse',
   'mediaOrObject',
   'spatialPlacement',
   'outputOrReward',
@@ -34,7 +34,12 @@ export const keyExperienceAssetFields = [
 export const experienceScenarioSteps = ['Entry', 'Select', 'Experience', 'Generate', 'Share', 'Exit'] as const;
 
 const productDetailSlideType = 'Spatial / Content Plan - Product Experience Detail';
+const conceptDevelopmentLogicSlideType = 'Concept Development Logic';
+const conceptCandidatesSlideType = 'Concept Candidates';
+const selectedConceptSlideType = 'Selected Concept';
 const referenceInsightSlideType = 'Reference Insight';
+
+type ExperiencePlanContext = { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptCandidates?: ConceptCandidate[]; conceptRecommendation?: ConceptRecommendation };
 
 const scopeCuePattern = /참고 사례|참고|예시|예:|예를 들어|등|기존|기존 운영|기존 사례|상반기|하반기 lesson learned|lesson learned|사례|벤치마크|레퍼런스|활용 가능|유사 사례|이전 캠페인|보유 재원|기존 집기|기존 공간|기존 콘텐츠/i;
 
@@ -136,6 +141,40 @@ function buildProductDetailSlide(productCode: string): SlideOutline {
   };
 }
 
+
+function buildConceptDevelopmentLogicSlide(): SlideOutline {
+  return {
+    slideNumber: 0,
+    slideType: conceptDevelopmentLogicSlideType,
+    slideTitle: 'Concept Development Logic',
+    slidePurpose: 'RFP 분석에서 핵심 과제, 타깃 인사이트, 브랜드/제품 가치, 공간/경험 기회, 콘셉트 개발 기준을 도출한다.',
+    keyMessage: '콘셉트 후보는 즉흥 아이디어가 아니라 RFP 요구와 실행 조건에서 도출된 기준을 통과한 전략 대안이다.',
+    confirmNeededNote: '',
+  };
+}
+
+function buildConceptCandidatesSlide(): SlideOutline {
+  return {
+    slideNumber: 0,
+    slideType: conceptCandidatesSlideType,
+    slideTitle: 'Concept Candidates',
+    slidePurpose: '3개 콘셉트 후보를 핵심 메시지, 경험 구조, 강점, 리스크, 추천 여부 기준으로 비교한다.',
+    keyMessage: '세 후보의 전략 차이와 실행 리스크를 비교해 최종 선택의 근거를 명확히 만든다.',
+    confirmNeededNote: '',
+  };
+}
+
+function buildSelectedConceptSlide(): SlideOutline {
+  return {
+    slideNumber: 0,
+    slideType: selectedConceptSlideType,
+    slideTitle: 'Selected Concept',
+    slidePurpose: '사용자가 선택한 콘셉트를 이후 제안서 구조, 핵심 체험 자산, 공간/콘텐츠, 미디어/인터랙션 설계의 기준으로 고정한다.',
+    keyMessage: '선택된 콘셉트는 전체 방문객 경험과 실행 장표를 관통하는 설계 원칙이다.',
+    confirmNeededNote: '',
+  };
+}
+
 function buildReferenceInsightSlide(): SlideOutline {
   return {
     slideNumber: 0,
@@ -158,14 +197,14 @@ function insertBeforeMediaOrClosing(slides: SlideOutline[], additions: SlideOutl
   return [...slides.slice(0, insertIndex), ...additions, ...slides.slice(insertIndex)];
 }
 
-function collectContextText(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+function collectContextText(context?: ExperiencePlanContext) {
   if (!context) return '';
   return [context.input, context.analysis, context.selectedConcept]
     .map((item) => (item ? JSON.stringify(item) : ''))
     .join('\n');
 }
 
-function collectScopedText(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+function collectScopedText(context?: ExperiencePlanContext) {
   const analysis = context?.analysis;
   if (!analysis) return collectContextText(context);
 
@@ -182,7 +221,7 @@ function collectScopedText(context?: { input?: ProjectInput; analysis?: Analysis
   return scopedParts.join('\n');
 }
 
-function collectExcludedScopeText(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+function collectExcludedScopeText(context?: ExperiencePlanContext) {
   const analysis = context?.analysis;
   if (!analysis) return '';
 
@@ -204,7 +243,42 @@ function matchProductCodes(text: string) {
   return Array.from(new Set(matches.filter((code) => !reserved.has(code))));
 }
 
-export function extractProductCodes(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+function normalizeProductUnit(value: string) {
+  return value
+    .replace(/^[\s•\-–—*·]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function looksLikeProductUnit(value: string) {
+  const text = normalizeProductUnit(value);
+  if (!text || text.length > 80) return false;
+  if (scopeCuePattern.test(text)) return false;
+  return /[A-Z]{1,3}\d{1,3}[A-Z]?|제품|서비스|모델|디바이스|기기|콘텐츠|체험|데모|시연|솔루션|앱|플랫폼|fold|galaxy|watch|buds|tab|phone/i.test(text);
+}
+
+function extractNamedProductUnits(context?: ExperiencePlanContext) {
+  const analysis = context?.analysis;
+  if (!analysis) return [];
+
+  const explicitCandidates = [
+    ...(analysis.productInfo ?? []),
+    ...(analysis.requiredScope ?? []).filter(looksLikeProductUnit),
+    ...(analysis.taskSections?.flatMap((section) => section.requiredDeliverables ?? []).filter(looksLikeProductUnit) ?? []),
+  ];
+
+  const excludedText = collectExcludedScopeText(context);
+  const excludedCodes = new Set(matchProductCodes(excludedText));
+
+  return explicitCandidates
+    .map(normalizeProductUnit)
+    .filter((unit) => unit && !scopeCuePattern.test(unit))
+    .filter((unit) => matchProductCodes(unit).every((code) => !excludedCodes.has(code)))
+    .filter((unit, index, array) => array.indexOf(unit) === index)
+    .slice(0, 8);
+}
+
+export function extractProductCodes(context?: ExperiencePlanContext) {
   const scopedText = collectScopedText(context);
   const excludedText = collectExcludedScopeText(context);
   const productInfoText = context?.analysis?.productInfo?.join('\n') ?? '';
@@ -213,13 +287,15 @@ export function extractProductCodes(context?: { input?: ProjectInput; analysis?:
   const explicitScopeText = [taskDeliverablesText, productInfoText, requiredScopeText].join('\n');
   const explicitCodes = new Set(matchProductCodes(explicitScopeText));
   const excludedCodes = new Set(matchProductCodes(excludedText));
+  const namedUnits = extractNamedProductUnits(context);
+  const codeUnits = matchProductCodes(scopedText).filter((code) => explicitCodes.has(code) || !excludedCodes.has(code));
 
-  return matchProductCodes(scopedText)
-    .filter((code) => explicitCodes.has(code) || !excludedCodes.has(code))
+  return [...codeUnits, ...namedUnits]
+    .filter((unit, index, array) => array.indexOf(unit) === index)
     .slice(0, 8);
 }
 
-function shouldIncludeReferenceInsight(context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+function shouldIncludeReferenceInsight(context?: ExperiencePlanContext) {
   const references = context?.analysis?.referenceOnly ?? [];
   const taskReferences = context?.analysis?.taskSections?.flatMap((section) => section.referenceMentions ?? []) ?? [];
   if (references.length > 0 || taskReferences.length > 0) return true;
@@ -231,14 +307,33 @@ function hasReferenceInsight(slides: SlideOutline[]) {
   return slides.some((slide) => /reference insight|design reference direction|레퍼런스|참고/i.test(`${slide.slideType} ${slide.slideTitle}`));
 }
 
-function insertReferenceInsight(slides: SlideOutline[], context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+
+function hasSlideType(slides: SlideOutline[], pattern: RegExp) {
+  return slides.some((slide) => pattern.test(`${slide.slideType} ${slide.slideTitle}`));
+}
+
+function insertConceptDevelopmentSlides(slides: SlideOutline[], context?: ExperiencePlanContext) {
+  if (!context?.conceptDevelopmentLogic && !context?.conceptCandidates?.length && !context?.selectedConcept) return slides;
+
+  const additions: SlideOutline[] = [];
+  if (context.conceptDevelopmentLogic && !hasSlideType(slides, /concept development logic|컨셉 도출|콘셉트 도출/i)) additions.push(buildConceptDevelopmentLogicSlide());
+  if (context.conceptCandidates?.length && !hasSlideType(slides, /concept candidates|후보 비교|콘셉트 후보/i)) additions.push(buildConceptCandidatesSlide());
+  if (context.selectedConcept && !hasSlideType(slides, /selected concept|선택 콘셉트|선정 콘셉트/i)) additions.push(buildSelectedConceptSlide());
+  if (!additions.length) return slides;
+
+  const insertIndex = slides.findIndex((slide) => /experience strategy|core concept|전략|콘셉트/i.test(`${slide.slideType} ${slide.slideTitle}`));
+  const targetIndex = insertIndex >= 0 ? insertIndex : Math.min(3, slides.length);
+  return [...slides.slice(0, targetIndex), ...additions, ...slides.slice(targetIndex)];
+}
+
+function insertReferenceInsight(slides: SlideOutline[], context?: ExperiencePlanContext) {
   if (!shouldIncludeReferenceInsight(context) || hasReferenceInsight(slides)) return slides;
   const insertIndex = slides.findIndex((slide) => /experience strategy|core concept|전략|콘셉트/i.test(`${slide.slideType} ${slide.slideTitle}`));
   const targetIndex = insertIndex >= 0 ? insertIndex : Math.min(3, slides.length);
   return [...slides.slice(0, targetIndex), buildReferenceInsightSlide(), ...slides.slice(targetIndex)];
 }
 
-export function expandExperiencePlanOutline(outline: SlideOutline[], context?: { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate }) {
+export function expandExperiencePlanOutline(outline: SlideOutline[], context?: ExperiencePlanContext) {
   let hasSpatial = false;
   let hasMedia = false;
   const productCodes = extractProductCodes(context);
@@ -266,7 +361,7 @@ export function expandExperiencePlanOutline(outline: SlideOutline[], context?: {
     expanded.push(slide);
   });
 
-  let completed = insertReferenceInsight(expanded, context);
+  let completed = insertConceptDevelopmentSlides(insertReferenceInsight(expanded, context), context);
   if (!hasSpatial) {
     const baseSlides = spatialPlanSlides.map((template) => buildExpandedSlide(undefined, template));
     completed = insertBeforeMediaOrClosing(completed, [...baseSlides.slice(0, 2), ...productSlides, ...baseSlides.slice(2)]);

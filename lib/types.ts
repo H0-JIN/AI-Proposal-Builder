@@ -55,6 +55,15 @@ export interface TaskSection {
   confirmNeeded: string[];
 }
 
+export interface NumericInformation {
+  pastPerformance: string[];
+  lessonLearned: string[];
+  currentIssue: string[];
+  targetKPI: string[];
+  referenceMetric: string[];
+  proposedMeasurement: string[];
+}
+
 export interface AnalysisResult {
   projectOverview: string;
   clientChallenge: string;
@@ -65,6 +74,7 @@ export interface AnalysisResult {
   existingAssets: string[];
   productInfo: string[];
   kpiObjectives: string[];
+  numericInfo: NumericInformation;
   constraints: string[];
   schedule: string[];
   doNotTreatAsScope: string[];
@@ -81,6 +91,24 @@ export interface AnalysisResult {
   kpiTimelineConstraints: AnalysisSection;
 }
 
+export interface ConceptDevelopmentLogic {
+  coreChallenge: string;
+  targetInsight: string;
+  brandOrProductValue: string;
+  spatialOpportunity: string;
+  experienceOpportunity: string;
+  conceptDevelopmentCriteria: string[];
+}
+
+export interface ConceptEvaluationScores {
+  rfpFitScore: number;
+  targetFitScore: number;
+  differentiationScore: number;
+  spatialFeasibilityScore: number;
+  viralPotentialScore: number;
+  operationFeasibilityScore: number;
+}
+
 export interface ConceptCandidate {
   conceptId: string;
   conceptNameKR: string;
@@ -88,9 +116,27 @@ export interface ConceptCandidate {
   oneLineDefinition: string;
   coreMessage: string;
   experienceLogic: string;
-  targetRelevance: string;
   keyExperienceAssetDirection: string;
+  targetRelevance: string;
+  spatialApplication: string;
+  mediaInteractionPotential: string;
+  viralPotential: string;
+  executionFeasibility: string;
   whyThisWorks: string;
+  riskOrCaution: string;
+  evaluationScores: ConceptEvaluationScores;
+}
+
+export interface ConceptRecommendation {
+  recommendedConceptId: string;
+  recommendationReason: string;
+  whyNotOthers: string;
+}
+
+export interface ConceptCandidatesResult {
+  conceptDevelopmentLogic: ConceptDevelopmentLogic;
+  concepts: ConceptCandidate[];
+  recommendation: ConceptRecommendation;
 }
 
 export interface SlideOutline {
@@ -104,13 +150,13 @@ export interface SlideOutline {
 
 export interface ProductExperienceDetail {
   productCode: string;
-  productNameOrRole: string;
+  productRole: string;
   coreValue: string;
   experienceTitle: string;
   oneLineExperience: string;
   visitorMission: string;
   visitorAction: string;
-  contentMechanism: string;
+  systemResponse: string;
   mediaOrObject: string;
   spatialPlacement: string;
   outputOrReward: string;
@@ -180,7 +226,9 @@ export interface ProposalState {
   supplementalInfo?: SupplementalInfo;
   uploadedDocuments?: UploadedDocument[];
   analysis?: AnalysisResult;
+  conceptDevelopmentLogic?: ConceptDevelopmentLogic;
   conceptCandidates?: ConceptCandidate[];
+  conceptRecommendation?: ConceptRecommendation;
   selectedConcept?: ConceptCandidate;
   outline?: SlideOutline[];
   slides?: SlideContent[];
