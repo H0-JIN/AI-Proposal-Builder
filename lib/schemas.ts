@@ -49,6 +49,8 @@ const numericInfoSchema = {
   required: ['pastPerformance', 'lessonLearned', 'currentIssue', 'targetKPI', 'referenceMetric', 'proposedMeasurement'],
 } as const;
 
+const proposalTypeEnum = ['basic', 'cheil', 'innocean', 'hyundai', 'mice_event_operation', 'conference_forum'] as const;
+
 const analysisSectionSchema = {
   type: 'object',
   additionalProperties: false,
@@ -67,6 +69,11 @@ export const analysisJsonSchema = {
     projectOverview: { type: 'string' },
     clientChallenge: { type: 'string' },
     taskSections: { type: 'array', items: taskSectionSchema },
+    inferredProposalType: { type: 'string', enum: proposalTypeEnum },
+    proposalTypeReasoning: { type: 'string' },
+    requiredDeliverables: stringArray,
+    scopeOfWork: stringArray,
+    evaluationCriteria: stringArray,
     requiredItems: stringArray,
     requiredScope: stringArray,
     referenceOnly: stringArray,
@@ -93,6 +100,11 @@ export const analysisJsonSchema = {
     'projectOverview',
     'clientChallenge',
     'taskSections',
+    'inferredProposalType',
+    'proposalTypeReasoning',
+    'requiredDeliverables',
+    'scopeOfWork',
+    'evaluationCriteria',
     'requiredItems',
     'requiredScope',
     'referenceOnly',

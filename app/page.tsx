@@ -354,6 +354,8 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
     ['공간 조건', data.spatialCondition],
     ['콘텐츠 조건', data.contentCondition],
     ['운영 조건', data.operationCondition],
+    ['RFP 분석 기반 유형', data.inferredProposalType ? proposalTypeLabels[data.inferredProposalType] : '해당 없음'],
+    ['유형 판단 근거', data.proposalTypeReasoning],
   ];
 
   return (
@@ -367,6 +369,9 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
       <div className="grid gap-4 md:grid-cols-3">
         {[
           ['과제별 필수 산출물', data.taskSections?.flatMap((section) => section.requiredDeliverables.map((deliverable) => `${section.taskTitle || section.taskId}: ${deliverable}`)) ?? []],
+          ['제안서 필수 항목 / 제출 요구사항', data.requiredDeliverables ?? data.requiredItems],
+          ['과업 범위 / Scope of Work', data.scopeOfWork ?? data.requiredScope],
+          ['평가 기준', data.evaluationCriteria ?? []],
           ['필수 항목', data.requiredItems],
           ['실제 과업', data.requiredScope],
           ['제품/서비스 정보', data.productInfo],
@@ -480,6 +485,9 @@ function hasAnalysisConfirmationNeeds(analysis?: AnalysisResult) {
     analysis.spatialCondition,
     analysis.contentCondition,
     ...analysis.requiredItems,
+    ...(analysis.requiredDeliverables ?? []),
+    ...(analysis.scopeOfWork ?? []),
+    ...(analysis.evaluationCriteria ?? []),
     ...(analysis.requiredScope ?? []),
     ...(analysis.productInfo ?? []),
     ...(analysis.taskSections?.flatMap((section) => [
