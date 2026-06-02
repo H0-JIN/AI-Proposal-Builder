@@ -95,9 +95,11 @@ export interface ConceptDevelopmentLogic {
   coreChallenge: string;
   targetInsight: string;
   brandOrProductValue: string;
-  spatialOpportunity: string;
   experienceOpportunity: string;
-  conceptDevelopmentCriteria: string[];
+  conceptNecessity: string;
+  selectedConceptReason: string;
+  spatialOpportunity?: string;
+  conceptDevelopmentCriteria?: string[];
 }
 
 export interface ConceptEvaluationScores {
@@ -145,6 +147,7 @@ export interface SlideOutline {
   slideTitle: string;
   slidePurpose: string;
   keyMessage: string;
+  mainCopy: string;
   confirmNeededNote: string;
 }
 

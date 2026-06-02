@@ -125,17 +125,17 @@ const conceptDevelopmentLogicSchema = {
     coreChallenge: { type: 'string' },
     targetInsight: { type: 'string' },
     brandOrProductValue: { type: 'string' },
-    spatialOpportunity: { type: 'string' },
     experienceOpportunity: { type: 'string' },
-    conceptDevelopmentCriteria: { type: 'array', minItems: 4, maxItems: 6, items: { type: 'string' } },
+    conceptNecessity: { type: 'string' },
+    selectedConceptReason: { type: 'string' },
   },
   required: [
     'coreChallenge',
     'targetInsight',
     'brandOrProductValue',
-    'spatialOpportunity',
     'experienceOpportunity',
-    'conceptDevelopmentCriteria',
+    'conceptNecessity',
+    'selectedConceptReason',
   ],
 } as const;
 
@@ -239,9 +239,10 @@ export const outlineJsonSchema = {
           slideTitle: { type: 'string' },
           slidePurpose: { type: 'string' },
           keyMessage: { type: 'string' },
+          mainCopy: { type: 'string' },
           confirmNeededNote: { type: 'string' },
         },
-        required: ['slideNumber', 'slideType', 'slideTitle', 'slidePurpose', 'keyMessage', 'confirmNeededNote'],
+        required: ['slideNumber', 'slideType', 'slideTitle', 'slidePurpose', 'keyMessage', 'mainCopy', 'confirmNeededNote'],
       },
     },
   },
@@ -351,7 +352,7 @@ export const slideContentJsonSchema = {
   properties: {
     slides: {
       type: 'array',
-      minItems: 20,
+      minItems: 1,
       maxItems: 60,
       items: {
         type: 'object',
