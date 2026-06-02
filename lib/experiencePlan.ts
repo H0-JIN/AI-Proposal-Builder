@@ -36,8 +36,9 @@ export const keyExperienceAssetFields = [
 export const experienceScenarioSteps = ['Entry', 'Select', 'Experience', 'Generate', 'Share', 'Exit'] as const;
 
 const productDetailSlideType = 'Spatial / Content Plan - Product Experience Detail';
-const conceptDevelopmentLogicSlideType = 'Concept Development Logic';
-const selectedConceptSlideType = 'Selected Concept Rationale';
+const experienceApproachSlideType = 'Experience Approach';
+const coreConceptSlideType = 'Core Concept';
+const experienceStructureSlideType = 'Experience Structure';
 const referenceInsightSlideType = 'Reference Insight';
 
 type ExperiencePlanContext = { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptCandidates?: ConceptCandidate[]; conceptRecommendation?: ConceptRecommendation };
@@ -139,32 +140,48 @@ function buildProductDetailSlide(productCode: string): SlideOutline {
     slideTitle: `${productCode} 체험 상세`,
     slidePurpose: `${productCode} 단위에서 방문객이 수행할 미션, 행동, 반응형 콘텐츠, 결과물을 실제 체험 장표로 상세화한다.`,
     keyMessage: `${productCode}는 단순 제품 설명이 아니라 방문객이 직접 시도하고 결과를 얻는 개별 체험 모듈로 설계한다.`,
-    mainCopy: `${productCode} 경험은 선택된 콘셉트의 메시지를 방문객 행동, 반응형 콘텐츠, 결과물로 전환하는 구체 실행 단위로 전개한다.`,
+    mainCopy: `${productCode} 경험은 핵심 콘셉트의 메시지를 방문객 행동, 반응형 콘텐츠, 결과물로 전환하는 구체 실행 단위로 전개한다.`,
     confirmNeededNote: '',
   };
 }
 
 
-function buildConceptDevelopmentLogicSlide(): SlideOutline {
+
+function buildExperienceApproachSlide(): SlideOutline {
   return {
     slideNumber: 0,
-    slideType: conceptDevelopmentLogicSlideType,
-    slideTitle: 'Concept Development Logic',
-    slidePurpose: '핵심 과제, 타깃 인사이트, 제품/브랜드 가치, 경험 기회가 선택 콘셉트로 귀결되는 논리 구조를 설명한다.',
-    keyMessage: '이번 제안의 콘셉트는 후보 비교 결과가 아니라 프로젝트 과제와 방문객 경험 조건에서 필연적으로 도출된 실행 원칙이다.',
-    mainCopy: '핵심 과제에서 출발해 타깃 인사이트, 브랜드/제품 가치, 경험 기회, 콘셉트 필연성, 실행 연결로 이어지는 제안 논리를 제시한다.',
+    slideType: experienceApproachSlideType,
+    slideTitle: 'Experience Approach',
+    slidePurpose: '핵심 과제를 해결하기 위한 제안 접근을 coreChallenge, targetInsight, brandOrProductValue, experienceOpportunity, strategicApproach, conceptNecessity 흐름으로 설명한다.',
+    keyMessage: '핵심 과제와 타깃 인사이트를 해결하려면 브랜드/제품 가치를 방문객 행동과 공유 가능한 결과물로 전환하는 경험 접근이 필요하다.',
+    mainCopy: '과제 정의에서 출발해 타깃 인사이트와 브랜드/제품 가치를 연결하고, 현장에서 작동할 경험 기회와 전략 접근을 제시해 핵심 콘셉트의 필연성을 설득한다.',
     confirmNeededNote: '',
   };
 }
 
-function buildSelectedConceptSlide(): SlideOutline {
+function buildCoreConceptSlide(selectedConcept?: ConceptCandidate): SlideOutline {
+  const titleSuffix = selectedConcept?.conceptNameEN ? `: ${selectedConcept.conceptNameEN}` : '';
+  const conceptName = selectedConcept?.conceptNameKR || selectedConcept?.conceptNameEN || '핵심 콘셉트';
+
   return {
     slideNumber: 0,
-    slideType: selectedConceptSlideType,
-    slideTitle: 'Selected Concept Rationale',
-    slidePurpose: '핵심 과제와 타깃 인사이트가 왜 선택 콘셉트로 귀결되는지, 그리고 그 논리가 실행 구조로 어떻게 전환되는지 제안서 톤으로 설명한다.',
-    keyMessage: '선택 콘셉트는 단순한 테마가 아니라 RFP 과제, 타깃의 참여 동기, 제품/브랜드 가치, 현장 확산 조건을 동시에 해결하기 위한 필연적 경험 전략이다.',
-    mainCopy: '본 제안은 핵심 과제에서 확인된 메시지 전달의 한계와 타깃이 기대하는 직접 체험·개인화·공유 욕구를 하나의 실행 논리로 연결한다. 선택 콘셉트는 제품/브랜드 가치를 방문객 미션, 반응형 콘텐츠, 결과물, SNS 공유까지 이어지게 만드는 가장 설득력 있는 제안 기준이다.',
+    slideType: coreConceptSlideType,
+    slideTitle: `Core Concept${titleSuffix}`,
+    slidePurpose: '핵심 콘셉트 하나를 conceptNameKR, conceptNameEN, oneLineDefinition, coreMessage, experienceLogic, roleInProposal 중심으로 제시한다.',
+    keyMessage: `${conceptName}은 프로젝트 과제 해결을 위한 경험 전략의 기준이자 공간·콘텐츠·미디어·공유 구조를 통합하는 제안의 중심축이다.`,
+    mainCopy: '본 장표는 최종 제안의 기준이 되는 하나의 핵심 콘셉트만 제시하고, 그 정의와 메시지, 경험 논리, 제안 내 역할을 명확히 정리한다.',
+    confirmNeededNote: '',
+  };
+}
+
+function buildExperienceStructureSlide(): SlideOutline {
+  return {
+    slideNumber: 0,
+    slideType: experienceStructureSlideType,
+    slideTitle: 'Experience Structure',
+    slidePurpose: '핵심 콘셉트가 Spatial Zone, Hands-on Demo / Interactive Experience, Media / Signage, Photo / Viral Spot, Output / Share 구조로 확장되는 방식을 보여준다.',
+    keyMessage: '핵심 콘셉트는 공간, 참여형 체험, 미디어/사이니지, 촬영/바이럴, 산출/공유 구조로 확장될 때 실제 방문 경험으로 완성된다.',
+    mainCopy: '공간에 진입한 방문객이 직접 체험하고, 미디어 반응을 확인하며, 촬영 가능한 장면과 공유 가능한 결과물까지 이어지는 실행 구조를 제시한다.',
     confirmNeededNote: '',
   };
 }
@@ -307,21 +324,24 @@ function hasReferenceInsight(slides: SlideOutline[]) {
 }
 
 
-function hasSlideType(slides: SlideOutline[], pattern: RegExp) {
-  return slides.some((slide) => pattern.test(`${slide.slideType} ${slide.slideTitle}`));
+
+function isCanonicalConceptFlowSlide(slide: SlideOutline) {
+  return /experience approach|경험 설계 접근|strategic approach|our approach|제안 접근 방향|concept development logic|컨셉 도출|콘셉트 도출|selected concept rationale|selected concept|선택.*콘셉트|선정 콘셉트|^core concept|핵심 콘셉트|experience structure/i.test(`${slide.slideType} ${slide.slideTitle}`);
 }
 
 function insertConceptDevelopmentSlides(slides: SlideOutline[], context?: ExperiencePlanContext) {
   if (!context?.conceptDevelopmentLogic && !context?.conceptCandidates?.length && !context?.selectedConcept) return slides;
 
-  const additions: SlideOutline[] = [];
-  if (context.conceptDevelopmentLogic && !hasSlideType(slides, /concept development logic|컨셉 도출|콘셉트 도출/i)) additions.push(buildConceptDevelopmentLogicSlide());
-  if (context.selectedConcept && !hasSlideType(slides, /selected concept rationale|selected concept|선택.*콘셉트|선정 콘셉트/i)) additions.push(buildSelectedConceptSlide());
-  if (!additions.length) return slides;
+  const retainedSlides = slides.filter((slide) => !isCanonicalConceptFlowSlide(slide));
+  const additions: SlideOutline[] = [
+    buildExperienceApproachSlide(),
+    buildCoreConceptSlide(context.selectedConcept),
+    buildExperienceStructureSlide(),
+  ];
 
-  const insertIndex = slides.findIndex((slide) => /experience strategy|core concept|전략|콘셉트/i.test(`${slide.slideType} ${slide.slideTitle}`));
-  const targetIndex = insertIndex >= 0 ? insertIndex : Math.min(3, slides.length);
-  return [...slides.slice(0, targetIndex), ...additions, ...slides.slice(targetIndex)];
+  const insertIndex = retainedSlides.findIndex((slide) => /experience strategy|key challenge|전략|과제/i.test(`${slide.slideType} ${slide.slideTitle}`));
+  const targetIndex = insertIndex >= 0 ? insertIndex + 1 : Math.min(3, retainedSlides.length);
+  return [...retainedSlides.slice(0, targetIndex), ...additions, ...retainedSlides.slice(targetIndex)];
 }
 
 function insertReferenceInsight(slides: SlideOutline[], context?: ExperiencePlanContext) {

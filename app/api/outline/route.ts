@@ -35,7 +35,7 @@ export async function POST(request: Request) {
         '이 단계는 제안 생성 단계의 아웃라인 설계다. RFP 요약이나 확인 필요 장표가 아니라 실제 제안 내용을 담을 20~40장 슬라이드 구조를 만든다.',
         '기본 흐름은 Cover, Project Understanding, Key Challenge, Experience Strategy, Core Concept, Key Experience Asset Concept, Visitor Journey, Spatial / Content Plan 복수 장표, Media / Interactive Plan 복수 장표, Viral / Communication Mechanism, Operation Plan, Expected Effect, Closing이다.',
         'RFP 성격에 맞게 슬라이드 제목은 자동 조정하라. 예: 폴더블 제품별 체험 저니, 기업 홍보관 비전 전달 공간, 팝업 포토/바이럴 구조, 미디어 전시 몰입형 시나리오, 의전시설 VIP 동선.',
-        '사용자가 이미 선택한 콘셉트만 기준으로 구조를 설계하라. Concept Candidates, 콘셉트 후보 3안 비교, 3개 콘셉트 비교표, 선택되지 않은 콘셉트 설명, 내부 평가 점수표 장표는 최종 제안서 구조에 절대 포함하지 말라. 대신 Concept Development Logic과 Selected Concept Rationale 장표를 포함하고, 선택된 콘셉트가 핵심 과제와 타깃 인사이트를 해결하기 위해 필연적으로 도출된 논리와 실행 연결을 제안서 톤으로 보여줘라. 고정 제목 “Monument Design Concept”은 사용하지 말라.',
+        '사용자가 이미 선택한 콘셉트만 기준으로 구조를 설계하라. Concept Candidates, 콘셉트 후보 3안 비교, 3개 콘셉트 비교표, 선택되지 않은 콘셉트 설명, 내부 평가 점수표 장표는 최종 제안서 구조에 절대 포함하지 말라. 대신 Experience Approach, Core Concept, Experience Structure 장표를 이 순서로 포함하고, 핵심 과제를 해결하기 위한 경험 접근과 핵심 콘셉트의 필연성, 공간·콘텐츠·미디어·공유 구조로의 확장을 제안서 톤으로 보여줘라. “선택된 콘셉트”, “콘셉트 후보”, “콘셉트 도출 과정”, “후보 비교”, “C1 / C2 / C3”, “추천 콘셉트”, 고정 제목 “Monument Design Concept”은 최종 제안서 장표 제목이나 본문에 사용하지 말라.',
         '제안서 구조와 제품/콘텐츠/체험 단위 추출은 analysis.taskSections[].requiredDeliverables를 최우선 기준으로 삼고 analysis.requiredScope와 analysis.productInfo를 기준으로만 한다. analysis.referenceOnly, analysis.doNotTreatAsScope, analysis.existingAssets에 들어간 항목은 Product Experience Detail, 독립 체험 장표, 신규 모듈 장표로 만들지 말라.',
         'referenceOnly가 있으면 Reference Insight 또는 Design Reference Direction 장표를 선택적으로 포함해 referenceName, referenceType, whatToLearn, howToApply, caution 관점으로 정리하라. 단, 이 장표는 참고 사례를 과업으로 오해하지 않도록 “참고 방향/레퍼런스 인사이트”로 표현하라.',
         'FF7 모뉴먼트, S26 쇼케이스, 기존 슈퍼스테디, 뉴페이스셀피, 기존 게임사 팝업, 기존 러닝/야구 스튜디오 같은 referenceOnly/doNotTreatAsScope 항목을 FF7 체험 상세, S26 체험 상세, C2 체험 상세 같은 장표로 생성하지 말라.',
@@ -57,10 +57,10 @@ export async function POST(request: Request) {
 분석 결과 JSON:
 ${JSON.stringify(body.analysis, null, 2)}
 
-컨셉 도출 로직 JSON:
+경험 접근 로직 JSON:
 ${JSON.stringify(body.conceptDevelopmentLogic ?? null, null, 2)}
 
-선택된 콘셉트 JSON:
+핵심 콘셉트 JSON:
 ${JSON.stringify(body.selectedConcept, null, 2)}
 
 입력 품질 진단:

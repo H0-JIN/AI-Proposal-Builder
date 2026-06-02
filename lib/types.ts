@@ -96,6 +96,7 @@ export interface ConceptDevelopmentLogic {
   targetInsight: string;
   brandOrProductValue: string;
   experienceOpportunity: string;
+  strategicApproach: string;
   conceptNecessity: string;
   selectedConceptReason: string;
   spatialOpportunity?: string;

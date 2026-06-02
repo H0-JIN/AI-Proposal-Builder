@@ -6,7 +6,7 @@ import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, Concept
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
-import { isInternalConceptComparisonSlide, removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
+import { isInternalConceptComparisonSlide, removeInternalConceptComparisonSlides, sanitizeFinalPptxSlides, sanitizeFinalPptxText } from '@/lib/internalSlides';
 import {
   OCR_UNSUPPORTED_MESSAGE,
   PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
@@ -331,14 +331,15 @@ function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLog
     ['타깃 인사이트', logic.targetInsight],
     ['브랜드/제품 가치', logic.brandOrProductValue],
     ['경험 기회', logic.experienceOpportunity],
+    ['전략 접근', logic.strategicApproach],
     ['콘셉트 필연성', logic.conceptNecessity],
     ['선택 콘셉트 실행 연결', logic.selectedConceptReason],
   ];
 
   return (
     <div className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50 p-5 text-indigo-950">
-      <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Concept Development Logic</p>
-      <h3 className="mt-2 text-xl font-black">선택 콘셉트 도출 논리</h3>
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Experience Approach</p>
+      <h3 className="mt-2 text-xl font-black">경험 설계 접근</h3>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         {rows.map(([label, value]) => (
           <div key={label} className="rounded-2xl bg-white/80 p-3 text-sm leading-6">
@@ -532,7 +533,7 @@ function buildStructuredSlideLines(slide: SlideContent) {
 }
 
 async function downloadPptx(input: ProjectInput, slides: SlideContent[], selectedConcept?: ConceptCandidate) {
-  const exportSlides = sanitizeGeneratedSlides(removeInternalConceptComparisonSlides(slides));
+  const exportSlides = sanitizeFinalPptxSlides(sanitizeGeneratedSlides(removeInternalConceptComparisonSlides(slides)));
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'AI Proposal Builder';
@@ -554,7 +555,7 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[], selecte
     const shouldShowConcept = selectedConcept && !isInternalConceptComparisonSlide(slideData) && /selected concept rationale|core concept|key experience asset|spatial \/ content|media \/ interactive|콘셉트|핵심 체험|공간|콘텐츠|미디어|인터랙/i.test(`${slideData.slideType} ${slideData.slideTitle}`);
     if (shouldShowConcept) {
       slide.addShape(pptx.ShapeType.roundRect, { x: 0.72, y: 6.25, w: 11.95, h: 0.48, rectRadius: 0.08, fill: { color: 'EEF2FF' }, line: { color: 'C7D2FE' } });
-      slide.addText(`Selected Concept: ${selectedConcept.conceptNameEN} / ${selectedConcept.conceptNameKR} · ${selectedConcept.coreMessage}`, { x: 0.95, y: 6.36, w: 11.45, h: 0.18, fontSize: 8, color: '3730A3', bold: true, fit: 'shrink' });
+      slide.addText(sanitizeFinalPptxText(`Core Concept: ${selectedConcept.conceptNameEN} / ${selectedConcept.conceptNameKR} · ${selectedConcept.coreMessage}`), { x: 0.95, y: 6.36, w: 11.45, h: 0.18, fontSize: 8, color: '3730A3', bold: true, fit: 'shrink' });
     }
     slide.addShape(pptx.ShapeType.rect, { x: 6.75, y: 0.72, w: 5.9, h: 3.6, fill: { color: 'E5E7EB' }, line: { color: 'CBD5E1', transparency: 20 } });
     slide.addText(getImagePlaceholder(slideData), { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'middle', fontSize: 14, color: '64748B', bold: true });
