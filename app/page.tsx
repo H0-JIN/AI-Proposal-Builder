@@ -35,12 +35,14 @@ type ExtractTextResponse = {
 };
 
 type VisionPdfResponse = {
+  ok?: boolean;
   text?: string;
   documentAnalysisText?: string;
   pages?: VisionPageAnalysis[];
   status?: 'success' | 'partial' | 'failed';
   message?: string;
   error?: string;
+  details?: string;
   guidance?: string;
   processedPageCount?: number;
   pageCount?: number;
@@ -92,6 +94,21 @@ const sampleBrief = `현대 모빌리티 브랜드의 신규 전기차 라인업
 서울 성수동 150평 내외 팝업 공간을 가정하며, 시승 예약, 인터랙티브 미디어월, 굿즈 존, SNS 공유 이벤트가 필요합니다.
 예산은 중간 규모이며, 오픈 전 6주 내 기획/디자인/시공/운영 준비가 완료되어야 합니다.`;
 
+async function parseJsonResponse<T>(response: Response, context: string): Promise<T> {
+  const contentType = response.headers.get('content-type') || '';
+  const text = await response.text();
+
+  if (!contentType.toLowerCase().includes('application/json')) {
+    throw new Error(`${context} returned non-JSON response: ${text.slice(0, 300) || 'empty response'}`);
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`${context} returned invalid JSON response: ${text.slice(0, 300) || 'empty response'}`);
+  }
+}
+
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
@@ -99,12 +116,18 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
 
-  const data = await response.json();
+  const data = await parseJsonResponse<{ error?: string; message?: string }>(response, url);
   if (!response.ok) {
-    throw new Error(data.error || '요청 처리 중 오류가 발생했습니다.');
+    throw new Error(data.error || data.message || '요청 처리 중 오류가 발생했습니다.');
   }
 
   return data as T;
+}
+
+function buildVisionErrorMessage(data: VisionPdfResponse, fallback: string) {
+  return [data.message || fallback, data.error, data.details]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -271,6 +294,7 @@ function UploadedDocumentsList({
                 {document.extractionStatus}
               </span>
               {document.warningMessage && <p className="mt-2 text-xs leading-5 text-slate-500">{document.warningMessage}</p>}
+              {document.errorMessage && document.errorMessage !== document.warningMessage && <p className="mt-2 text-xs font-semibold leading-5 text-red-600">{document.errorMessage}</p>}
             </div>
             <div className="col-span-4 text-center text-xs font-bold md:col-span-2">
               {getVisionAnalysisLabel(document)}
@@ -780,20 +804,22 @@ export default function Home() {
       formData.append('mode', 'first10');
       console.info('vision analysis request sent', { documentId, fileName: file.name, route: '/api/vision-pdf' });
       const response = await fetch('/api/vision-pdf', { method: 'POST', body: formData });
-      const data = (await response.json()) as VisionPdfResponse;
+      const data = await parseJsonResponse<VisionPdfResponse>(response, 'Vision API');
       const visionText = data.documentAnalysisText || data.text || '';
       const validation = validateExtractedText(visionText);
       const processedPageCount = data.processedPageCount ?? data.pages?.length ?? 0;
       const totalPageCount = Math.min(data.pageCount ?? targetPageCount, targetPageCount);
       const hasUsableVisionText = Boolean(visionText.trim());
-      const nextStatus: ExtractionStatus = response.ok && (data.status === 'success' || data.status === 'partial') && hasUsableVisionText ? 'Vision 분석 완료' : 'Vision 분석 실패';
+      const nextStatus: ExtractionStatus = response.ok && data.ok !== false && (data.status === 'success' || data.status === 'partial') && hasUsableVisionText ? 'Vision 분석 완료' : 'Vision 분석 실패';
       const normalizedVisionText = validation.ok ? validation.text : visionText.trim();
-      const failedText = [textPrefix.trim(), hasUsableVisionText ? normalizedVisionText : ''].filter(Boolean).join('\n\n');
       const combinedText = [textPrefix.trim(), normalizedVisionText].filter(Boolean).join('\n\n');
       const fallbackError = hasUsableVisionText ? 'Vision 분석 결과 검증 실패' : '분석 결과 없음';
+      const baseMessage = nextStatus === 'Vision 분석 실패'
+        ? buildVisionErrorMessage(data, fallbackError)
+        : data.message || data.error || 'Vision 분석 완료';
       const message = [
-        (nextStatus === 'Vision 분석 실패' ? data.error || data.message : data.message || data.error) || (nextStatus === 'Vision 분석 실패' ? fallbackError : 'Vision 분석 완료'),
-        processedPageCount ? `${processedPageCount}페이지 분석` : undefined,
+        baseMessage,
+        nextStatus === 'Vision 분석 완료' && processedPageCount ? `${processedPageCount}페이지 분석` : undefined,
         data.guidance,
       ]
         .filter(Boolean)
@@ -801,36 +827,39 @@ export default function Home() {
 
       updateUploadedDocument(documentId, {
         extractionStatus: nextStatus,
-        extractedText: nextStatus === 'Vision 분석 완료' ? combinedText : failedText,
-        documentAnalysisText: nextStatus === 'Vision 분석 완료' ? combinedText : failedText || undefined,
-        extractedCharCount: nextStatus === 'Vision 분석 완료' ? combinedText.length : failedText.length,
+        extractedText: nextStatus === 'Vision 분석 완료' ? combinedText : '',
+        documentAnalysisText: nextStatus === 'Vision 분석 완료' ? combinedText : undefined,
+        extractedCharCount: nextStatus === 'Vision 분석 완료' ? combinedText.length : 0,
         visionStatus: nextStatus === 'Vision 분석 완료' ? 'completed' : 'failed',
         visionUsed: true,
         visionPageCount: processedPageCount,
         visionTotalPageCount: totalPageCount,
         visionAnalysis: data.pages,
         ocrAvailable: false,
-        warningMessage: nextStatus === 'Vision 분석 완료' ? undefined : message,
+        warningMessage: undefined,
         errorMessage: nextStatus === 'Vision 분석 완료' ? undefined : message,
       });
       console.info(nextStatus === 'Vision 분석 완료' ? 'vision analysis completed' : 'vision analysis failed', { documentId, fileName: file.name, processedPageCount, status: data.status, message });
       setUploadNotice({ type: nextStatus === 'Vision 분석 완료' ? 'success' : 'error', message });
+      if (nextStatus === 'Vision 분석 실패') setError(message);
     } catch (err) {
       const message = err instanceof Error ? `Vision API 호출 실패: ${err.message}` : 'Vision API 호출 실패';
       updateUploadedDocument(documentId, {
         extractionStatus: 'Vision 분석 실패',
-        extractedText: textPrefix,
-        extractedCharCount: textPrefix.length,
+        extractedText: '',
+        documentAnalysisText: undefined,
+        extractedCharCount: 0,
         visionStatus: 'failed',
         visionUsed: true,
         visionPageCount: 0,
         visionTotalPageCount: targetPageCount,
         ocrAvailable: false,
-        warningMessage: message,
+        warningMessage: undefined,
         errorMessage: message,
       });
       console.error('vision analysis failed', { documentId, fileName: file.name, error: message });
       setUploadNotice({ type: 'error', message });
+      setError(message);
     }
   };
 
@@ -878,7 +907,7 @@ export default function Home() {
       const formData = new FormData();
       formData.append('file', file);
       const response = await fetch('/api/extract-text', { method: 'POST', body: formData });
-      const data = (await response.json()) as ExtractTextResponse;
+      const data = await parseJsonResponse<ExtractTextResponse>(response, '텍스트 추출 API');
 
       if (!response.ok || !data.text) {
         const qualityMessage = data.qualityReasons?.length ? ` 품질 판단: ${data.qualityReasons.join(', ')}` : '';
