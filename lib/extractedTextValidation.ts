@@ -11,7 +11,10 @@ export const PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE =
 export const PDF_TEXT_EXTRACTION_PARTIAL_SUCCESS_MESSAGE =
   "일부 페이지는 이미지 중심이라 텍스트 추출이 제한되었지만, 추출 가능한 텍스트를 사용합니다.";
 export const OCR_UNSUPPORTED_MESSAGE =
-  "이미지/스캔 페이지는 현재 버전에서 OCR을 지원하지 않습니다.";
+  "텍스트 추출 실패 · 이미지 중심 PDF 가능성 높음 · OCR 필요";
+export const OCR_PROCESSING_GUIDANCE =
+  "이미지 중심 PDF는 OCR 처리에 시간이 걸릴 수 있습니다. 페이지 수가 많을 경우 일부 페이지만 먼저 처리하는 것을 권장합니다.";
+export const OCR_FIRST_10_PAGES_LABEL = "앞 10페이지 OCR";
 
 const binarySignaturePatterns = [
   /^%PDF/i,
@@ -141,4 +144,58 @@ export function validateExtractedText(
   }
 
   return { ok: true, text };
+}
+
+
+export type ExtractedTextQualityAssessment = {
+  normalizedText: string;
+  charCount: number;
+  readableRatio: number;
+  replacementRatio: number;
+  controlRatio: number;
+  readableAlphaNumericCount: number;
+  textToFileSizeRatio: number;
+  isLowQuality: boolean;
+  reasons: string[];
+};
+
+export function assessExtractedTextQuality(
+  value: string,
+  fileSizeBytes: number,
+): ExtractedTextQualityAssessment {
+  const normalizedText = normalizeExtractedText(value);
+  const quality = getTextQuality(normalizedText);
+  const charCount = normalizedText.length;
+  const readableAlphaNumericCount = getReadableCharacterCount(normalizedText);
+  const readableAlphaNumericRatio = readableAlphaNumericCount / Math.max(charCount, 1);
+  const textToFileSizeRatio = charCount / Math.max(fileSizeBytes, 1);
+  const reasons: string[] = [];
+
+  if (charCount < MIN_EXTRACTED_TEXT_LENGTH) {
+    reasons.push("추출 글자 수가 너무 적음");
+  }
+
+  if (quality.replacementRatio > 0.02 || quality.controlRatio > 0.03) {
+    reasons.push("깨진 문자 비율이 높음");
+  }
+
+  if (readableAlphaNumericRatio < 0.35 || quality.readableRatio < 0.55) {
+    reasons.push("한글/영문/숫자 비율이 비정상적으로 낮음");
+  }
+
+  if (fileSizeBytes >= 300 * 1024 && textToFileSizeRatio < 0.0008) {
+    reasons.push("PDF 파일 크기 대비 추출 텍스트가 지나치게 적음");
+  }
+
+  return {
+    normalizedText,
+    charCount,
+    readableRatio: quality.readableRatio,
+    replacementRatio: quality.replacementRatio,
+    controlRatio: quality.controlRatio,
+    readableAlphaNumericCount,
+    textToFileSizeRatio,
+    isLowQuality: reasons.length > 0,
+    reasons,
+  };
 }

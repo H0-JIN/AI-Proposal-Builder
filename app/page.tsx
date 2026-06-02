@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
@@ -8,6 +8,8 @@ import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
 import { isInternalConceptComparisonSlide, removeInternalConceptComparisonSlides, sanitizeFinalPptxSlides, sanitizeFinalPptxText } from '@/lib/internalSlides';
 import {
+  OCR_FIRST_10_PAGES_LABEL,
+  OCR_PROCESSING_GUIDANCE,
   OCR_UNSUPPORTED_MESSAGE,
   PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
   TEXT_EXTRACTION_FAILED_MESSAGE,
@@ -28,6 +30,16 @@ type ExtractTextResponse = {
   warning?: string;
   error?: string;
   ocrNotice?: string;
+  qualityReasons?: string[];
+};
+
+type OcrTextResponse = {
+  text?: string;
+  status?: 'success' | 'partial' | 'failed';
+  message?: string;
+  error?: string;
+  guidance?: string;
+  processedPageCount?: number;
 };
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -179,10 +191,25 @@ function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<t
 }
 
 
-function UploadedDocumentsList({ documents }: { documents: UploadedDocument[] }) {
+function UploadedDocumentsList({
+  documents,
+  onRunOcr,
+  loadingDocumentId,
+}: {
+  documents: UploadedDocument[];
+  onRunOcr: (document: UploadedDocument) => void;
+  loadingDocumentId?: string;
+}) {
   const statusTone: Record<ExtractionStatus, string> = {
     '텍스트 추출 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     '일부 텍스트만 추출': 'bg-amber-50 text-amber-800 ring-amber-200',
+    '텍스트 추출 실패': 'bg-red-50 text-red-700 ring-red-200',
+    '이미지 중심 PDF 가능성 높음': 'bg-amber-50 text-amber-800 ring-amber-200',
+    'OCR 필요': 'bg-blue-50 text-blue-700 ring-blue-200',
+    'OCR 추출 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    'OCR 일부 추출': 'bg-amber-50 text-amber-800 ring-amber-200',
+    'OCR 추출 실패': 'bg-red-50 text-red-700 ring-red-200',
+    '추가 메모 입력 필요': 'bg-red-50 text-red-700 ring-red-200',
     '이미지 중심 문서 / OCR 필요': 'bg-slate-100 text-slate-700 ring-slate-200',
     '추출 실패': 'bg-red-50 text-red-700 ring-red-200',
   };
@@ -198,15 +225,16 @@ function UploadedDocumentsList({ documents }: { documents: UploadedDocument[] })
   return (
     <div className="mt-4 overflow-hidden rounded-2xl border border-blue-100 bg-white">
       <div className="grid grid-cols-12 gap-3 border-b border-blue-100 bg-blue-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-blue-700">
-        <span className="col-span-5">파일명</span>
+        <span className="col-span-4">파일명</span>
         <span className="col-span-2">형식</span>
         <span className="col-span-3">추출 상태</span>
+        <span className="col-span-1 text-center">OCR</span>
         <span className="col-span-2 text-right">글자 수</span>
       </div>
       <div className="divide-y divide-slate-100">
         {documents.map((document, index) => (
-          <div key={`${document.fileName}-${index}`} className="grid grid-cols-12 gap-3 px-4 py-4 text-sm text-slate-700">
-            <div className="col-span-12 font-bold text-slate-950 md:col-span-5">{document.fileName}</div>
+          <div key={document.id || `${document.fileName}-${index}`} className="grid grid-cols-12 gap-3 px-4 py-4 text-sm text-slate-700">
+            <div className="col-span-12 font-bold text-slate-950 md:col-span-4">{document.fileName}</div>
             <div className="col-span-3 md:col-span-2">{document.fileType}</div>
             <div className="col-span-6 md:col-span-3">
               <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusTone[document.extractionStatus]}`}>
@@ -214,8 +242,21 @@ function UploadedDocumentsList({ documents }: { documents: UploadedDocument[] })
               </span>
               {document.warningMessage && <p className="mt-2 text-xs leading-5 text-slate-500">{document.warningMessage}</p>}
             </div>
-            <div className="col-span-3 text-right font-semibold tabular-nums md:col-span-2">
-              {document.extractedCharCount.toLocaleString()}자
+            <div className="col-span-3 text-center text-xs font-bold md:col-span-1">
+              {document.ocrUsed ? '사용' : '미사용'}
+            </div>
+            <div className="col-span-9 flex flex-col items-end gap-2 text-right font-semibold tabular-nums md:col-span-2">
+              <span>{document.extractedCharCount.toLocaleString()}자</span>
+              {document.ocrAvailable && (
+                <button
+                  type="button"
+                  onClick={() => onRunOcr(document)}
+                  disabled={loadingDocumentId === document.id}
+                  className="rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white transition hover:bg-blue-700 disabled:bg-slate-300"
+                >
+                  {loadingDocumentId === document.id ? 'OCR 처리 중...' : 'OCR로 텍스트 읽기'}
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -446,7 +487,10 @@ function getFileTypeLabel(fileName: string) {
 
 function getSuccessfulUploadedDocuments(documents: UploadedDocument[] = []) {
   return documents.filter((document) =>
-    (document.extractionStatus === '텍스트 추출 완료' || document.extractionStatus === '일부 텍스트만 추출') &&
+    (document.extractionStatus === '텍스트 추출 완료' ||
+      document.extractionStatus === '일부 텍스트만 추출' ||
+      document.extractionStatus === 'OCR 추출 완료' ||
+      document.extractionStatus === 'OCR 일부 추출') &&
     document.extractedText.trim(),
   );
 }
@@ -597,6 +641,8 @@ export default function Home() {
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
+  const [ocrLoadingDocumentId, setOcrLoadingDocumentId] = useState<string>('');
+  const uploadedFileCache = useRef(new Map<string, File>());
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -649,12 +695,16 @@ export default function Home() {
     extractionStatus: ExtractionStatus,
     extractedText = '',
     warningMessage?: string,
+    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable'> = {},
   ): UploadedDocument => ({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     fileName: file.name,
     fileType: getFileTypeLabel(file.name),
     extractionStatus,
     extractedText,
     extractedCharCount: extractedText.length,
+    ocrUsed: options.ocrUsed ?? false,
+    ocrAvailable: options.ocrAvailable ?? false,
     warningMessage,
   });
 
@@ -683,7 +733,7 @@ export default function Home() {
       if (clientReadableExtensions.includes(extension)) {
         const validation = validateExtractedText(await file.text());
         if (!validation.ok) {
-          const status: ExtractionStatus = validation.reason === 'short' ? '이미지 중심 문서 / OCR 필요' : '추출 실패';
+          const status: ExtractionStatus = '추출 실패';
           addUploadedDocument(
             createUploadedDocument(file, status, '', validation.message),
             validation.reason === 'short' ? 'warning' : 'error',
@@ -706,11 +756,14 @@ export default function Home() {
       const data = (await response.json()) as ExtractTextResponse;
 
       if (!response.ok || !data.text) {
+        const qualityMessage = data.qualityReasons?.length ? ` 품질 판단: ${data.qualityReasons.join(', ')}` : '';
         const message = [data.warning || data.error || TEXT_EXTRACTION_FAILED_MESSAGE, data.ocrNotice]
           .filter(Boolean)
-          .join(' ');
-        const status: ExtractionStatus = data.warning ? '이미지 중심 문서 / OCR 필요' : '추출 실패';
-        addUploadedDocument(createUploadedDocument(file, status, '', message), data.warning ? 'warning' : 'error', message);
+          .join(' ') + qualityMessage;
+        const status: ExtractionStatus = data.warning && extension === 'pdf' ? 'OCR 필요' : '추출 실패';
+        const document = createUploadedDocument(file, status, '', message, { ocrAvailable: Boolean(data.warning && extension === 'pdf') });
+        if (document.ocrAvailable) uploadedFileCache.current.set(document.id, file);
+        addUploadedDocument(document, data.warning ? 'warning' : 'error', message);
         return;
       }
 
@@ -719,8 +772,10 @@ export default function Home() {
         const message = [validation.message, extension === 'pdf' ? OCR_UNSUPPORTED_MESSAGE : undefined]
           .filter(Boolean)
           .join(' ');
-        const status: ExtractionStatus = validation.reason === 'short' ? '이미지 중심 문서 / OCR 필요' : '추출 실패';
-        addUploadedDocument(createUploadedDocument(file, status, '', message), validation.reason === 'short' ? 'warning' : 'error', message);
+        const status: ExtractionStatus = validation.reason === 'short' && extension === 'pdf' ? 'OCR 필요' : '추출 실패';
+        const document = createUploadedDocument(file, status, '', message, { ocrAvailable: status === 'OCR 필요' });
+        if (document.ocrAvailable) uploadedFileCache.current.set(document.id, file);
+        addUploadedDocument(document, validation.reason === 'short' ? 'warning' : 'error', message);
         return;
       }
 
@@ -728,14 +783,104 @@ export default function Home() {
       const serverMessage = [data.message ?? (extension === 'pdf' ? PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE : undefined), data.ocrNotice]
         .filter(Boolean)
         .join(' ');
+      const document = createUploadedDocument(file, status, validation.text, data.status === 'partial' ? serverMessage : undefined, {
+        ocrAvailable: extension === 'pdf' && data.status === 'partial',
+      });
+      if (document.ocrAvailable) uploadedFileCache.current.set(document.id, file);
       addUploadedDocument(
-        createUploadedDocument(file, status, validation.text, data.status === 'partial' ? serverMessage : undefined),
+        document,
         data.status === 'partial' ? 'warning' : 'success',
         serverMessage || '파일에서 텍스트를 추출했습니다. 추출 원문은 화면에 표시하지 않고 AI 분석 입력에만 사용합니다.',
       );
     } catch {
       addUploadedDocument(createUploadedDocument(file, '추출 실패', '', TEXT_EXTRACTION_FAILED_MESSAGE), 'error', TEXT_EXTRACTION_FAILED_MESSAGE);
     } finally {
+      setLoading('');
+    }
+  };
+
+
+  const handleRunOcr = async (document: UploadedDocument) => {
+    const file = uploadedFileCache.current.get(document.id);
+    if (!file) {
+      setUploadNotice({
+        type: 'error',
+        message: 'OCR 실행을 위한 원본 파일은 보안상 저장하지 않습니다. 같은 PDF를 다시 업로드한 뒤 OCR을 실행해주세요.',
+      });
+      return;
+    }
+
+    setError('');
+    setUploadNotice({ type: 'warning', message: `${OCR_PROCESSING_GUIDANCE} 현재 옵션: ${OCR_FIRST_10_PAGES_LABEL}` });
+    setOcrLoadingDocumentId(document.id);
+    setLoading('PDF OCR 처리 중...');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('mode', 'first10');
+      const response = await fetch('/api/ocr-pdf', { method: 'POST', body: formData });
+      const data = (await response.json()) as OcrTextResponse;
+      const validation = validateExtractedText(data.text ?? '');
+      const nextStatus: ExtractionStatus =
+        response.ok && data.status === 'success' && validation.ok
+          ? 'OCR 추출 완료'
+          : response.ok && data.status === 'partial' && (data.text ?? '').trim()
+            ? 'OCR 일부 추출'
+            : 'OCR 추출 실패';
+      const nextText = nextStatus === 'OCR 추출 완료' || nextStatus === 'OCR 일부 추출' ? (validation.ok ? validation.text : data.text ?? '') : '';
+      const message = [
+        data.message || data.error || (nextStatus === 'OCR 추출 실패' ? 'OCR 추출 실패 · 추가 메모 입력 필요' : nextStatus),
+        data.processedPageCount ? `${data.processedPageCount}페이지 처리` : undefined,
+        data.guidance,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+
+      setState((current) => ({
+        ...current,
+        uploadedDocuments: (current.uploadedDocuments ?? []).map((item) =>
+          item.id === document.id
+            ? {
+                ...item,
+                extractionStatus: nextStatus,
+                extractedText: nextText,
+                extractedCharCount: nextText.length,
+                ocrUsed: true,
+                ocrAvailable: nextStatus === 'OCR 일부 추출' || nextStatus === 'OCR 추출 실패',
+                warningMessage: nextStatus === 'OCR 추출 완료' ? undefined : message,
+              }
+            : item,
+        ),
+        analysis: undefined,
+        conceptDevelopmentLogic: undefined,
+        conceptCandidates: undefined,
+        conceptRecommendation: undefined,
+        selectedConcept: undefined,
+        outline: undefined,
+        slides: undefined,
+      }));
+      setUploadNotice({ type: nextStatus === 'OCR 추출 완료' ? 'success' : 'warning', message });
+    } catch {
+      setState((current) => ({
+        ...current,
+        uploadedDocuments: (current.uploadedDocuments ?? []).map((item) =>
+          item.id === document.id
+            ? {
+                ...item,
+                extractionStatus: 'OCR 추출 실패',
+                extractedText: '',
+                extractedCharCount: 0,
+                ocrUsed: true,
+                ocrAvailable: true,
+                warningMessage: 'OCR 추출 실패 · 추가 메모 입력 필요',
+              }
+            : item,
+        ),
+      }));
+      setUploadNotice({ type: 'error', message: 'OCR 추출 실패 · 추가 메모 입력 필요' });
+    } finally {
+      setOcrLoadingDocumentId('');
       setLoading('');
     }
   };
@@ -933,7 +1078,9 @@ export default function Home() {
                   <div>
                     <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">RFP / 전달자료 업로드</p>
                     <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, DOCX, TXT, MD</p>
-                    <p className="mt-1 text-sm leading-6 text-slate-600">업로드된 파일은 텍스트 추출에만 사용되며 원본 파일은 저장하지 않습니다.</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">업로드된 파일은 텍스트 추출/OCR 요청에만 사용되며 원본 파일은 저장하지 않습니다.</p>
+                    <p className="mt-1 text-sm leading-6 text-amber-700">{OCR_PROCESSING_GUIDANCE}</p>
+                    <p className="mt-1 text-xs font-bold text-blue-700">OCR 옵션: {OCR_FIRST_10_PAGES_LABEL} (MVP)</p>
                   </div>
                   <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-bold text-blue-700 shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50">
                     파일 선택
@@ -946,7 +1093,7 @@ export default function Home() {
                     />
                   </label>
                 </div>
-                <UploadedDocumentsList documents={uploadedDocuments} />
+                <UploadedDocumentsList documents={uploadedDocuments} onRunOcr={handleRunOcr} loadingDocumentId={ocrLoadingDocumentId} />
                 {uploadNotice && (
                   <div
                     className={`mt-4 rounded-2xl border p-4 text-sm font-semibold leading-6 ${

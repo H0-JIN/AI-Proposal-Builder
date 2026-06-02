@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { inflateSync } from 'node:zlib';
 import {
   OCR_UNSUPPORTED_MESSAGE,
+  assessExtractedTextQuality,
   PDF_TEXT_EXTRACTION_PARTIAL_SUCCESS_MESSAGE,
   PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
   TEXT_EXTRACTION_FAILED_MESSAGE,
@@ -460,11 +461,19 @@ export async function POST(request: Request) {
     }
 
     const pdfExtraction = extractPdfText(buffer);
+    const qualityAssessment = assessExtractedTextQuality(pdfExtraction.text, file.size);
     const validation = validateExtractedText(pdfExtraction.text);
 
-    if (!validation.ok) {
+    if (!validation.ok || qualityAssessment.isLowQuality) {
       return NextResponse.json(
-        { error: validation.message, ocrNotice: OCR_UNSUPPORTED_MESSAGE },
+        {
+          warning: OCR_UNSUPPORTED_MESSAGE,
+          ocrNotice: OCR_UNSUPPORTED_MESSAGE,
+          qualityReasons: qualityAssessment.reasons,
+          pageCount: pdfExtraction.pageCount,
+          extractedPageCount: pdfExtraction.extractedPageCount,
+          extractedCharCount: qualityAssessment.charCount,
+        },
         { status: 422 },
       );
     }
