@@ -467,6 +467,7 @@ export async function POST(request: Request) {
     if (!validation.ok || qualityAssessment.isLowQuality) {
       return NextResponse.json(
         {
+          text: qualityAssessment.normalizedText,
           warning: OCR_UNSUPPORTED_MESSAGE,
           ocrNotice: OCR_UNSUPPORTED_MESSAGE,
           qualityReasons: qualityAssessment.reasons,
