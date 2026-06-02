@@ -2,7 +2,41 @@ import type { SlideContent, SlideOutline } from '@/lib/types';
 
 const internalConceptComparisonPattern = /concept candidates|concept candidates comparison|콘셉트 후보|컨셉 후보|3개 콘셉트|3안 비교|콘셉트.*비교표|컨셉.*비교표|선택되지 않은 콘셉트|내부 평가|평가 점수표|why not others/i;
 const forbiddenFinalPptxPattern = /선택된 콘셉트|콘셉트 후보|콘셉트 도출 과정|후보 비교|추천 콘셉트|\bC\s?[123]\b/gi;
-const internalFieldLabelPattern = /\b(?:coreChallenge|targetInsight|brandOrProductValue|experienceOpportunity|strategicApproach|conceptNecessity|conceptNameKR|conceptNameEN|oneLineDefinition|roleInProposal)\s*:\s*/gi;
+
+const internalFieldLabelMap: Record<string, string> = {
+  corechallenge: 'Challenge',
+  targetinsight: 'Insight',
+  brandorproductvalue: 'Opportunity',
+  experienceopportunity: 'Opportunity',
+  strategicapproach: 'Approach',
+  conceptnecessity: 'Approach',
+  conceptnamekr: 'Concept Name',
+  conceptnameen: 'Concept Name',
+  onelinedefinition: 'Concept Statement',
+  coremessage: 'Core Message',
+  experiencelogic: 'Experience Logic',
+  roleinproposal: 'Why This Concept',
+  selectedconceptreason: 'Why This Concept',
+  keyexperienceassetdirection: 'Experience Structure',
+  targetrelevance: 'Why This Concept',
+  spatialapplication: 'Spatial Zone',
+  mediainteractionpotential: 'Media / Signage',
+  viralpotential: 'Photo / Viral Spot',
+  whythisworks: 'Why This Concept',
+  visitoraction: 'Visitor Action',
+  contentmechanism: 'Mechanism',
+  spatialplacement: 'Placement',
+  mediaorobject: 'Media / Object',
+  outputorreward: 'Output / Reward',
+  visitormission: 'Mission',
+  systemresponse: 'System Response',
+  snssharepoint: 'SNS Share Point',
+  assettype: 'Experience Asset',
+};
+const internalFieldLabelPattern = /\b(coreChallenge|targetInsight|brandOrProductValue|experienceOpportunity|strategicApproach|conceptNecessity|conceptNameKR|conceptNameEN|oneLineDefinition|coreMessage|experienceLogic|roleInProposal|selectedConceptReason|keyExperienceAssetDirection|targetRelevance|spatialApplication|mediaInteractionPotential|viralPotential|whyThisWorks|visitorAction|contentMechanism|spatialPlacement|mediaOrObject|outputOrReward|visitorMission|systemResponse|snsSharePoint|assetType)\s*:\s*/gi;
+const assetTypeListPattern = /^(?:Output\s*\/\s*Share|Output\s*\/\s*Reward)?\s*:?\s*(?:Spatial Zone|Interactive Experience|Media Content|Photo\s*\/\s*Viral Spot|Product Trial Kit|Exhibition Object|Digital Signage|Operation Program|Brand Experience Module|Monument|Briefing Space|Immersive Room|Hands-on Demo|Visitor Participation Content)(?:\s*,\s*(?:Spatial Zone|Interactive Experience|Media Content|Photo\s*\/\s*Viral Spot|Product Trial Kit|Exhibition Object|Digital Signage|Operation Program|Brand Experience Module|Monument|Briefing Space|Immersive Room|Hands-on Demo|Visitor Participation Content)){1,}\.?$/i;
+const outputShareFallback = 'Output / Share: 체험 결과를 셀피 콘텐츠, 개인화 메시지, SNS 공유 이미지로 전환해 방문 경험이 온라인 버즈로 확장되도록 설계합니다.';
+
 
 export function isInternalConceptComparisonSlide(slide: Pick<SlideOutline | SlideContent, 'slideType' | 'slideTitle' | 'slidePurpose' | 'keyMessage'>) {
   return internalConceptComparisonPattern.test([
@@ -22,8 +56,14 @@ export function removeInternalConceptComparisonSlides<T extends SlideOutline | S
 export function sanitizeFinalPptxText(value?: string) {
   if (!value) return '';
 
+  const normalizedValue = value.trim();
+  if (assetTypeListPattern.test(normalizedValue)) return outputShareFallback;
+
   return value
-    .replace(internalFieldLabelPattern, '')
+    .replace(internalFieldLabelPattern, (match, fieldName: string) => {
+      const displayName = internalFieldLabelMap[fieldName.toLowerCase()];
+      return displayName ? `${displayName}: ` : '';
+    })
     .replace(/선택된 콘셉트/g, '핵심 콘셉트')
     .replace(/콘셉트 후보/g, '콘셉트')
     .replace(/콘셉트 도출 과정/g, '경험 설계 접근')

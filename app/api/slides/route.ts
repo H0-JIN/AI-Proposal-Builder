@@ -34,6 +34,16 @@ function conciseSectionLine(label: string, value?: string, fallback?: string) {
   return `${label}: ${limitToTwoSentences(normalizeSentence(value) || fallback || '')}`;
 }
 
+const rawAssetTypeListPattern = /^(?:Spatial Zone|Interactive Experience|Media Content|Photo\s*\/\s*Viral Spot|Product Trial Kit|Exhibition Object|Digital Signage|Operation Program|Brand Experience Module|Monument|Briefing Space|Immersive Room|Hands-on Demo|Visitor Participation Content)(?:\s*,\s*(?:Spatial Zone|Interactive Experience|Media Content|Photo\s*\/\s*Viral Spot|Product Trial Kit|Exhibition Object|Digital Signage|Operation Program|Brand Experience Module|Monument|Briefing Space|Immersive Room|Hands-on Demo|Visitor Participation Content)){1,}\.?$/i;
+
+function outputShareSentence(value?: string) {
+  const normalized = value?.trim().replace(/\s+/g, ' ');
+  if (!normalized || rawAssetTypeListPattern.test(normalized)) {
+    return '체험 결과를 셀피 콘텐츠, 개인화 메시지, SNS 공유 이미지로 전환해 방문 경험이 온라인 버즈로 확장되도록 설계합니다.';
+  }
+  return normalized;
+}
+
 function buildExperienceApproachBullets(logic?: ConceptDevelopmentLogic) {
   return [
     sectionLine(
@@ -77,7 +87,7 @@ function buildExperienceStructureBullets(concept?: ConceptCandidate) {
     conciseSectionLine('Hands-on Demo / Interactive Experience', concept?.experienceLogic, '방문객이 직접 선택하고 조작하며 즉각적인 반응을 확인하는 참여형 체험으로 전개합니다.'),
     conciseSectionLine('Media / Signage', concept?.mediaInteractionPotential, '미디어와 사이니지는 안내를 넘어 방문객 행동에 반응하고 콘셉트 메시지를 시각적으로 증폭하는 장치로 활용합니다.'),
     conciseSectionLine('Photo / Viral Spot', concept?.viralPotential, '촬영하고 공유하고 싶은 대표 장면을 설계해 현장 경험이 자연스럽게 SNS 확산으로 이어지게 합니다.'),
-    conciseSectionLine('Output / Share', concept?.keyExperienceAssetDirection, '체험 결과를 개인화된 산출물 또는 공유 가능한 콘텐츠로 제공해 방문 이후에도 경험 기억이 이어지게 합니다.'),
+    conciseSectionLine('Output / Share', outputShareSentence(concept?.keyExperienceAssetDirection), '체험 결과를 셀피 콘텐츠, 개인화 메시지, SNS 공유 이미지로 전환해 방문 경험이 온라인 버즈로 확장되도록 설계합니다.'),
   ];
 }
 

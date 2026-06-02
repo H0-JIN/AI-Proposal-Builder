@@ -496,7 +496,7 @@ function getImagePlaceholder(slide: SlideContent) {
 
 function buildStructuredSlideLines(slide: SlideContent) {
   const assetLines = slide.keyExperienceAssets?.slice(0, 3).flatMap((asset, index) => [
-    `[Asset ${index + 1}] ${asset.assetName} (${asset.assetType})`,
+    `[Asset ${index + 1}] ${asset.assetName}`,
     labelValue('Role', asset.roleInProposal),
     labelValue('Visitor Action', asset.visitorAction),
     labelValue('Mechanism', asset.experienceMechanism),
