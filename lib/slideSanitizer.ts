@@ -2,7 +2,7 @@ import type { ProductExperienceDetail, SlideContent, SlideOutline } from '@/lib/
 
 const productDetailPattern = /product experience detail|체험 상세|체험 개요|체험 시나리오|챌린지|체험존 상세/i;
 const taskScopePattern = /제작|개발|운영|구성|기획|제안|범위|시공|설계|납품|관리|대행|디스플레이 개발|모듈 개발/i;
-const internalInstructionPattern = /RFP에 명시된 목표 KPI와 측정 방식만 정량 목표로 제시합니다\.?|Background insight only:?|Visual Prompt:?|cover_image_placeholder|[a-z0-9]+(?:_[a-z0-9]+)+_placeholder/gi;
+const internalInstructionPattern = /RFP에 명시된 목표 KPI와 측정 방식만 정량 목표로 제시합니다\.?|확정되지 않은 수치는 목표 KPI로 쓰지 않고 확인 필요 항목과 측정 체계로 분리합니다\.?|RFP에 명확히 targetKPI로 확정된 정량 목표는 현재 확인되지 않았습니다\.?|기존 성과와 레슨런드는 목표 KPI가 아니라 실행 기준을 보정하는 배경 인사이트로만 활용합니다\.?|Background insight only:?|Visual Prompt:?|Diagram Suggestion:?|cover_image_placeholder|[a-z0-9]+(?:_[a-z0-9]+)+_placeholder/gi;
 const fileNamePlaceholderPattern = /^[a-z0-9]+(?:_[a-z0-9]+)+_placeholder$/i;
 const reservedCodes = new Set(['AI', 'AR', 'VR', 'XR', 'LED', 'LCD', 'OLED', 'SNS', 'KPI', 'RFP', 'VIP', 'UGC', 'QR']);
 const maxProductDetailSlidesPerProduct = 2;

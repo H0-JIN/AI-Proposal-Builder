@@ -1,7 +1,7 @@
 import type { SlideContent, SlideOutline } from '@/lib/types';
 
 const internalConceptComparisonPattern = /concept candidates|concept candidates comparison|콘셉트 후보|컨셉 후보|3개 콘셉트|3안 비교|콘셉트.*비교표|컨셉.*비교표|선택되지 않은 콘셉트|내부 평가|평가 점수표|why not others/i;
-const forbiddenFinalPptxPattern = /선택된 콘셉트|콘셉트 후보|콘셉트 도출 과정|후보 비교|추천 콘셉트|\bC\s?[123]\b/gi;
+const forbiddenFinalPptxPattern = /선택된 콘셉트|콘셉트 후보|콘셉트 도출 과정|후보 비교|추천 콘셉트|확정되지 않은 수치는 목표 KPI로 쓰지 않고 확인 필요 항목과 측정 체계로 분리합니다\.?|RFP에 명확히 targetKPI로 확정된 정량 목표는 현재 확인되지 않았습니다\.?|기존 성과와 레슨런드는 목표 KPI가 아니라 실행 기준을 보정하는 배경 인사이트로만 활용합니다\.?|\bC\s?[123]\b/gi;
 
 const internalFieldLabelMap: Record<string, string> = {
   corechallenge: 'Challenge',
@@ -69,6 +69,9 @@ export function sanitizeFinalPptxText(value?: string) {
     .replace(/콘셉트 도출 과정/g, '경험 설계 접근')
     .replace(/후보 비교/g, '전략 검토')
     .replace(/추천 콘셉트/g, '핵심 콘셉트')
+    .replace(/확정되지 않은 수치는 목표 KPI로 쓰지 않고 확인 필요 항목과 측정 체계로 분리합니다\.?/g, 'RFP에 별도 정량 KPI가 없는 경우, 운영 품질을 측정할 수 있는 관리 지표를 제안합니다.')
+    .replace(/RFP에 명확히 targetKPI로 확정된 정량 목표는 현재 확인되지 않았습니다\.?/g, 'RFP에 별도 정량 KPI가 없는 경우, 운영 품질을 측정할 수 있는 관리 지표를 제안합니다.')
+    .replace(/기존 성과와 레슨런드는 목표 KPI가 아니라 실행 기준을 보정하는 배경 인사이트로만 활용합니다\.?/g, '운영 성과는 등록 처리 속도, 세션 운영 안정성, 참석자 만족도, 네트워킹 참여도, 현장 이슈 대응률을 중심으로 측정합니다.')
     .replace(/\bC\s?[123]\b/g, 'Concept')
     .replace(forbiddenFinalPptxPattern, '핵심 콘셉트')
     .replace(/\s{2,}/g, ' ')

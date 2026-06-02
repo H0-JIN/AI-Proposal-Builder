@@ -701,8 +701,6 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[], selecte
     }
     const noteLines = [
       slideData.speakerNote,
-      labelValue('Visual Prompt', slideData.visualPrompt),
-      labelValue('Diagram Suggestion', slideData.diagramSuggestion),
     ].filter(Boolean) as string[];
     if (noteLines.length) {
       slide.addNotes(noteLines.join('\n'));
@@ -1724,7 +1722,6 @@ export default function Home() {
                   )}
                   {hasText(slide.visualDirection) && <div className="mt-4 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">비주얼 방향: {slide.visualDirection}</div>}
                   <div className="mt-2 rounded-2xl bg-slate-100 p-3 text-sm text-slate-600">이미지: {getImagePlaceholder(slide)}</div>
-                  {(hasText(slide.visualPrompt) || hasText(slide.diagramSuggestion)) && <div className="mt-2 rounded-2xl bg-purple-50 p-3 text-sm text-purple-700">PPT에서는 Visual Prompt / Diagram Suggestion을 본문이 아닌 발표 노트로만 내보냅니다.</div>}
                   {hasText(slide.speakerNote) && <div className="mt-2 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-700">발표 노트: {slide.speakerNote}</div>}
                   {slide.confirmNeededNote && <div className="mt-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-800">확인 Note: {slide.confirmNeededNote}</div>}
                 </article>
