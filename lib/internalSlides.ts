@@ -2,6 +2,7 @@ import type { SlideContent, SlideOutline } from '@/lib/types';
 
 const internalConceptComparisonPattern = /concept candidates|concept candidates comparison|콘셉트 후보|컨셉 후보|3개 콘셉트|3안 비교|콘셉트.*비교표|컨셉.*비교표|선택되지 않은 콘셉트|내부 평가|평가 점수표|why not others/i;
 const forbiddenFinalPptxPattern = /선택된 콘셉트|콘셉트 후보|콘셉트 도출 과정|후보 비교|추천 콘셉트|\bC\s?[123]\b/gi;
+const internalFieldLabelPattern = /\b(?:coreChallenge|targetInsight|brandOrProductValue|experienceOpportunity|strategicApproach|conceptNecessity|conceptNameKR|conceptNameEN|oneLineDefinition|roleInProposal)\s*:\s*/gi;
 
 export function isInternalConceptComparisonSlide(slide: Pick<SlideOutline | SlideContent, 'slideType' | 'slideTitle' | 'slidePurpose' | 'keyMessage'>) {
   return internalConceptComparisonPattern.test([
@@ -22,6 +23,7 @@ export function sanitizeFinalPptxText(value?: string) {
   if (!value) return '';
 
   return value
+    .replace(internalFieldLabelPattern, '')
     .replace(/선택된 콘셉트/g, '핵심 콘셉트')
     .replace(/콘셉트 후보/g, '콘셉트')
     .replace(/콘셉트 도출 과정/g, '경험 설계 접근')

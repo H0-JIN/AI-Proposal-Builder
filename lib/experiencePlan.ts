@@ -152,7 +152,7 @@ function buildExperienceApproachSlide(): SlideOutline {
     slideNumber: 0,
     slideType: experienceApproachSlideType,
     slideTitle: 'Experience Approach',
-    slidePurpose: '핵심 과제를 해결하기 위한 제안 접근을 coreChallenge, targetInsight, brandOrProductValue, experienceOpportunity, strategicApproach, conceptNecessity 흐름으로 설명한다.',
+    slidePurpose: '핵심 과제를 해결하기 위한 제안 접근을 Challenge, Insight, Opportunity, Approach 흐름의 전략 문장으로 설명한다.',
     keyMessage: '핵심 과제와 타깃 인사이트를 해결하려면 브랜드/제품 가치를 방문객 행동과 공유 가능한 결과물로 전환하는 경험 접근이 필요하다.',
     mainCopy: '과제 정의에서 출발해 타깃 인사이트와 브랜드/제품 가치를 연결하고, 현장에서 작동할 경험 기회와 전략 접근을 제시해 핵심 콘셉트의 필연성을 설득한다.',
     confirmNeededNote: '',
@@ -167,9 +167,9 @@ function buildCoreConceptSlide(selectedConcept?: ConceptCandidate): SlideOutline
     slideNumber: 0,
     slideType: coreConceptSlideType,
     slideTitle: `Core Concept${titleSuffix}`,
-    slidePurpose: '핵심 콘셉트 하나를 conceptNameKR, conceptNameEN, oneLineDefinition, coreMessage, experienceLogic, roleInProposal 중심으로 제시한다.',
+    slidePurpose: '핵심 콘셉트 하나를 전시 주제 선언처럼 Concept Name, Concept Statement, Core Message, Experience Logic, Why This Concept 구조로 제시한다.',
     keyMessage: `${conceptName}은 프로젝트 과제 해결을 위한 경험 전략의 기준이자 공간·콘텐츠·미디어·공유 구조를 통합하는 제안의 중심축이다.`,
-    mainCopy: '본 장표는 최종 제안의 기준이 되는 하나의 핵심 콘셉트만 제시하고, 그 정의와 메시지, 경험 논리, 제안 내 역할을 명확히 정리한다.',
+    mainCopy: '본 장표는 최종 제안의 기준이 되는 핵심 콘셉트를 전시 주제 선언으로 제시하고, 왜 이 콘셉트가 과제와 타깃 인사이트를 해결하는지 명확히 정리한다.',
     confirmNeededNote: '',
   };
 }

@@ -10,9 +10,75 @@ import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import { sanitizeGeneratedSlides } from '@/lib/slideSanitizer';
 
 
-function withValue(label: string, value?: string) {
-  const trimmed = value?.trim();
-  return trimmed ? `${label}: ${trimmed}` : `${label}: 프로젝트 맥락에 맞춰 장표 문안에서 구체화`;
+function normalizeSentence(value?: string) {
+  const trimmed = value?.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return '';
+  return /[.!?。！？…]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+function sectionLine(label: string, value?: string, fallback?: string) {
+  return `${label}: ${normalizeSentence(value) || fallback}`;
+}
+
+function combineSentences(values: (string | undefined)[], fallback: string) {
+  const combined = values.map(normalizeSentence).filter(Boolean).join(' ');
+  return combined || fallback;
+}
+
+function limitToTwoSentences(value: string) {
+  const sentences = value.match(/[^.!?。！？…]+[.!?。！？…]?/g)?.map((sentence) => sentence.trim()).filter(Boolean) ?? [];
+  return sentences.slice(0, 2).join(' ') || value;
+}
+
+function conciseSectionLine(label: string, value?: string, fallback?: string) {
+  return `${label}: ${limitToTwoSentences(normalizeSentence(value) || fallback || '')}`;
+}
+
+function buildExperienceApproachBullets(logic?: ConceptDevelopmentLogic) {
+  return [
+    sectionLine(
+      'Challenge',
+      logic?.coreChallenge,
+      '방문객 유입과 체류를 만들기 위해서는 단순 정보 전달이 아니라 방문 자체가 목적이 되는 경험 구조가 필요합니다.',
+    ),
+    sectionLine(
+      'Insight',
+      logic?.targetInsight,
+      '타깃은 기능 설명보다 자신의 생활 맥락에서 활용 가능하고 공유할 수 있는 경험에 더 강하게 반응합니다.',
+    ),
+    `Opportunity: ${combineSentences(
+      [logic?.brandOrProductValue, logic?.experienceOpportunity],
+      '브랜드와 제품의 차별 가치를 공간 안에서 탐색하고 체감하는 참여형 경험으로 전환할 수 있습니다.',
+    )}`,
+    `Approach: ${combineSentences(
+      [logic?.strategicApproach, logic?.conceptNecessity],
+      '따라서 본 제안은 핵심 콘셉트를 중심으로 공간, 체험, 미디어, 공유가 하나의 여정으로 연결되는 전략적 경험 구조로 전개합니다.',
+    )}`,
+  ];
+}
+
+function buildCoreConceptBullets(concept?: ConceptCandidate, logic?: ConceptDevelopmentLogic) {
+  const conceptNames = [concept?.conceptNameEN, concept?.conceptNameKR].map((name) => name?.trim()).filter(Boolean).join(' / ') || '핵심 경험 콘셉트';
+  return [
+    `Concept Name: ${conceptNames}`,
+    sectionLine('Concept Statement', concept?.oneLineDefinition, '프로젝트 과제를 하나의 전시 주제로 압축해 방문객이 직관적으로 이해하고 참여할 수 있도록 선언합니다.'),
+    sectionLine('Core Message', concept?.coreMessage, '브랜드가 전달해야 할 핵심 메시지를 방문객의 행동과 감정으로 체감하게 합니다.'),
+    sectionLine('Experience Logic', concept?.experienceLogic, '방문객의 선택, 체험, 반응, 결과물, 공유가 순차적으로 연결되는 경험 흐름으로 설계합니다.'),
+    `Why This Concept: ${combineSentences(
+      [logic?.coreChallenge, logic?.targetInsight, concept?.whyThisWorks || concept?.keyExperienceAssetDirection],
+      '이 콘셉트는 핵심 과제와 타깃 인사이트를 동시에 해결하면서 브랜드 가치를 공간 안의 참여 경험과 공유 가능한 결과물로 전환하기 때문에 필요합니다.',
+    )}`,
+  ];
+}
+
+function buildExperienceStructureBullets(concept?: ConceptCandidate) {
+  return [
+    conciseSectionLine('Spatial Zone', concept?.spatialApplication, '콘셉트 메시지가 단계적으로 드러나는 진입, 탐색, 체험, 공유 존으로 공간을 구성합니다.'),
+    conciseSectionLine('Hands-on Demo / Interactive Experience', concept?.experienceLogic, '방문객이 직접 선택하고 조작하며 즉각적인 반응을 확인하는 참여형 체험으로 전개합니다.'),
+    conciseSectionLine('Media / Signage', concept?.mediaInteractionPotential, '미디어와 사이니지는 안내를 넘어 방문객 행동에 반응하고 콘셉트 메시지를 시각적으로 증폭하는 장치로 활용합니다.'),
+    conciseSectionLine('Photo / Viral Spot', concept?.viralPotential, '촬영하고 공유하고 싶은 대표 장면을 설계해 현장 경험이 자연스럽게 SNS 확산으로 이어지게 합니다.'),
+    conciseSectionLine('Output / Share', concept?.keyExperienceAssetDirection, '체험 결과를 개인화된 산출물 또는 공유 가능한 콘텐츠로 제공해 방문 이후에도 경험 기억이 이어지게 합니다.'),
+  ];
 }
 
 function enhanceConceptFlowSlides(slides: SlideContent[], logic?: ConceptDevelopmentLogic, concept?: ConceptCandidate) {
@@ -23,14 +89,7 @@ function enhanceConceptFlowSlides(slides: SlideContent[], logic?: ConceptDevelop
       return {
         ...slide,
         slideTitle: 'Experience Approach',
-        bodyBullets: [
-          withValue('coreChallenge', logic?.coreChallenge),
-          withValue('targetInsight', logic?.targetInsight),
-          withValue('brandOrProductValue', logic?.brandOrProductValue),
-          withValue('experienceOpportunity', logic?.experienceOpportunity),
-          withValue('strategicApproach', logic?.strategicApproach),
-          withValue('conceptNecessity', logic?.conceptNecessity),
-        ],
+        bodyBullets: buildExperienceApproachBullets(logic),
       };
     }
 
@@ -38,14 +97,7 @@ function enhanceConceptFlowSlides(slides: SlideContent[], logic?: ConceptDevelop
       return {
         ...slide,
         slideTitle: concept?.conceptNameEN ? `Core Concept: ${concept.conceptNameEN}` : 'Core Concept',
-        bodyBullets: [
-          withValue('conceptNameKR', concept?.conceptNameKR),
-          withValue('conceptNameEN', concept?.conceptNameEN),
-          withValue('oneLineDefinition', concept?.oneLineDefinition),
-          withValue('coreMessage', concept?.coreMessage),
-          withValue('experienceLogic', concept?.experienceLogic),
-          withValue('roleInProposal', concept?.whyThisWorks || concept?.keyExperienceAssetDirection),
-        ],
+        bodyBullets: buildCoreConceptBullets(concept, logic),
       };
     }
 
@@ -53,13 +105,7 @@ function enhanceConceptFlowSlides(slides: SlideContent[], logic?: ConceptDevelop
       return {
         ...slide,
         slideTitle: 'Experience Structure',
-        bodyBullets: [
-          withValue('Spatial Zone', concept?.spatialApplication),
-          withValue('Hands-on Demo / Interactive Experience', concept?.experienceLogic),
-          withValue('Media / Signage', concept?.mediaInteractionPotential),
-          withValue('Photo / Viral Spot', concept?.viralPotential),
-          withValue('Output / Share', concept?.keyExperienceAssetDirection),
-        ],
+        bodyBullets: buildExperienceStructureBullets(concept),
       };
     }
 
@@ -106,7 +152,7 @@ export async function POST(request: Request) {
         '이 단계는 제안 생성 단계다. 사용자가 수정한 슬라이드 아웃라인을 최종 기준으로 삼아 RFP 요약을 반복하지 말고 경험 전략, 콘셉트, 핵심 체험 자산, 공간/콘텐츠 구성, 미디어/인터랙션, 방문객 여정, PPT 장표 문안을 실제 제안서 초안 수준으로 생성하라. 아웃라인의 slideTitle, slidePurpose, keyMessage, mainCopy 수정 내용은 반드시 반영하라.',
         `각 슬라이드는 slideNumber, slideType, slideTitle, slidePurpose, keyMessage, mainCopy, bodyBullets, visualDirection, visitorAction, contentMechanism, spatialPlacement, mediaOrObject, outputOrReward, imagePlaceholder, visualPrompt, diagramSuggestion, productExperienceDetails, keyExperienceAssets, experienceScenarioSteps, referenceInsights, speakerNote, confirmNeededNote를 모두 작성한다. 일반 슬라이드에서 해당 배열이 없으면 빈 배열을 넣는다. 제품/콘텐츠 상세 장표는 ${experienceDetailFields.join(', ')} 항목을 productExperienceDetails에 명확히 작성하라.`,
         '본문 문안에는 RFP Fact / AI Proposal / Confirm Needed 구분을 반영하라. 단, AI Proposal 영역은 RFP 반복이 아니라 새 제안 아이디어여야 하며 Confirm Needed는 confirmNeededNote에만 배치하라.',
-        '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 선택되지 않은 콘셉트, 후보 간 비교, 평가 점수, 보류 사유는 어떤 장표에서도 언급하지 말라. Concept Candidates, 콘셉트 후보 3안 비교, 3개 콘셉트 비교표, 선택되지 않은 콘셉트 설명, 내부 평가 점수표 장표는 절대 작성하지 말라. Experience Approach 장표에는 coreChallenge, targetInsight, brandOrProductValue, experienceOpportunity, strategicApproach, conceptNecessity를 포함하고, “후보 중 선택”이 아니라 “이 과제를 해결하려면 이러한 경험 접근이 필요하고 따라서 이 핵심 콘셉트로 전개해야 한다”는 논리로 작성하라. Core Concept 장표에는 selectedConcept의 conceptNameKR, conceptNameEN, oneLineDefinition, coreMessage, experienceLogic, roleInProposal을 하나의 콘셉트만 기준으로 명확히 작성하라. Experience Structure 장표에는 Spatial Zone, Hands-on Demo / Interactive Experience, Media / Signage, Photo / Viral Spot, Output / Share 항목을 포함해 핵심 콘셉트의 확장 구조를 보여줘라.',
+        '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 선택되지 않은 콘셉트, 후보 간 비교, 평가 점수, 보류 사유는 어떤 장표에서도 언급하지 말라. Concept Candidates, 콘셉트 후보 3안 비교, 3개 콘셉트 비교표, 선택되지 않은 콘셉트 설명, 내부 평가 점수표 장표는 절대 작성하지 말라. Experience Approach 장표는 내부 분석 항목명이 아니라 Challenge, Insight, Opportunity, Approach 네 항목의 제안서 문장으로 작성하고, “후보 중 선택”이 아니라 “이 과제를 해결하려면 이러한 경험 접근이 필요하고 따라서 이 핵심 콘셉트로 전개해야 한다”는 논리로 작성하라. Core Concept 장표는 단순 소개가 아니라 Concept Name, Concept Statement, Core Message, Experience Logic, Why This Concept 구성의 전시 주제 선언으로 작성하라. Why This Concept에는 핵심 과제와 타깃 인사이트를 해결하기 위해 왜 이 콘셉트가 필요한지 설명하라. Experience Structure 장표에는 Spatial Zone, Hands-on Demo / Interactive Experience, Media / Signage, Photo / Viral Spot, Output / Share 항목을 포함하되 각 항목은 1~2문장 이내로 핵심 콘셉트의 실행 확장 구조를 보여줘라. 최종 본문에는 내부 JSON 필드명 또는 camelCase 항목명을 노출하지 말라.',
         '제안 아이디어와 장표 문안은 analysis.taskSections[].requiredDeliverables를 최우선 기준으로 삼고 analysis.requiredScope와 analysis.productInfo 중심으로만 생성하라. analysis.referenceOnly, analysis.doNotTreatAsScope, analysis.existingAssets 항목은 독립 체험 모듈/제품 상세/신규 콘텐츠 단위로 생성하지 말고 참고 방향 또는 레퍼런스 인사이트로만 사용하라.',
         'Reference Insight 또는 Design Reference Direction 장표가 있으면 referenceInsights 배열에 referenceName, referenceType, whatToLearn, howToApply, caution을 채워라. caution에는 “실제 제안 범위가 아닌 참고 사례”라는 의미가 분명히 드러나야 한다.',
         '참고 사례를 다룰 때는 “임팩트 있는 전시 요소 참고 방향”, “기존 캠페인에서 확인된 성공 요소”, “참고 사례 기반 설계 원칙”, “레퍼런스 인사이트”처럼 표현하라. FF7 체험 상세, S26 체험 상세, C2 체험 상세, 기존 캠페인명 체험 상세 같은 신규 모듈 장표 또는 productExperienceDetails를 만들지 말라.',
