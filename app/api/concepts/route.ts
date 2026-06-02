@@ -14,17 +14,19 @@ export async function POST(request: Request) {
     }
 
     const inputQuality = assessInputQuality(body.input, body.analysis);
+    const effectiveProposalType = body.analysis.inferredProposalType ?? body.input.proposalType;
+    const isEventOperationType = effectiveProposalType === 'mice_event_operation' || effectiveProposalType === 'conference_forum';
     const missingInfoSummary = inputQuality.missingItems.map((item) => `${item.label}: ${item.description}`);
 
     const result = await createStructuredJson<ConceptCandidatesResult>({
       schemaName: 'proposal_concept_candidates',
       schema: conceptCandidatesJsonSchema,
       system: [
-        '너는 전시, 브랜드 체험관, 팝업스토어, 플래그십 공간의 핵심 콘셉트를 설계하는 한국어 크리에이티브 디렉터다.',
+        '너는 전시, 브랜드 체험관, 팝업스토어, 플래그십 공간, MICE/컨퍼런스 운영 제안의 핵심 콘셉트를 설계하는 한국어 크리에이티브 디렉터다.',
         'AI 분석 완료 후 제안서 구조를 만들기 전에 먼저 Concept Development Logic을 정리한 뒤, 그 기준에 따라 사용자가 선택할 수 있는 콘셉트 후보를 정확히 3개 생성하라.',
         '출력은 conceptDevelopmentLogic, concepts, recommendation을 모두 포함한다. conceptDevelopmentLogic에는 coreChallenge, targetInsight, brandOrProductValue, experienceOpportunity, strategicApproach, conceptNecessity, selectedConceptReason을 작성하라.',
         'conceptDevelopmentLogic은 기준 나열이 아니라 핵심 과제 → 타깃 인사이트 → 제품/브랜드 가치 → 경험 기회 → 전략 접근 → 콘셉트 필연성 → 실행 연결의 논리 흐름으로 작성하라. selectedConceptReason은 추천 콘셉트가 공간/콘텐츠/미디어로 확장되는 실행 연결을 제안서 문장 톤으로 설명하라.',
-        '각 후보는 서로 다른 전략적 관점, 경험 구조, 핵심 체험 자산 방향을 가져야 하며, 반드시 conceptDevelopmentLogic의 과제와 경험 기회에 근거해 도출되어야 한다.',
+        isEventOperationType ? '행사 운영형 콘셉트는 Smart Networking Hub, Smart Integrated Operation Platform처럼 단순 시스템명으로 만들지 말고 행사 목적, 브랜드 메시지, 파트너십, 기술 공유, 비즈니스 기회를 압축한 행사 정체성 문장으로 도출하라.' : '각 후보는 서로 다른 전략적 관점, 경험 구조, 핵심 체험 자산 방향을 가져야 하며, 반드시 conceptDevelopmentLogic의 과제와 경험 기회에 근거해 도출되어야 한다.',
         '각 후보에는 conceptId, conceptNameKR, conceptNameEN, oneLineDefinition, coreMessage, experienceLogic, keyExperienceAssetDirection, targetRelevance, spatialApplication, mediaInteractionPotential, viralPotential, executionFeasibility, whyThisWorks, riskOrCaution, evaluationScores를 모두 작성하라.',
         'experienceLogic은 관람객이 어떤 순서로 주목, 참여, 피드백, 산출, 공유를 경험하는지 설명하라. whyThisWorks는 강점 중심으로, riskOrCaution은 실행/운영/해석상 주의점을 솔직하게 작성하라.',
         'evaluationScores는 rfpFitScore, targetFitScore, differentiationScore, spatialFeasibilityScore, viralPotentialScore, operationFeasibilityScore를 각각 1~5점 숫자로 작성하라.',
@@ -36,7 +38,7 @@ export async function POST(request: Request) {
         '사용자가 선택할 핵심 콘셉트가 이후 제안서 구조, 장표 문안, PPTX의 기준이 되므로 실무 제안서에 바로 사용할 수 있게 구체적으로 작성하라.',
       ].join('\n'),
       user: `사용자 선택 제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
-RFP 분석 기반 유형: ${proposalTypeLabels[body.analysis.inferredProposalType ?? body.input.proposalType]}\n프로젝트명: ${body.input.projectName}\n클라이언트명: ${body.input.clientName}\n\n분석 결과 JSON:\n${JSON.stringify(body.analysis, null, 2)}\n\n입력 품질 진단:\n- 점수: ${inputQuality.score}\n- 부족 항목: ${missingInfoSummary.length ? missingInfoSummary.join(' / ') : '없음'}\n- AI missingInfo: ${body.analysis.missingInfo.length ? body.analysis.missingInfo.join(' / ') : '없음'}`,
+RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}\n프로젝트명: ${body.input.projectName}\n클라이언트명: ${body.input.clientName}\n\n분석 결과 JSON:\n${JSON.stringify(body.analysis, null, 2)}\n\n입력 품질 진단:\n- 점수: ${inputQuality.score}\n- 부족 항목: ${missingInfoSummary.length ? missingInfoSummary.join(' / ') : '없음'}\n- AI missingInfo: ${body.analysis.missingInfo.length ? body.analysis.missingInfo.join(' / ') : '없음'}`,
     });
 
     return NextResponse.json(result);

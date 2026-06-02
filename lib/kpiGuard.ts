@@ -16,7 +16,7 @@ function isUncertainMetric(item: string) {
 function padBullets(items: string[]) {
   const uniqueItems = Array.from(new Set(items)).slice(0, 7);
   while (uniqueItems.length < 3) {
-    uniqueItems.push('RFP에 명확히 확정된 추가 목표 KPI는 확인 후 반영합니다.');
+    uniqueItems.push('운영 품질을 측정할 수 있는 관리 지표를 제안합니다.');
   }
   return uniqueItems;
 }
@@ -48,11 +48,11 @@ export function sanitizeKpiSlides(slides: SlideContent[], analysis: AnalysisResu
           ...proposedMeasurementItems.map((item) => `측정 방식: ${item}`),
         ])
       : padBullets([
-          'RFP에 명확히 targetKPI로 확정된 정량 목표는 현재 확인되지 않았습니다.',
+          'RFP에 별도 정량 KPI가 없는 경우, 운영 품질을 측정할 수 있는 관리 지표를 제안합니다.',
           ...(proposedMeasurementItems.length
             ? proposedMeasurementItems.map((item) => `측정 항목 제안: ${item}`)
-            : ['측정 항목 제안: 방문/참여/공유/만족도 등 운영 데이터 항목을 협의 후 정의합니다.']),
-          '기존 성과와 레슨런드는 목표 KPI가 아니라 실행 기준을 보정하는 배경 인사이트로만 활용합니다.',
+            : ['측정 항목 제안: 등록 처리 속도, 세션 운영 안정성, 참석자 만족도, 네트워킹 참여도, 현장 이슈 대응률을 중심으로 정의합니다.']),
+          '운영 성과는 등록 처리 속도, 세션 운영 안정성, 참석자 만족도, 네트워킹 참여도, 현장 이슈 대응률을 중심으로 측정합니다.',
         ]);
 
     const speakerNoteParts = [
@@ -69,10 +69,10 @@ export function sanitizeKpiSlides(slides: SlideContent[], analysis: AnalysisResu
       ...slide,
       keyMessage: hasTargetKpi
         ? 'RFP에서 targetKPI로 확정된 수치만 목표로 제시하고, 그 외 수치는 배경 인사이트로 분리합니다.'
-        : '확정되지 않은 수치는 목표 KPI로 쓰지 않고 확인 필요 항목과 측정 체계로 분리합니다.',
+        : 'RFP에 별도 정량 KPI가 없는 경우, 운영 품질을 측정할 수 있는 관리 지표를 제안합니다.',
       mainCopy: hasTargetKpi
         ? '제안 운영 성과는 RFP에서 명확히 목표 KPI로 분류된 수치와 현장에서 수집 가능한 측정 방식만 연결해 관리합니다.'
-        : '본 장표는 임의 목표 수치를 만들지 않고, 확정 KPI 확인 전까지 운영 데이터 기반의 측정 항목과 확인 필요 수치를 분리해 제시합니다.',
+        : '운영 성과는 등록 처리 속도, 세션 운영 안정성, 참석자 만족도, 네트워킹 참여도, 현장 이슈 대응률을 중심으로 측정합니다.',
       bodyBullets,
       speakerNote: speakerNoteParts.join('\n'),
       confirmNeededNote,
