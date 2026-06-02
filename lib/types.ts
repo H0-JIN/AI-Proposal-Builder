@@ -42,6 +42,8 @@ export interface VisionPageAnalysis {
   needsReview: boolean;
 }
 
+export type VisionStatus = 'unused' | 'queued' | 'analyzing' | 'completed' | 'failed';
+
 export interface UploadedDocument {
   id: string;
   fileName: string;
@@ -50,6 +52,7 @@ export interface UploadedDocument {
   extractedText: string;
   documentAnalysisText?: string;
   extractedCharCount: number;
+  visionStatus?: VisionStatus;
   visionUsed?: boolean;
   visionPageCount?: number;
   visionTotalPageCount?: number;
@@ -57,6 +60,7 @@ export interface UploadedDocument {
   ocrUsed?: boolean;
   ocrAvailable?: boolean;
   warningMessage?: string;
+  errorMessage?: string;
 }
 
 export interface SupplementalInfo {

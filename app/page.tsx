@@ -197,15 +197,20 @@ function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<t
 
 
 function getVisionAnalysisLabel(document: UploadedDocument) {
-  if (document.extractionStatus === '이미지 중심 PDF로 판단' && document.visionUsed) return '분석 중';
-  if (document.extractionStatus === 'Vision 분석 완료') return '사용';
-  if (document.extractionStatus === 'Vision 분석 실패') return '실패';
+  if (document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중') return '분석 중';
+  if (document.visionStatus === 'completed' || document.extractionStatus === 'Vision 분석 완료') return '사용';
+  if (document.visionStatus === 'failed' || document.extractionStatus === 'Vision 분석 실패') return '실패';
+  if (document.visionStatus === 'queued') return '대기';
   return document.visionUsed ? '사용' : '미사용';
 }
 
 function getVisionPageLabel(document: UploadedDocument) {
-  if (document.extractionStatus === '이미지 중심 PDF로 판단' && document.visionUsed) {
+  if (document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중') {
     return `${document.visionPageCount ?? 0}/${document.visionTotalPageCount ?? 10}`;
+  }
+
+  if ((document.visionStatus === 'failed' || document.extractionStatus === 'Vision 분석 실패') && !document.visionPageCount) {
+    return '-';
   }
 
   if (document.visionPageCount !== undefined) return `${document.visionPageCount}p`;
@@ -502,6 +507,10 @@ function getFileTypeLabel(fileName: string) {
   return extension ? extension.toUpperCase() : '알 수 없음';
 }
 
+function getVisionProcessingMessage() {
+  return `${VISION_PROCESSING_GUIDANCE} ${VISION_PROCESSING_PAGE_LIMIT_MESSAGE}`;
+}
+
 function getSuccessfulUploadedDocuments(documents: UploadedDocument[] = []) {
   return documents.filter((document) =>
     (document.extractionStatus === '텍스트 추출 완료' ||
@@ -684,6 +693,7 @@ export default function Home() {
   const supplementalInfo = state.supplementalInfo ?? initialSupplementalInfo;
   const uploadedDocuments = state.uploadedDocuments ?? [];
   const analysisInput = useMemo(() => ({ ...state.input, briefText: buildAnalysisBriefText(state.input, uploadedDocuments) }), [state.input, uploadedDocuments]);
+  const hasVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중');
   const canAnalyze = useMemo(() => Boolean(state.input.projectName && state.input.clientName && analysisInput.briefText), [state.input.clientName, state.input.projectName, analysisInput.briefText]);
   const inputQuality = useMemo(() => assessInputQuality(analysisInput, step === 'analysis' ? state.analysis : undefined), [analysisInput, state.analysis, step]);
   const hasConfirmationNeeds = useMemo(() => hasAnalysisConfirmationNeeds(state.analysis), [state.analysis]);
@@ -725,7 +735,7 @@ export default function Home() {
     extractionStatus: ExtractionStatus,
     extractedText = '',
     warningMessage?: string,
-    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'documentAnalysisText' | 'visionAnalysis'> = {},
+    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'errorMessage'> = {},
   ): UploadedDocument => ({
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     fileName: file.name,
@@ -734,6 +744,7 @@ export default function Home() {
     extractedText,
     documentAnalysisText: options.documentAnalysisText,
     extractedCharCount: (options.documentAnalysisText || extractedText).length,
+    visionStatus: options.visionStatus ?? 'unused',
     visionUsed: options.visionUsed ?? false,
     visionPageCount: options.visionPageCount,
     visionTotalPageCount: options.visionTotalPageCount,
@@ -741,16 +752,18 @@ export default function Home() {
     ocrUsed: options.ocrUsed ?? false,
     ocrAvailable: options.ocrAvailable ?? false,
     warningMessage,
+    errorMessage: options.errorMessage,
   });
 
   const runAutomaticVisionAnalysis = async (documentId: string, file: File, textPrefix = '') => {
     const targetPageCount = 10;
-    const processingMessage = `${VISION_PROCESSING_GUIDANCE} ${VISION_PROCESSING_PAGE_LIMIT_MESSAGE}`;
+    const processingMessage = getVisionProcessingMessage();
 
     updateUploadedDocument(documentId, {
       extractionStatus: '이미지 중심 PDF로 판단',
-      extractedText: textPrefix,
-      extractedCharCount: textPrefix.length,
+      extractedText: '',
+      extractedCharCount: 0,
+      visionStatus: 'analyzing',
       visionUsed: true,
       visionPageCount: 0,
       visionTotalPageCount: targetPageCount,
@@ -759,11 +772,13 @@ export default function Home() {
     });
     setUploadNotice({ type: 'warning', message: processingMessage });
     setLoading('PDF Vision 분석 중...');
+    console.info('vision analysis started', { documentId, fileName: file.name, targetPageCount });
 
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('mode', 'first10');
+      console.info('vision analysis request sent', { documentId, fileName: file.name, route: '/api/vision-pdf' });
       const response = await fetch('/api/vision-pdf', { method: 'POST', body: formData });
       const data = (await response.json()) as VisionPdfResponse;
       const visionText = data.documentAnalysisText || data.text || '';
@@ -771,7 +786,7 @@ export default function Home() {
       const processedPageCount = data.processedPageCount ?? data.pages?.length ?? 0;
       const totalPageCount = Math.min(data.pageCount ?? targetPageCount, targetPageCount);
       const hasUsableVisionText = Boolean(visionText.trim());
-      const nextStatus: ExtractionStatus = response.ok && data.status === 'success' && validation.ok ? 'Vision 분석 완료' : 'Vision 분석 실패';
+      const nextStatus: ExtractionStatus = response.ok && (data.status === 'success' || data.status === 'partial') && hasUsableVisionText ? 'Vision 분석 완료' : 'Vision 분석 실패';
       const normalizedVisionText = validation.ok ? validation.text : visionText.trim();
       const failedText = [textPrefix.trim(), hasUsableVisionText ? normalizedVisionText : ''].filter(Boolean).join('\n\n');
       const combinedText = [textPrefix.trim(), normalizedVisionText].filter(Boolean).join('\n\n');
@@ -787,15 +802,18 @@ export default function Home() {
       updateUploadedDocument(documentId, {
         extractionStatus: nextStatus,
         extractedText: nextStatus === 'Vision 분석 완료' ? combinedText : failedText,
-        documentAnalysisText: nextStatus === 'Vision 분석 완료' ? combinedText : undefined,
+        documentAnalysisText: nextStatus === 'Vision 분석 완료' ? combinedText : failedText || undefined,
         extractedCharCount: nextStatus === 'Vision 분석 완료' ? combinedText.length : failedText.length,
+        visionStatus: nextStatus === 'Vision 분석 완료' ? 'completed' : 'failed',
         visionUsed: true,
         visionPageCount: processedPageCount,
         visionTotalPageCount: totalPageCount,
         visionAnalysis: data.pages,
         ocrAvailable: false,
         warningMessage: nextStatus === 'Vision 분석 완료' ? undefined : message,
+        errorMessage: nextStatus === 'Vision 분석 완료' ? undefined : message,
       });
+      console.info(nextStatus === 'Vision 분석 완료' ? 'vision analysis completed' : 'vision analysis failed', { documentId, fileName: file.name, processedPageCount, status: data.status, message });
       setUploadNotice({ type: nextStatus === 'Vision 분석 완료' ? 'success' : 'error', message });
     } catch (err) {
       const message = err instanceof Error ? `Vision API 호출 실패: ${err.message}` : 'Vision API 호출 실패';
@@ -803,12 +821,15 @@ export default function Home() {
         extractionStatus: 'Vision 분석 실패',
         extractedText: textPrefix,
         extractedCharCount: textPrefix.length,
+        visionStatus: 'failed',
         visionUsed: true,
         visionPageCount: 0,
         visionTotalPageCount: targetPageCount,
         ocrAvailable: false,
         warningMessage: message,
+        errorMessage: message,
       });
+      console.error('vision analysis failed', { documentId, fileName: file.name, error: message });
       setUploadNotice({ type: 'error', message });
     }
   };
@@ -864,8 +885,15 @@ export default function Home() {
         const message = [data.warning || data.error || TEXT_EXTRACTION_FAILED_MESSAGE, extension === 'pdf' ? VISION_REQUIRED_MESSAGE : undefined]
           .filter(Boolean)
           .join(' ') + qualityMessage;
-        const document = createUploadedDocument(file, extension === 'pdf' ? '텍스트 품질 낮음' : '추출 실패', data.text ?? '', message);
-        addUploadedDocument(document, extension === 'pdf' ? 'warning' : 'error', message);
+        const document = extension === 'pdf'
+          ? createUploadedDocument(file, '이미지 중심 PDF로 판단', '', getVisionProcessingMessage(), {
+              visionStatus: 'analyzing',
+              visionUsed: true,
+              visionPageCount: 0,
+              visionTotalPageCount: 10,
+            })
+          : createUploadedDocument(file, '추출 실패', data.text ?? '', message);
+        addUploadedDocument(document, extension === 'pdf' ? 'warning' : 'error', extension === 'pdf' ? getVisionProcessingMessage() : message);
         if (extension === 'pdf') {
           await runAutomaticVisionAnalysis(document.id, file, data.text ?? '');
         }
@@ -877,8 +905,15 @@ export default function Home() {
         const message = [validation.message, extension === 'pdf' ? VISION_REQUIRED_MESSAGE : undefined]
           .filter(Boolean)
           .join(' ');
-        const document = createUploadedDocument(file, extension === 'pdf' ? '텍스트 품질 낮음' : '추출 실패', validation.text, message);
-        addUploadedDocument(document, validation.reason === 'short' ? 'warning' : 'error', message);
+        const document = extension === 'pdf'
+          ? createUploadedDocument(file, '이미지 중심 PDF로 판단', '', getVisionProcessingMessage(), {
+              visionStatus: 'analyzing',
+              visionUsed: true,
+              visionPageCount: 0,
+              visionTotalPageCount: 10,
+            })
+          : createUploadedDocument(file, '추출 실패', validation.text, message);
+        addUploadedDocument(document, validation.reason === 'short' ? 'warning' : 'error', extension === 'pdf' ? getVisionProcessingMessage() : message);
         if (extension === 'pdf') {
           await runAutomaticVisionAnalysis(document.id, file, validation.text);
         }
@@ -893,8 +928,21 @@ export default function Home() {
         data.status === 'partial' ? 'warning' : 'success',
         serverMessage || '파일에서 텍스트를 추출했습니다. 추출 원문은 화면에 표시하지 않고 AI 분석 입력에만 사용합니다.',
       );
-    } catch {
-      addUploadedDocument(createUploadedDocument(file, '추출 실패', '', TEXT_EXTRACTION_FAILED_MESSAGE), 'error', TEXT_EXTRACTION_FAILED_MESSAGE);
+    } catch (err) {
+      const extractionErrorMessage = err instanceof Error ? `${TEXT_EXTRACTION_FAILED_MESSAGE} ${err.message}` : TEXT_EXTRACTION_FAILED_MESSAGE;
+      if (extension === 'pdf') {
+        const document = createUploadedDocument(file, '이미지 중심 PDF로 판단', '', getVisionProcessingMessage(), {
+          visionStatus: 'analyzing',
+          visionUsed: true,
+          visionPageCount: 0,
+          visionTotalPageCount: 10,
+        });
+        addUploadedDocument(document, 'warning', getVisionProcessingMessage());
+        await runAutomaticVisionAnalysis(document.id, file);
+        return;
+      }
+
+      addUploadedDocument(createUploadedDocument(file, '추출 실패', '', extractionErrorMessage), 'error', extractionErrorMessage);
     } finally {
       setLoading('');
     }
@@ -1094,7 +1142,7 @@ export default function Home() {
                     <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">RFP / 전달자료 업로드</p>
                     <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, DOCX, TXT, MD</p>
                     <p className="mt-1 text-sm leading-6 text-slate-600">업로드된 파일은 텍스트 추출/Vision 분석 요청에만 사용되며 원본 파일은 저장하지 않습니다.</p>
-                    <p className="mt-1 text-sm leading-6 text-amber-700">{VISION_PROCESSING_GUIDANCE}</p>
+                    {hasVisionAnalysisInProgress && <p className="mt-1 text-sm leading-6 text-amber-700">{VISION_PROCESSING_GUIDANCE}</p>}
                     <p className="mt-1 text-xs font-bold text-blue-700">Vision 옵션: {VISION_FIRST_10_PAGES_LABEL} (MVP)</p>
                   </div>
                   <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-bold text-blue-700 shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50">
