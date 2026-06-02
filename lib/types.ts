@@ -10,15 +10,25 @@ export interface ProjectInput {
 export type ExtractionStatus =
   | '텍스트 추출 완료'
   | '일부 텍스트만 추출'
+  | '텍스트 추출 실패'
+  | '이미지 중심 PDF 가능성 높음'
+  | 'OCR 필요'
+  | 'OCR 추출 완료'
+  | 'OCR 일부 추출'
+  | 'OCR 추출 실패'
+  | '추가 메모 입력 필요'
   | '이미지 중심 문서 / OCR 필요'
   | '추출 실패';
 
 export interface UploadedDocument {
+  id: string;
   fileName: string;
   fileType: string;
   extractionStatus: ExtractionStatus;
   extractedText: string;
   extractedCharCount: number;
+  ocrUsed?: boolean;
+  ocrAvailable?: boolean;
   warningMessage?: string;
 }
 
