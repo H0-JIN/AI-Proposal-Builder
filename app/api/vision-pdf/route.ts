@@ -105,6 +105,7 @@ function buildDocumentAnalysisText(pages: VisionPageAnalysis[]): string {
 }
 
 export async function POST(request: Request) {
+  console.info('vision analysis started', { route: '/api/vision-pdf' });
   try {
     const formData = await request.formData();
     const file = formData.get('file');
@@ -127,6 +128,7 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    console.info('vision analysis request received', { fileName: file.name, fileSize: file.size, mode });
     const pageCount = getPageCount(buffer);
     const processedPageCount = Math.min(pageCount ?? DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_LIMIT);
     const client = getOpenAIClient();
@@ -134,6 +136,7 @@ export async function POST(request: Request) {
 
     let response;
     try {
+      console.info('vision analysis request sent', { fileName: file.name, model, pageLimit: processedPageCount });
       response = await client.responses.create({
       model,
       input: [
@@ -161,6 +164,7 @@ export async function POST(request: Request) {
       });
     } catch (apiError) {
       const apiMessage = apiError instanceof Error ? apiError.message : '알 수 없는 OpenAI API 오류';
+      console.error('vision analysis failed', { fileName: file.name, error: apiMessage });
       return NextResponse.json(
         {
           error: `Vision API 호출 실패: ${apiMessage}`,
@@ -176,6 +180,7 @@ export async function POST(request: Request) {
 
     const outputText = response.output_text?.trim() ?? '';
     if (!outputText) {
+      console.error('vision analysis failed', { fileName: file.name, error: '분석 결과 없음' });
       return NextResponse.json(
         {
           error: '분석 결과 없음',
@@ -194,6 +199,7 @@ export async function POST(request: Request) {
       pages = parseVisionJson(outputText).slice(0, processedPageCount);
     } catch (parseError) {
       const parseMessage = parseError instanceof Error ? parseError.message : 'Vision 분석 응답 파싱 실패';
+      console.error('vision analysis failed', { fileName: file.name, error: parseMessage });
       return NextResponse.json(
         {
           text: outputText,
@@ -211,6 +217,7 @@ export async function POST(request: Request) {
     }
 
     if (!pages.length) {
+      console.error('vision analysis failed', { fileName: file.name, error: '분석 결과 없음' });
       return NextResponse.json(
         {
           error: '분석 결과 없음',
@@ -227,6 +234,7 @@ export async function POST(request: Request) {
     const validation = validateExtractedText(documentAnalysisText);
 
     if (!validation.ok) {
+      console.warn('vision analysis completed with low text quality', { fileName: file.name, processedPageCount, reason: validation.reason });
       return NextResponse.json(
         {
           text: validation.text,
@@ -242,6 +250,7 @@ export async function POST(request: Request) {
       );
     }
 
+    console.info('vision analysis completed', { fileName: file.name, processedPageCount, pageCount });
     return NextResponse.json({
       text: validation.text,
       documentAnalysisText: validation.text,
@@ -257,6 +266,7 @@ export async function POST(request: Request) {
     const message = /timeout|timed out|deadline|duration/i.test(rawMessage)
       ? `Vercel 실행 시간 초과: ${rawMessage}`
       : rawMessage;
+    console.error('vision analysis failed', { error: message });
     return NextResponse.json({ error: message, status: 'failed', message: 'Vision 분석 실패 · 추가 메모 입력 필요', processedPageCount: 0 }, { status: 500 });
   }
 }
