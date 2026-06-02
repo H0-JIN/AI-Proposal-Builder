@@ -10,12 +10,13 @@ import { isInternalConceptComparisonSlide, removeInternalConceptComparisonSlides
 import {
   PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
   TEXT_EXTRACTION_FAILED_MESSAGE,
-  VISION_FIRST_10_PAGES_LABEL,
+  VISION_FIRST_3_PAGES_LABEL,
   VISION_PROCESSING_GUIDANCE,
   VISION_PROCESSING_PAGE_LIMIT_MESSAGE,
   VISION_REQUIRED_MESSAGE,
   validateExtractedText,
 } from '@/lib/extractedTextValidation';
+import { DEFAULT_VISION_MODE, DEFAULT_VISION_PAGE_LIMIT } from '@/lib/visionConfig';
 
 type Step = 'home' | 'create' | 'analysis' | 'concepts' | 'outline' | 'slides';
 
@@ -229,7 +230,7 @@ function getVisionAnalysisLabel(document: UploadedDocument) {
 
 function getVisionPageLabel(document: UploadedDocument) {
   if (document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중') {
-    return `${document.visionPageCount ?? 0}/${document.visionTotalPageCount ?? 10}`;
+    return `${document.visionPageCount ?? 0}/${document.visionTotalPageCount ?? DEFAULT_VISION_PAGE_LIMIT}`;
   }
 
   if ((document.visionStatus === 'failed' || document.extractionStatus === 'Vision 분석 실패') && !document.visionPageCount) {
@@ -780,7 +781,7 @@ export default function Home() {
   });
 
   const runAutomaticVisionAnalysis = async (documentId: string, file: File, textPrefix = '') => {
-    const targetPageCount = 10;
+    const targetPageCount = DEFAULT_VISION_PAGE_LIMIT;
     const processingMessage = getVisionProcessingMessage();
 
     updateUploadedDocument(documentId, {
@@ -801,7 +802,7 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('mode', 'first10');
+      formData.append('mode', DEFAULT_VISION_MODE);
       console.info('vision analysis request sent', { documentId, fileName: file.name, route: '/api/vision-pdf' });
       const response = await fetch('/api/vision-pdf', { method: 'POST', body: formData });
       const data = await parseJsonResponse<VisionPdfResponse>(response, 'Vision API');
@@ -919,7 +920,7 @@ export default function Home() {
               visionStatus: 'analyzing',
               visionUsed: true,
               visionPageCount: 0,
-              visionTotalPageCount: 10,
+              visionTotalPageCount: DEFAULT_VISION_PAGE_LIMIT,
             })
           : createUploadedDocument(file, '추출 실패', data.text ?? '', message);
         addUploadedDocument(document, extension === 'pdf' ? 'warning' : 'error', extension === 'pdf' ? getVisionProcessingMessage() : message);
@@ -939,7 +940,7 @@ export default function Home() {
               visionStatus: 'analyzing',
               visionUsed: true,
               visionPageCount: 0,
-              visionTotalPageCount: 10,
+              visionTotalPageCount: DEFAULT_VISION_PAGE_LIMIT,
             })
           : createUploadedDocument(file, '추출 실패', validation.text, message);
         addUploadedDocument(document, validation.reason === 'short' ? 'warning' : 'error', extension === 'pdf' ? getVisionProcessingMessage() : message);
@@ -964,7 +965,7 @@ export default function Home() {
           visionStatus: 'analyzing',
           visionUsed: true,
           visionPageCount: 0,
-          visionTotalPageCount: 10,
+          visionTotalPageCount: DEFAULT_VISION_PAGE_LIMIT,
         });
         addUploadedDocument(document, 'warning', getVisionProcessingMessage());
         await runAutomaticVisionAnalysis(document.id, file);
@@ -1172,7 +1173,7 @@ export default function Home() {
                     <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, DOCX, TXT, MD</p>
                     <p className="mt-1 text-sm leading-6 text-slate-600">업로드된 파일은 텍스트 추출/Vision 분석 요청에만 사용되며 원본 파일은 저장하지 않습니다.</p>
                     {hasVisionAnalysisInProgress && <p className="mt-1 text-sm leading-6 text-amber-700">{VISION_PROCESSING_GUIDANCE}</p>}
-                    <p className="mt-1 text-xs font-bold text-blue-700">Vision 옵션: {VISION_FIRST_10_PAGES_LABEL} (MVP)</p>
+                    <p className="mt-1 text-xs font-bold text-blue-700">Vision 옵션: {VISION_FIRST_3_PAGES_LABEL} (MVP)</p>
                   </div>
                   <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-bold text-blue-700 shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50">
                     파일 선택
