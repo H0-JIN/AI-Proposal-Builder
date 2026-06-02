@@ -5,6 +5,7 @@ import pptxgen from 'pptxgenjs';
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
+import { isInternalConceptComparisonSlide, removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import {
   OCR_UNSUPPORTED_MESSAGE,
   PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
@@ -328,14 +329,15 @@ function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLog
     ['핵심 과제', logic.coreChallenge],
     ['타깃 인사이트', logic.targetInsight],
     ['브랜드/제품 가치', logic.brandOrProductValue],
-    ['공간 기회', logic.spatialOpportunity],
     ['경험 기회', logic.experienceOpportunity],
+    ['콘셉트 필연성', logic.conceptNecessity],
+    ['선택 콘셉트 실행 연결', logic.selectedConceptReason],
   ];
 
   return (
     <div className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50 p-5 text-indigo-950">
       <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Concept Development Logic</p>
-      <h3 className="mt-2 text-xl font-black">RFP 분석 기반 콘셉트 도출 기준</h3>
+      <h3 className="mt-2 text-xl font-black">선택 콘셉트 도출 논리</h3>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         {rows.map(([label, value]) => (
           <div key={label} className="rounded-2xl bg-white/80 p-3 text-sm leading-6">
@@ -344,12 +346,14 @@ function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLog
           </div>
         ))}
       </div>
-      <div className="mt-4 rounded-2xl bg-white/80 p-3 text-sm leading-6">
-        <p className="font-black text-indigo-800">컨셉 개발 기준</p>
-        <ul className="mt-2 list-disc space-y-1 pl-5">
-          {logic.conceptDevelopmentCriteria.map((criterion, index) => <li key={`${criterion}-${index}`}>{criterion}</li>)}
-        </ul>
-      </div>
+      {logic.conceptDevelopmentCriteria?.length ? (
+        <div className="mt-4 rounded-2xl bg-white/80 p-3 text-sm leading-6">
+          <p className="font-black text-indigo-800">컨셉 개발 기준</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {logic.conceptDevelopmentCriteria.map((criterion, index) => <li key={`${criterion}-${index}`}>{criterion}</li>)}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -527,6 +531,7 @@ function buildStructuredSlideLines(slide: SlideContent) {
 }
 
 async function downloadPptx(input: ProjectInput, slides: SlideContent[], selectedConcept?: ConceptCandidate) {
+  const exportSlides = removeInternalConceptComparisonSlides(slides);
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'AI Proposal Builder';
@@ -538,14 +543,14 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[], selecte
     bodyFontFace: 'Arial',
   };
 
-  slides.forEach((slideData) => {
+  exportSlides.forEach((slideData) => {
     const slide = pptx.addSlide();
     slide.background = { color: 'FFFFFF' };
     slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 0.18, fill: { color: '2563EB' }, line: { color: '2563EB' } });
     slide.addText(String(slideData.slideNumber).padStart(2, '0'), { x: 0.55, y: 0.35, w: 0.7, h: 0.3, fontSize: 11, color: '2563EB', bold: true });
     slide.addText(slideData.slideTitle, { x: 0.55, y: 0.7, w: 5.8, h: 0.55, fontSize: 24, bold: true, color: '111827', breakLine: false });
     slide.addText(slideData.keyMessage, { x: 0.58, y: 1.28, w: 5.8, h: 0.45, fontSize: 12, color: '475569' });
-    const shouldShowConcept = selectedConcept && /core concept|key experience asset|spatial \/ content|media \/ interactive|콘셉트|핵심 체험|공간|콘텐츠|미디어|인터랙/i.test(`${slideData.slideType} ${slideData.slideTitle}`);
+    const shouldShowConcept = selectedConcept && !isInternalConceptComparisonSlide(slideData) && /selected concept rationale|core concept|key experience asset|spatial \/ content|media \/ interactive|콘셉트|핵심 체험|공간|콘텐츠|미디어|인터랙/i.test(`${slideData.slideType} ${slideData.slideTitle}`);
     if (shouldShowConcept) {
       slide.addShape(pptx.ShapeType.roundRect, { x: 0.72, y: 6.25, w: 11.95, h: 0.48, rectRadius: 0.08, fill: { color: 'EEF2FF' }, line: { color: 'C7D2FE' } });
       slide.addText(`Selected Concept: ${selectedConcept.conceptNameEN} / ${selectedConcept.conceptNameKR} · ${selectedConcept.coreMessage}`, { x: 0.95, y: 6.36, w: 11.45, h: 0.18, fontSize: 8, color: '3730A3', bold: true, fit: 'shrink' });
@@ -790,12 +795,59 @@ export default function Home() {
     setState((current) => ({ ...current, selectedConcept: concept, outline: undefined, slides: undefined }));
   };
 
+
+  const renumberOutline = (outline: SlideOutline[]) => outline.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
+
+  const updateOutlineSlide = (slideNumber: number, field: keyof Pick<SlideOutline, 'slideTitle' | 'slidePurpose' | 'keyMessage' | 'mainCopy'>, value: string) => {
+    setState((current) => ({
+      ...current,
+      outline: current.outline?.map((slide) => (slide.slideNumber === slideNumber ? { ...slide, [field]: value } : slide)),
+      slides: undefined,
+    }));
+  };
+
+  const deleteOutlineSlide = (slideNumber: number) => {
+    setState((current) => ({
+      ...current,
+      outline: current.outline ? renumberOutline(current.outline.filter((slide) => slide.slideNumber !== slideNumber)) : current.outline,
+      slides: undefined,
+    }));
+  };
+
+  const moveOutlineSlide = (slideNumber: number, direction: -1 | 1) => {
+    setState((current) => {
+      if (!current.outline) return current;
+      const index = current.outline.findIndex((slide) => slide.slideNumber === slideNumber);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.outline.length) return current;
+      const nextOutline = [...current.outline];
+      [nextOutline[index], nextOutline[nextIndex]] = [nextOutline[nextIndex], nextOutline[index]];
+      return { ...current, outline: renumberOutline(nextOutline), slides: undefined };
+    });
+  };
+
+  const addOutlineSlide = () => {
+    setState((current) => {
+      const outline = current.outline ?? [];
+      const nextSlide: SlideOutline = {
+        slideNumber: outline.length + 1,
+        slideType: 'Custom Slide',
+        slideTitle: '새 슬라이드 제목',
+        slidePurpose: '이 슬라이드가 제안서에서 수행할 역할을 입력하세요.',
+        keyMessage: '핵심 메시지를 입력하세요.',
+        mainCopy: '본문 방향 또는 주요 서술 문장을 입력하세요.',
+        confirmNeededNote: '',
+      };
+      return { ...current, outline: [...outline, nextSlide], slides: undefined };
+    });
+  };
+
   const runOutline = async () => {
     if (!state.analysis || !state.selectedConcept) return;
     setError('');
     setLoading('제안서 구조 생성 중...');
     try {
-      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptCandidates: state.conceptCandidates, conceptRecommendation: state.conceptRecommendation });
+      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, conceptDevelopmentLogic: state.conceptDevelopmentLogic });
       setState((current) => ({ ...current, outline, slides: undefined }));
       setStep('outline');
     } catch (err) {
@@ -810,7 +862,8 @@ export default function Home() {
     setError('');
     setLoading('장표별 문안 생성 중...');
     try {
-      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: state.outline, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptCandidates: state.conceptCandidates, conceptRecommendation: state.conceptRecommendation });
+      const editableOutline = state.outline.map((slide) => ({ ...slide, mainCopy: slide.mainCopy ?? slide.keyMessage }));
+      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: removeInternalConceptComparisonSlides(editableOutline), conceptDevelopmentLogic: state.conceptDevelopmentLogic });
       setState((current) => ({ ...current, slides }));
       setStep('slides');
     } catch (err) {
@@ -1036,20 +1089,49 @@ export default function Home() {
                 선택된 콘셉트: {state.selectedConcept.conceptNameEN} / {state.selectedConcept.conceptNameKR}
               </div>
             )}
+            <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-semibold leading-6 text-emerald-900">
+              이 구조는 최종 문안 생성과 PPTX 다운로드의 기준입니다. 내부 의사결정용 콘셉트 후보 비교 장표는 제외되며, 필요한 장표는 직접 수정·삭제·추가할 수 있습니다.
+            </div>
             <div className="space-y-3">
-              {state.outline.map((slide) => (
+              {state.outline.map((slide, index) => (
                 <article key={slide.slideNumber} className="rounded-2xl border border-slate-200 p-4">
-                  <p className="text-xs font-bold text-blue-600">SLIDE {String(slide.slideNumber).padStart(2, '0')}</p>
-                  <h3 className="mt-1 text-lg font-bold text-slate-950">{slide.slideTitle}</h3>
-                  <p className="mt-1 text-sm text-slate-600">목적: {slide.slidePurpose}</p>
-                  <p className="mt-2 font-medium text-slate-800">{slide.keyMessage}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold text-blue-600">SLIDE {String(slide.slideNumber).padStart(2, '0')}</p>
+                      <div className="mt-1 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{slide.slideType}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => moveOutlineSlide(slide.slideNumber, -1)} disabled={index === 0} className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">위로</button>
+                      <button type="button" onClick={() => moveOutlineSlide(slide.slideNumber, 1)} disabled={index === state.outline!.length - 1} className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">아래로</button>
+                      <button type="button" onClick={() => deleteOutlineSlide(slide.slideNumber)} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">삭제</button>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label className="text-sm font-bold text-slate-700">
+                      슬라이드 제목
+                      <input value={slide.slideTitle} onChange={(event) => updateOutlineSlide(slide.slideNumber, 'slideTitle', event.target.value)} className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal text-slate-900 outline-none focus:border-blue-500" />
+                    </label>
+                    <label className="text-sm font-bold text-slate-700">
+                      핵심 메시지
+                      <input value={slide.keyMessage} onChange={(event) => updateOutlineSlide(slide.slideNumber, 'keyMessage', event.target.value)} className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal text-slate-900 outline-none focus:border-blue-500" />
+                    </label>
+                    <label className="text-sm font-bold text-slate-700 md:col-span-2">
+                      슬라이드 목적
+                      <textarea value={slide.slidePurpose} onChange={(event) => updateOutlineSlide(slide.slideNumber, 'slidePurpose', event.target.value)} className="mt-1 min-h-20 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal text-slate-900 outline-none focus:border-blue-500" />
+                    </label>
+                    <label className="text-sm font-bold text-slate-700 md:col-span-2">
+                      메인 카피 / 문안 방향
+                      <textarea value={slide.mainCopy ?? ''} onChange={(event) => updateOutlineSlide(slide.slideNumber, 'mainCopy', event.target.value)} className="mt-1 min-h-24 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal text-slate-900 outline-none focus:border-blue-500" />
+                    </label>
+                  </div>
                   {slide.confirmNeededNote && <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Note: {slide.confirmNeededNote}</p>}
                 </article>
               ))}
             </div>
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('concepts')}>다른 콘셉트 선택</SecondaryButton>
-              <PrimaryButton onClick={runSlides} disabled={Boolean(loading)}>장표별 문안 생성</PrimaryButton>
+              <SecondaryButton onClick={addOutlineSlide}>슬라이드 추가</SecondaryButton>
+              <PrimaryButton onClick={runSlides} disabled={Boolean(loading) || !state.outline.length}>장표별 문안 생성</PrimaryButton>
             </div>
           </SectionCard>
         )}

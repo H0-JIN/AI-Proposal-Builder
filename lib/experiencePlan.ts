@@ -1,4 +1,5 @@
 import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ConceptRecommendation, ProjectInput, SlideOutline } from '@/lib/types';
+import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 
 export const experienceDetailFields = [
   'productCode',
@@ -35,8 +36,7 @@ export const experienceScenarioSteps = ['Entry', 'Select', 'Experience', 'Genera
 
 const productDetailSlideType = 'Spatial / Content Plan - Product Experience Detail';
 const conceptDevelopmentLogicSlideType = 'Concept Development Logic';
-const conceptCandidatesSlideType = 'Concept Candidates';
-const selectedConceptSlideType = 'Selected Concept';
+const selectedConceptSlideType = 'Selected Concept Rationale';
 const referenceInsightSlideType = 'Reference Insight';
 
 type ExperiencePlanContext = { input?: ProjectInput; analysis?: AnalysisResult; selectedConcept?: ConceptCandidate; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptCandidates?: ConceptCandidate[]; conceptRecommendation?: ConceptRecommendation };
@@ -126,6 +126,7 @@ function buildExpandedSlide(base: SlideOutline | undefined, template: (typeof sp
     slideTitle: template.slideTitle,
     slidePurpose: template.slidePurpose,
     keyMessage: template.keyMessage,
+    mainCopy: base?.mainCopy ?? template.keyMessage,
     confirmNeededNote: base?.confirmNeededNote ?? '',
   };
 }
@@ -137,6 +138,7 @@ function buildProductDetailSlide(productCode: string): SlideOutline {
     slideTitle: `${productCode} 체험 상세`,
     slidePurpose: `${productCode} 단위에서 방문객이 수행할 미션, 행동, 반응형 콘텐츠, 결과물을 실제 체험 장표로 상세화한다.`,
     keyMessage: `${productCode}는 단순 제품 설명이 아니라 방문객이 직접 시도하고 결과를 얻는 개별 체험 모듈로 설계한다.`,
+    mainCopy: `${productCode} 경험은 선택된 콘셉트의 메시지를 방문객 행동, 반응형 콘텐츠, 결과물로 전환하는 구체 실행 단위로 전개한다.`,
     confirmNeededNote: '',
   };
 }
@@ -147,19 +149,9 @@ function buildConceptDevelopmentLogicSlide(): SlideOutline {
     slideNumber: 0,
     slideType: conceptDevelopmentLogicSlideType,
     slideTitle: 'Concept Development Logic',
-    slidePurpose: 'RFP 분석에서 핵심 과제, 타깃 인사이트, 브랜드/제품 가치, 공간/경험 기회, 콘셉트 개발 기준을 도출한다.',
-    keyMessage: '콘셉트 후보는 즉흥 아이디어가 아니라 RFP 요구와 실행 조건에서 도출된 기준을 통과한 전략 대안이다.',
-    confirmNeededNote: '',
-  };
-}
-
-function buildConceptCandidatesSlide(): SlideOutline {
-  return {
-    slideNumber: 0,
-    slideType: conceptCandidatesSlideType,
-    slideTitle: 'Concept Candidates',
-    slidePurpose: '3개 콘셉트 후보를 핵심 메시지, 경험 구조, 강점, 리스크, 추천 여부 기준으로 비교한다.',
-    keyMessage: '세 후보의 전략 차이와 실행 리스크를 비교해 최종 선택의 근거를 명확히 만든다.',
+    slidePurpose: '핵심 과제, 타깃 인사이트, 제품/브랜드 가치, 경험 기회가 선택 콘셉트로 귀결되는 논리 구조를 설명한다.',
+    keyMessage: '이번 제안의 콘셉트는 후보 비교 결과가 아니라 프로젝트 과제와 방문객 경험 조건에서 필연적으로 도출된 실행 원칙이다.',
+    mainCopy: '핵심 과제에서 출발해 타깃 인사이트, 브랜드/제품 가치, 경험 기회, 콘셉트 필연성, 실행 연결로 이어지는 제안 논리를 제시한다.',
     confirmNeededNote: '',
   };
 }
@@ -168,9 +160,10 @@ function buildSelectedConceptSlide(): SlideOutline {
   return {
     slideNumber: 0,
     slideType: selectedConceptSlideType,
-    slideTitle: 'Selected Concept',
-    slidePurpose: '사용자가 선택한 콘셉트를 이후 제안서 구조, 핵심 체험 자산, 공간/콘텐츠, 미디어/인터랙션 설계의 기준으로 고정한다.',
-    keyMessage: '선택된 콘셉트는 전체 방문객 경험과 실행 장표를 관통하는 설계 원칙이다.',
+    slideTitle: 'Selected Concept Rationale',
+    slidePurpose: '선택된 콘셉트가 공간, 콘텐츠, 미디어, 공유 구조로 확장되어야 하는 이유를 제안서 문장으로 정리한다.',
+    keyMessage: '선택된 콘셉트는 제품/브랜드 가치를 방문객의 행동과 산출물로 바꾸는 경험 전개의 기준이다.',
+    mainCopy: '본 제안은 선택된 콘셉트를 중심으로 핵심 체험 자산, 방문객 여정, 공간/콘텐츠 구성, 미디어 반응, SNS 공유 구조를 하나의 경험 시퀀스로 연결한다.',
     confirmNeededNote: '',
   };
 }
@@ -182,6 +175,7 @@ function buildReferenceInsightSlide(): SlideOutline {
     slideTitle: 'Reference Insight',
     slidePurpose: 'RFP에 언급된 참고 사례를 실제 과업 범위가 아닌 설계 원칙과 주의점으로 정리한다.',
     keyMessage: '참고 사례는 신규 체험 모듈명이 아니라 임팩트, 참여 방식, 확산 구조를 도출하기 위한 레퍼런스 인사이트로만 활용한다.',
+    mainCopy: '레퍼런스는 제안 범위를 대체하지 않고 선택 콘셉트의 연출 강도, 참여 방식, 확산 구조를 보정하는 설계 원칙으로만 반영한다.',
     confirmNeededNote: '',
   };
 }
@@ -317,8 +311,7 @@ function insertConceptDevelopmentSlides(slides: SlideOutline[], context?: Experi
 
   const additions: SlideOutline[] = [];
   if (context.conceptDevelopmentLogic && !hasSlideType(slides, /concept development logic|컨셉 도출|콘셉트 도출/i)) additions.push(buildConceptDevelopmentLogicSlide());
-  if (context.conceptCandidates?.length && !hasSlideType(slides, /concept candidates|후보 비교|콘셉트 후보/i)) additions.push(buildConceptCandidatesSlide());
-  if (context.selectedConcept && !hasSlideType(slides, /selected concept|선택 콘셉트|선정 콘셉트/i)) additions.push(buildSelectedConceptSlide());
+  if (context.selectedConcept && !hasSlideType(slides, /selected concept rationale|selected concept|선택.*콘셉트|선정 콘셉트/i)) additions.push(buildSelectedConceptSlide());
   if (!additions.length) return slides;
 
   const insertIndex = slides.findIndex((slide) => /experience strategy|core concept|전략|콘셉트/i.test(`${slide.slideType} ${slide.slideTitle}`));
@@ -372,5 +365,5 @@ export function expandExperiencePlanOutline(outline: SlideOutline[], context?: E
     completed = [...completed.slice(0, insertIndex), ...mediaPlanSlides.map((template) => buildExpandedSlide(undefined, template)), ...completed.slice(insertIndex)];
   }
 
-  return renumber(completed);
+  return renumber(removeInternalConceptComparisonSlides(completed));
 }
