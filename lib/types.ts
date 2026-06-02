@@ -1,4 +1,4 @@
-export type ProposalType = 'basic' | 'cheil' | 'innocean' | 'hyundai';
+export type ProposalType = 'basic' | 'cheil' | 'innocean' | 'hyundai' | 'mice_event_operation' | 'conference_forum';
 
 export interface ProjectInput {
   proposalType: ProposalType;
@@ -112,6 +112,18 @@ export interface TaskSection {
   confirmNeeded: string[];
 }
 
+export type RequirementSourceCategory = 'requiredDeliverables' | 'scopeOfWork' | 'evaluationCriteria' | 'constraints';
+
+export type RequirementCoverageStatus = 'covered' | 'partially_covered' | 'missing';
+
+export interface RfpRequirementCoverage {
+  requirement: string;
+  sourceCategory: RequirementSourceCategory;
+  mappedSlideTitle: string;
+  coverageStatus: RequirementCoverageStatus;
+  note: string;
+}
+
 export interface NumericInformation {
   pastPerformance: string[];
   lessonLearned: string[];
@@ -125,6 +137,11 @@ export interface AnalysisResult {
   projectOverview: string;
   clientChallenge: string;
   taskSections: TaskSection[];
+  inferredProposalType: ProposalType;
+  proposalTypeReasoning: string;
+  requiredDeliverables: string[];
+  scopeOfWork: string[];
+  evaluationCriteria: string[];
   requiredItems: string[];
   requiredScope: string[];
   referenceOnly: string[];
@@ -300,4 +317,6 @@ export const proposalTypeLabels: Record<ProposalType, string> = {
   cheil: '제일기획형',
   innocean: '이노션형',
   hyundai: '현대차그룹형',
+  mice_event_operation: 'MICE 행사 운영형',
+  conference_forum: '컨퍼런스 / 포럼형',
 };

@@ -222,7 +222,9 @@ function collectScopedText(context?: ExperiencePlanContext) {
 
   const taskDeliverables = analysis.taskSections?.flatMap((section) => section.requiredDeliverables ?? []) ?? [];
   const scopedParts = [
+    ...(analysis.requiredDeliverables ?? []),
     ...taskDeliverables,
+    ...(analysis.scopeOfWork ?? []),
     ...(analysis.requiredScope ?? []),
     ...(analysis.productInfo ?? []),
     ...(analysis.requiredItems ?? []),
@@ -276,6 +278,8 @@ function extractNamedProductUnits(context?: ExperiencePlanContext) {
 
   const explicitCandidates = [
     ...(analysis.productInfo ?? []),
+    ...(analysis.requiredDeliverables ?? []).filter(looksLikeProductUnit),
+    ...(analysis.scopeOfWork ?? []).filter(looksLikeProductUnit),
     ...(analysis.requiredScope ?? []).filter(looksLikeProductUnit),
     ...(analysis.taskSections?.flatMap((section) => section.requiredDeliverables ?? []).filter(looksLikeProductUnit) ?? []),
   ];
@@ -297,8 +301,10 @@ export function extractProductCodes(context?: ExperiencePlanContext) {
   const excludedText = collectExcludedScopeText(context);
   const productInfoText = context?.analysis?.productInfo?.join('\n') ?? '';
   const requiredScopeText = context?.analysis?.requiredScope?.join('\n') ?? '';
+  const requiredDeliverablesText = context?.analysis?.requiredDeliverables?.join('\n') ?? '';
+  const scopeOfWorkText = context?.analysis?.scopeOfWork?.join('\n') ?? '';
   const taskDeliverablesText = context?.analysis?.taskSections?.flatMap((section) => section.requiredDeliverables ?? []).join('\n') ?? '';
-  const explicitScopeText = [taskDeliverablesText, productInfoText, requiredScopeText].join('\n');
+  const explicitScopeText = [taskDeliverablesText, requiredDeliverablesText, scopeOfWorkText, productInfoText, requiredScopeText].join('\n');
   const explicitCodes = new Set(matchProductCodes(explicitScopeText));
   const excludedCodes = new Set(matchProductCodes(excludedText));
   const namedUnits = extractNamedProductUnits(context);

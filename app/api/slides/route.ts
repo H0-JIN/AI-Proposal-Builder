@@ -8,6 +8,7 @@ import { expandExperiencePlanOutline, experienceDetailFields, experienceScenario
 import { sanitizeKpiSlides } from '@/lib/kpiGuard';
 import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import { sanitizeGeneratedSlides } from '@/lib/slideSanitizer';
+import { ensureRfpRequirementCoverage } from '@/lib/rfpRequirements';
 
 
 function normalizeSentence(value?: string) {
@@ -152,7 +153,10 @@ export async function POST(request: Request) {
     const missingInfoSummary = inputQuality.missingItems.map((item) => `${item.label}: ${item.description}`);
 
     const productCodes = extractProductCodes({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
-    const expandedOutline = expandExperiencePlanOutline(body.outline, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
+    const expandedOutline = ensureRfpRequirementCoverage(
+      removeInternalConceptComparisonSlides(expandExperiencePlanOutline(body.outline, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic })),
+      body.analysis,
+    );
 
     const result = await createStructuredJson<{ slides: SlideContent[] }>({
       schemaName: 'proposal_slide_contents',
@@ -163,12 +167,13 @@ export async function POST(request: Request) {
         `각 슬라이드는 slideNumber, slideType, slideTitle, slidePurpose, keyMessage, mainCopy, bodyBullets, visualDirection, visitorAction, contentMechanism, spatialPlacement, mediaOrObject, outputOrReward, imagePlaceholder, visualPrompt, diagramSuggestion, productExperienceDetails, keyExperienceAssets, experienceScenarioSteps, referenceInsights, speakerNote, confirmNeededNote를 모두 작성한다. 일반 슬라이드에서 해당 배열이 없으면 빈 배열을 넣는다. 제품/콘텐츠 상세 장표는 ${experienceDetailFields.join(', ')} 항목을 productExperienceDetails에 명확히 작성하라.`,
         '본문 문안에는 RFP Fact / AI Proposal / Confirm Needed 구분을 반영하라. 단, AI Proposal 영역은 RFP 반복이 아니라 새 제안 아이디어여야 하며 Confirm Needed는 confirmNeededNote에만 배치하라.',
         '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 선택되지 않은 콘셉트, 후보 간 비교, 평가 점수, 보류 사유는 어떤 장표에서도 언급하지 말라. Concept Candidates, 콘셉트 후보 3안 비교, 3개 콘셉트 비교표, 선택되지 않은 콘셉트 설명, 내부 평가 점수표 장표는 절대 작성하지 말라. Experience Approach 장표는 내부 분석 항목명이 아니라 Challenge, Insight, Opportunity, Approach 네 항목의 제안서 문장으로 작성하고, “후보 중 선택”이 아니라 “이 과제를 해결하려면 이러한 경험 접근이 필요하고 따라서 이 핵심 콘셉트로 전개해야 한다”는 논리로 작성하라. Core Concept 장표는 단순 소개가 아니라 Concept Name, Concept Statement, Core Message, Experience Logic, Why This Concept 구성의 전시 주제 선언으로 작성하라. Why This Concept에는 핵심 과제와 타깃 인사이트를 해결하기 위해 왜 이 콘셉트가 필요한지 설명하라. Experience Structure 장표에는 Spatial Zone, Hands-on Demo / Interactive Experience, Media / Signage, Photo / Viral Spot, Output / Share 항목을 포함하되 각 항목은 1~2문장 이내로 핵심 콘셉트의 실행 확장 구조를 보여줘라. 최종 본문에는 내부 JSON 필드명 또는 camelCase 항목명을 노출하지 말라.',
-        '제안 아이디어와 장표 문안은 analysis.taskSections[].requiredDeliverables를 최우선 기준으로 삼고 analysis.requiredScope와 analysis.productInfo 중심으로만 생성하라. analysis.referenceOnly, analysis.doNotTreatAsScope, analysis.existingAssets 항목은 독립 체험 모듈/제품 상세/신규 콘텐츠 단위로 생성하지 말고 참고 방향 또는 레퍼런스 인사이트로만 사용하라.',
+        '제안 아이디어와 장표 문안은 analysis.requiredDeliverables, analysis.scopeOfWork, analysis.taskSections[].requiredDeliverables를 최우선 기준으로 삼고 analysis.requiredScope와 analysis.productInfo 중심으로만 생성하라. proposalType별 템플릿보다 RFP 필수 항목과 과업 범위가 우선이다. analysis.referenceOnly, analysis.doNotTreatAsScope, analysis.existingAssets 항목은 독립 체험 모듈/제품 상세/신규 콘텐츠 단위로 생성하지 말고 참고 방향 또는 레퍼런스 인사이트로만 사용하라.',
+        'RFP Requirement Response / 과업 대응표 장표는 RFP 요구사항, 대응 장표, 제안 방향, 비고 형식의 표처럼 읽히게 작성하라. requiredDeliverables와 scopeOfWork 각 항목은 최소 하나 이상의 slide 또는 section에서 누락 없이 대응하고, missing이 있으면 해당 보완 장표의 본문에 요구사항명을 명시하라.',
         'Reference Insight 또는 Design Reference Direction 장표가 있으면 referenceInsights 배열에 referenceName, referenceType, whatToLearn, howToApply, caution을 채워라. caution에는 “실제 제안 범위가 아닌 참고 사례”라는 의미가 분명히 드러나야 한다.',
         '참고 사례를 다룰 때는 “임팩트 있는 전시 요소 참고 방향”, “기존 캠페인에서 확인된 성공 요소”, “참고 사례 기반 설계 원칙”, “레퍼런스 인사이트”처럼 표현하라. FF7 체험 상세, S26 체험 상세, C2 체험 상세, 기존 캠페인명 체험 상세 같은 신규 모듈 장표 또는 productExperienceDetails를 만들지 말라.',
         `Key Experience Asset Concept 슬라이드에는 selectedConcept.keyExperienceAssetDirection을 기준으로 프로젝트 핵심 체험 자산을 반드시 1~3개로 압축해 keyExperienceAssets 배열에 작성하라. 각 asset은 ${keyExperienceAssetFields.join(', ')} 항목을 포함한다. 일반 assetType 후보 목록은 bodyBullets에 나열하지 말라. 참고 가능한 assetType 범위는 ${assetTypeGuide}이지만 PPT에는 선택된 1~3개만 보이게 작성하라.`,
         'assetType을 무조건 Monument로 고정하지 말라. RFP에서 모뉴먼트를 요구한 경우에만 Monument를 선택할 수 있다. 공간 구성 중심이면 Spatial Zone, 체험 콘텐츠 중심이면 Interactive Experience, 영상/LED/미디어 중심이면 Media Content 또는 Digital Signage, 촬영/공유 중심이면 Photo / Viral Spot, 제품 비교/시연 중심이면 Product Trial Kit 또는 Hands-on Demo를 우선 검토하라.',
-        '제품 또는 주요 콘텐츠 단위는 analysis.taskSections.requiredDeliverables, analysis.requiredScope 또는 analysis.productInfo에 명시된 제품/서비스 단위만 기준으로 삼아 각 단위별 Product Experience Detail 장표를 반드시 생성하라. Q8/H8/B8처럼 제품 코드가 복수로 감지되면 Q8, H8, B8 각각의 상세 장표 또는 제품별 비교표를 만들고, “폴더블 갤럭시 제품 체험 모듈”처럼 포괄 이름 하나로 병합하지 말라. 동일 제품/동일 체험 장표는 중복 생성하지 말고 제품당 1~2장으로 제한하라. Q8/H8/B8처럼 복수 제품이 있으면 한 제품에 상세 장표가 몰리지 않도록 균형 있게 배치하라. 같은 제품에 2장이 필요할 때만 “체험 개요”와 “체험 시나리오”처럼 역할을 명확히 분리하라. productExperienceDetails 배열에는 productCode, productRole, coreValue, experienceTitle, oneLineExperience, visitorMission, visitorAction, systemResponse, mediaOrObject, spatialPlacement, outputOrReward, snsSharePoint, visualDirection, imagePlaceholder, diagramSuggestion을 채워라. 단순 제품 설명이 아니라 방문객 행동, 시스템 반응, 결과물이 명확한 콘텐츠만 작성하라. referenceOnly/doNotTreatAsScope/existingAssets의 참고 사례, 기존 캠페인, 레슨런드 항목은 제외하라. “제작”, “개발”, “운영”, “구성”, “기획”, “제안” 같은 과업/업무 범위 표현은 체험 콘텐츠명으로 사용하지 말고 실행 계획, 제작 범위, 운영 계획 장표에서만 다루라.',
+        '제품 또는 주요 콘텐츠 단위는 analysis.requiredDeliverables, analysis.scopeOfWork, analysis.taskSections.requiredDeliverables, analysis.requiredScope 또는 analysis.productInfo에 명시된 제품/서비스 단위만 기준으로 삼아 각 단위별 Product Experience Detail 장표를 반드시 생성하라. Q8/H8/B8처럼 제품 코드가 복수로 감지되면 Q8, H8, B8 각각의 상세 장표 또는 제품별 비교표를 만들고, “폴더블 갤럭시 제품 체험 모듈”처럼 포괄 이름 하나로 병합하지 말라. 동일 제품/동일 체험 장표는 중복 생성하지 말고 제품당 1~2장으로 제한하라. Q8/H8/B8처럼 복수 제품이 있으면 한 제품에 상세 장표가 몰리지 않도록 균형 있게 배치하라. 같은 제품에 2장이 필요할 때만 “체험 개요”와 “체험 시나리오”처럼 역할을 명확히 분리하라. productExperienceDetails 배열에는 productCode, productRole, coreValue, experienceTitle, oneLineExperience, visitorMission, visitorAction, systemResponse, mediaOrObject, spatialPlacement, outputOrReward, snsSharePoint, visualDirection, imagePlaceholder, diagramSuggestion을 채워라. 단순 제품 설명이 아니라 방문객 행동, 시스템 반응, 결과물이 명확한 콘텐츠만 작성하라. referenceOnly/doNotTreatAsScope/existingAssets의 참고 사례, 기존 캠페인, 레슨런드 항목은 제외하라. “제작”, “개발”, “운영”, “구성”, “기획”, “제안” 같은 과업/업무 범위 표현은 체험 콘텐츠명으로 사용하지 말고 실행 계획, 제작 범위, 운영 계획 장표에서만 다루라.',
         'Spatial / Content Plan은 핵심 콘셉트와 핵심 체험 자산을 기준으로 최소 5장 구조를 반드시 유지한다. 제품별 체험 상세 장표는 동일 제품/동일 체험을 반복하지 말고 유사 장표는 병합하라. Zone Detail 01 같은 일반 제목은 최종 slideTitle로 사용하지 말고 Q8 체험 개요, H8 체험 시나리오, B8 셀피 체험 개요처럼 제품과 역할이 분명한 실제 체험명으로 바꿔라.',
         'Spatial / Content Plan의 Main Experience Image 장표에는 imagePlaceholder를 파일명형 placeholder가 아니라 “대표 이미지 삽입 영역” 또는 자연어 1줄 이미지 설명으로 작성하라. 실제 이미지 생성용 visualPrompt는 내부 데이터 및 speakerNote에만 유지하라. 본문 bullet에는 Prompt 전문이나 cover_image_placeholder 같은 파일명형 텍스트를 노출하지 말라.',
         `Spatial / Content Plan의 Experience Scenario 장표는 ${experienceScenarioSteps.join(' → ')} 6단계를 experienceScenarioSteps 배열로 작성하고, 각 단계별 visitorAction, systemResponse, mediaOrObject, output, designNote가 표/플로우처럼 읽히게 하라.`,
@@ -182,7 +187,8 @@ export async function POST(request: Request) {
         '문안은 제안서에 바로 붙여넣을 수 있는 문장으로 작성하고 “필요”, “구체화 필요”, “확인 필요” 반복을 피하라. “3개 후보 중 가장 적합”, “다른 후보 대비”, “RFP 적합도 점수” 같은 내부 의사결정 표현을 금지하고, 핵심 콘셉트가 프로젝트 과제에서 자연스럽게 귀결되는 제안서 톤으로 작성하라. 최종 PPTX 노출 문안에는 “선택된 콘셉트”, “콘셉트 후보”, “콘셉트 도출 과정”, “후보 비교”, “C1 / C2 / C3”, “추천 콘셉트” 표현을 쓰지 말라.',
         '너무 일반적인 표현을 피하고, 프로젝트명/클라이언트명/분석 결과의 맥락을 반영해 콘셉트와 콘텐츠가 하나의 경험 구조로 이어지게 하라.',
       ].join('\n'),
-      user: `제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
+      user: `사용자 선택 제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
+RFP 분석 기반 유형: ${proposalTypeLabels[body.analysis.inferredProposalType ?? body.input.proposalType]}
 프로젝트명: ${body.input.projectName}
 클라이언트명: ${body.input.clientName}
 
