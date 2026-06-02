@@ -21,6 +21,7 @@ export type ExtractionStatus =
   | '이미지 중심 PDF로 판단'
   | 'Vision 분석 중'
   | 'Vision 분석 완료'
+  | 'Vision 일부 완료'
   | 'Vision 분석 실패'
   | '추가 메모 입력 필요'
   | '이미지 중심 문서 / OCR 필요'
@@ -42,7 +43,13 @@ export interface VisionPageAnalysis {
   needsReview: boolean;
 }
 
-export type VisionStatus = 'unused' | 'queued' | 'analyzing' | 'completed' | 'failed';
+export type VisionStatus = 'unused' | 'queued' | 'analyzing' | 'completed' | 'partial' | 'failed';
+
+export interface VisionFailedChunk {
+  pageStart: number;
+  pageEnd: number;
+  errorMessage: string;
+}
 
 export interface UploadedDocument {
   id: string;
@@ -56,7 +63,10 @@ export interface UploadedDocument {
   visionUsed?: boolean;
   visionPageCount?: number;
   visionTotalPageCount?: number;
+  totalPageCount?: number;
   visionAnalysis?: VisionPageAnalysis[];
+  failedChunks?: VisionFailedChunk[];
+  needsReview?: boolean;
   ocrUsed?: boolean;
   ocrAvailable?: boolean;
   warningMessage?: string;

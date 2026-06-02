@@ -1,4 +1,4 @@
-import { DEFAULT_VISION_PAGE_LIMIT } from './visionConfig';
+import { DEFAULT_VISION_CHUNK_SIZE } from './visionConfig';
 
 export const MIN_EXTRACTED_TEXT_LENGTH = 100;
 
@@ -20,10 +20,11 @@ export const OCR_FIRST_10_PAGES_LABEL = "앞 10페이지 OCR";
 export const VISION_REQUIRED_MESSAGE =
   "텍스트 품질 낮음 · 이미지 중심 PDF로 판단 · Vision 분석 자동 실행";
 export const VISION_PROCESSING_GUIDANCE =
-  `이미지 중심 PDF로 판단되어 앞 ${DEFAULT_VISION_PAGE_LIMIT}페이지를 자동 분석 중입니다. Vision 분석에는 시간이 걸릴 수 있습니다.`;
+  `이미지 중심 PDF로 판단되어 전체 페이지를 ${DEFAULT_VISION_CHUNK_SIZE}페이지 단위로 자동 분석 중입니다. Vision 분석에는 시간이 걸릴 수 있습니다.`;
 export const VISION_PROCESSING_PAGE_LIMIT_MESSAGE =
-  `페이지 수가 많은 문서는 MVP에서 앞 ${DEFAULT_VISION_PAGE_LIMIT}페이지만 우선 분석합니다.`;
-export const VISION_FIRST_3_PAGES_LABEL = `앞 ${DEFAULT_VISION_PAGE_LIMIT}페이지 Vision 분석`;
+  `전체 페이지 Vision 분석 · ${DEFAULT_VISION_CHUNK_SIZE}페이지 단위 순차 처리`;
+export const VISION_FULL_CHUNKED_LABEL = `전체 페이지 Vision 분석 · ${DEFAULT_VISION_CHUNK_SIZE}페이지 단위 순차 처리`;
+export const VISION_FIRST_3_PAGES_LABEL = VISION_FULL_CHUNKED_LABEL;
 
 const binarySignaturePatterns = [
   /^%PDF/i,
