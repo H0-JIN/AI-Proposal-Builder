@@ -51,6 +51,11 @@ export interface VisionFailedChunk {
   errorMessage: string;
 }
 
+export interface VisionFailedPage {
+  pageNumber: number;
+  errorMessage: string;
+}
+
 export interface UploadedDocument {
   id: string;
   fileName: string;
@@ -66,6 +71,7 @@ export interface UploadedDocument {
   totalPageCount?: number;
   visionAnalysis?: VisionPageAnalysis[];
   failedChunks?: VisionFailedChunk[];
+  failedPages?: VisionFailedPage[];
   needsReview?: boolean;
   ocrUsed?: boolean;
   ocrAvailable?: boolean;

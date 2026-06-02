@@ -301,6 +301,8 @@ function UploadedDocumentsList({
                 {document.extractionStatus}
               </span>
               {document.warningMessage && <p className="mt-2 text-xs leading-5 text-slate-500">{document.warningMessage}</p>}
+              {document.failedChunks?.length ? <p className="mt-2 text-xs leading-5 text-slate-500">실패 구간: {formatFailedChunks(document.failedChunks)}</p> : null}
+              {document.failedPages?.length ? <p className="mt-2 text-xs font-semibold leading-5 text-red-600">재시도 후 실패 페이지: {formatFailedPages(document.failedPages)}</p> : null}
               {document.errorMessage && document.errorMessage !== document.warningMessage && <p className="mt-2 text-xs font-semibold leading-5 text-red-600">{document.errorMessage}</p>}
             </div>
             <div className="col-span-4 text-center text-xs font-bold md:col-span-2">
@@ -547,6 +549,10 @@ function formatFailedChunks(failedChunks: NonNullable<UploadedDocument['failedCh
   return failedChunks.map((chunk) => `${chunk.pageStart}~${chunk.pageEnd}p`).join(', ');
 }
 
+function formatFailedPages(failedPages: NonNullable<UploadedDocument['failedPages']>) {
+  return failedPages.map((page) => `${page.pageNumber}p`).join(', ');
+}
+
 function getSuccessfulUploadedDocuments(documents: UploadedDocument[] = []) {
   return documents.filter((document) =>
     (document.extractionStatus === '텍스트 추출 완료' ||
@@ -776,7 +782,7 @@ export default function Home() {
     extractionStatus: ExtractionStatus,
     extractedText = '',
     warningMessage?: string,
-    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'failedChunks' | 'needsReview' | 'errorMessage'> = {},
+    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'failedChunks' | 'failedPages' | 'needsReview' | 'errorMessage'> = {},
   ): UploadedDocument => ({
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     fileName: file.name,
@@ -792,6 +798,7 @@ export default function Home() {
     totalPageCount: options.totalPageCount,
     visionAnalysis: options.visionAnalysis,
     failedChunks: options.failedChunks,
+    failedPages: options.failedPages,
     needsReview: options.needsReview,
     ocrUsed: options.ocrUsed ?? false,
     ocrAvailable: options.ocrAvailable ?? false,
@@ -814,6 +821,7 @@ export default function Home() {
       totalPageCount: undefined,
       visionAnalysis: [],
       failedChunks: [],
+      failedPages: [],
       needsReview: false,
       ocrAvailable: false,
       warningMessage: processingMessage,
@@ -825,71 +833,230 @@ export default function Home() {
 
     const accumulatedTexts: string[] = [];
     const accumulatedPages: VisionPageAnalysis[] = [];
+    const successfulPageNumbers = new Set<number>();
     const failedChunks: NonNullable<UploadedDocument['failedChunks']> = [];
+    const failedPages: NonNullable<UploadedDocument['failedPages']> = [];
     let totalPageCount: number | undefined;
     let processedThroughPage = 0;
     let pageStart = 1;
+
+    const getSuccessfulPageCount = () => successfulPageNumbers.size;
+
+    const appendSuccessfulVisionResult = (visionText: string, pages: VisionPageAnalysis[] = [], successPageStart: number, successPageEnd: number) => {
+      const validation = validateExtractedText(visionText);
+      const normalizedVisionText = validation.ok ? validation.text : visionText.trim();
+      accumulatedTexts.push(normalizedVisionText);
+      accumulatedPages.push(...pages);
+
+      if (pages.length) {
+        pages.forEach((page) => successfulPageNumbers.add(page.pageNumber));
+        return;
+      }
+
+      for (let pageNumber = successPageStart; pageNumber <= successPageEnd; pageNumber += 1) {
+        successfulPageNumbers.add(pageNumber);
+      }
+    };
+
+    const analyzeVisionRange = async (rangeStart: number, rangeEnd: number) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('mode', DEFAULT_VISION_MODE);
+      formData.append('pageStart', String(rangeStart));
+      formData.append('pageEnd', String(rangeEnd));
+
+      const response = await fetch('/api/vision-pdf', { method: 'POST', body: formData });
+      const data = await parseJsonResponse<VisionPdfResponse>(response, 'Vision API');
+      const nextTotalPageCount = data.pageCount ?? totalPageCount ?? rangeEnd;
+      const normalizedRangeEnd = Math.min(data.pageEnd ?? rangeEnd, nextTotalPageCount);
+      const visionText = data.documentAnalysisText || data.text || '';
+      const hasUsableVisionText = Boolean(visionText.trim());
+      const succeeded = response.ok && data.ok !== false && (data.status === 'success' || data.status === 'partial') && hasUsableVisionText;
+
+      return {
+        data,
+        nextTotalPageCount,
+        normalizedRangeEnd,
+        visionText,
+        succeeded,
+        errorMessage: succeeded ? undefined : buildVisionErrorMessage(data, 'Vision 분석 실패'),
+      };
+    };
+
+    const buildFailureSummary = () => [
+      failedChunks.length ? `실패 구간: ${formatFailedChunks(failedChunks)}` : undefined,
+      failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
+    ].filter(Boolean).join(' · ');
 
     try {
       while (!totalPageCount || pageStart <= totalPageCount) {
         const pageEnd = totalPageCount
           ? Math.min(pageStart + DEFAULT_VISION_CHUNK_SIZE - 1, totalPageCount)
           : pageStart + DEFAULT_VISION_CHUNK_SIZE - 1;
-        const chunkMessage = getVisionProcessingMessage(processedThroughPage, totalPageCount);
+        const chunkMessage = getVisionProcessingMessage(getSuccessfulPageCount(), totalPageCount);
 
         updateUploadedDocument(documentId, {
           extractionStatus: 'Vision 분석 중',
           visionStatus: 'analyzing',
-          visionPageCount: processedThroughPage,
+          visionPageCount: getSuccessfulPageCount(),
           visionTotalPageCount: totalPageCount ?? pageEnd,
           totalPageCount,
           warningMessage: chunkMessage,
-          errorMessage: failedChunks.length ? `실패 구간: ${formatFailedChunks(failedChunks)}` : undefined,
+          errorMessage: failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
         });
         setUploadNotice({ type: 'warning', message: chunkMessage });
 
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('mode', DEFAULT_VISION_MODE);
-        formData.append('pageStart', String(pageStart));
-        formData.append('pageEnd', String(pageEnd));
         console.info('vision chunk request sent', { documentId, fileName: file.name, route: '/api/vision-pdf', pageStart, pageEnd });
 
         let normalizedPageEnd = pageEnd;
         try {
-          const response = await fetch('/api/vision-pdf', { method: 'POST', body: formData });
-          const data = await parseJsonResponse<VisionPdfResponse>(response, 'Vision API');
-          totalPageCount = data.pageCount ?? totalPageCount ?? pageEnd;
-          normalizedPageEnd = Math.min(data.pageEnd ?? pageEnd, totalPageCount);
+          const result = await analyzeVisionRange(pageStart, pageEnd);
+          totalPageCount = result.nextTotalPageCount;
+          normalizedPageEnd = result.normalizedRangeEnd;
           processedThroughPage = Math.max(processedThroughPage, normalizedPageEnd);
 
-          const visionText = data.documentAnalysisText || data.text || '';
-          const hasUsableVisionText = Boolean(visionText.trim());
-          const chunkSucceeded = response.ok && data.ok !== false && (data.status === 'success' || data.status === 'partial') && hasUsableVisionText;
-
-          if (chunkSucceeded) {
-            const validation = validateExtractedText(visionText);
-            const normalizedVisionText = validation.ok ? validation.text : visionText.trim();
-            accumulatedTexts.push(normalizedVisionText);
-            accumulatedPages.push(...(data.pages ?? []));
+          if (result.succeeded) {
+            appendSuccessfulVisionResult(result.visionText, result.data.pages ?? [], pageStart, normalizedPageEnd);
           } else {
-            failedChunks.push({
-              pageStart,
-              pageEnd: normalizedPageEnd,
-              errorMessage: buildVisionErrorMessage(data, 'Vision chunk 분석 실패'),
+            const failedChunk = { pageStart, pageEnd: normalizedPageEnd, errorMessage: result.errorMessage ?? 'Vision chunk 분석 실패' };
+            failedChunks.push(failedChunk);
+            console.warn('vision chunk failed; retrying single pages', { documentId, fileName: file.name, ...failedChunk });
+
+            const retryMessage = `${failedChunk.pageStart}~${failedChunk.pageEnd}p chunk 실패, 1페이지 단위 재시도 중`;
+            updateUploadedDocument(documentId, {
+              extractionStatus: 'Vision 분석 중',
+              extractedText: [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n'),
+              documentAnalysisText: [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n') || undefined,
+              extractedCharCount: [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n').length,
+              visionStatus: 'analyzing',
+              visionUsed: true,
+              visionPageCount: getSuccessfulPageCount(),
+              visionTotalPageCount: totalPageCount,
+              totalPageCount,
+              visionAnalysis: accumulatedPages,
+              failedChunks: [...failedChunks],
+              failedPages: [...failedPages],
+              needsReview: false,
+              ocrAvailable: false,
+              warningMessage: retryMessage,
+              errorMessage: undefined,
             });
+            setUploadNotice({ type: 'warning', message: retryMessage });
+
+            for (let retryPage = pageStart; retryPage <= normalizedPageEnd; retryPage += 1) {
+              try {
+                console.info('vision single-page retry sent', { documentId, fileName: file.name, pageStart: retryPage, pageEnd: retryPage });
+                const retryResult = await analyzeVisionRange(retryPage, retryPage);
+                totalPageCount = retryResult.nextTotalPageCount;
+                processedThroughPage = Math.max(processedThroughPage, retryResult.normalizedRangeEnd);
+
+                if (retryResult.succeeded) {
+                  appendSuccessfulVisionResult(retryResult.visionText, retryResult.data.pages ?? [], retryPage, retryResult.normalizedRangeEnd);
+                } else {
+                  failedPages.push({ pageNumber: retryPage, errorMessage: retryResult.errorMessage ?? 'Vision 1페이지 재시도 실패' });
+                }
+              } catch (retryError) {
+                const message = retryError instanceof Error ? retryError.message : 'Vision 1페이지 재시도 요청 실패';
+                failedPages.push({ pageNumber: retryPage, errorMessage: message });
+                console.error('vision single-page retry failed and recorded', { documentId, fileName: file.name, pageNumber: retryPage, error: message });
+              }
+
+              const retryCombinedText = [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n');
+              const retryProgressMessage = failedPages.length
+                ? `Vision 분석 중: ${getSuccessfulPageCount()}/${totalPageCount ?? normalizedPageEnd} · 재시도 후 실패 페이지: ${formatFailedPages(failedPages)}`
+                : `Vision 분석 중: ${getSuccessfulPageCount()}/${totalPageCount ?? normalizedPageEnd}`;
+              updateUploadedDocument(documentId, {
+                extractionStatus: 'Vision 분석 중',
+                extractedText: retryCombinedText,
+                documentAnalysisText: retryCombinedText || undefined,
+                extractedCharCount: retryCombinedText.length,
+                visionStatus: 'analyzing',
+                visionUsed: true,
+                visionPageCount: getSuccessfulPageCount(),
+                visionTotalPageCount: totalPageCount ?? normalizedPageEnd,
+                totalPageCount: totalPageCount ?? normalizedPageEnd,
+                visionAnalysis: accumulatedPages,
+                failedChunks: [...failedChunks],
+                failedPages: [...failedPages],
+                needsReview: failedPages.length > 0,
+                ocrAvailable: false,
+                warningMessage: retryProgressMessage,
+                errorMessage: failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
+              });
+              setUploadNotice({ type: 'warning', message: retryProgressMessage });
+            }
           }
         } catch (chunkError) {
           const message = chunkError instanceof Error ? chunkError.message : 'Vision chunk 요청 실패';
           totalPageCount = totalPageCount ?? pageEnd;
           normalizedPageEnd = Math.min(pageEnd, totalPageCount);
           processedThroughPage = Math.max(processedThroughPage, normalizedPageEnd);
-          failedChunks.push({ pageStart, pageEnd: normalizedPageEnd, errorMessage: message });
-          console.error('vision chunk request failed and recorded', { documentId, fileName: file.name, pageStart, pageEnd: normalizedPageEnd, error: message });
+          const failedChunk = { pageStart, pageEnd: normalizedPageEnd, errorMessage: message };
+          failedChunks.push(failedChunk);
+          console.error('vision chunk request failed; retrying single pages', { documentId, fileName: file.name, ...failedChunk });
+
+          const retryMessage = `${failedChunk.pageStart}~${failedChunk.pageEnd}p chunk 실패, 1페이지 단위 재시도 중`;
+          updateUploadedDocument(documentId, {
+            extractionStatus: 'Vision 분석 중',
+            visionStatus: 'analyzing',
+            visionPageCount: getSuccessfulPageCount(),
+            visionTotalPageCount: totalPageCount,
+            totalPageCount,
+            failedChunks: [...failedChunks],
+            failedPages: [...failedPages],
+            warningMessage: retryMessage,
+            errorMessage: undefined,
+          });
+          setUploadNotice({ type: 'warning', message: retryMessage });
+
+          for (let retryPage = pageStart; retryPage <= normalizedPageEnd; retryPage += 1) {
+            try {
+              console.info('vision single-page retry sent', { documentId, fileName: file.name, pageStart: retryPage, pageEnd: retryPage });
+              const retryResult = await analyzeVisionRange(retryPage, retryPage);
+              totalPageCount = retryResult.nextTotalPageCount;
+              processedThroughPage = Math.max(processedThroughPage, retryResult.normalizedRangeEnd);
+
+              if (retryResult.succeeded) {
+                appendSuccessfulVisionResult(retryResult.visionText, retryResult.data.pages ?? [], retryPage, retryResult.normalizedRangeEnd);
+              } else {
+                failedPages.push({ pageNumber: retryPage, errorMessage: retryResult.errorMessage ?? 'Vision 1페이지 재시도 실패' });
+              }
+            } catch (retryError) {
+              const retryMessage = retryError instanceof Error ? retryError.message : 'Vision 1페이지 재시도 요청 실패';
+              failedPages.push({ pageNumber: retryPage, errorMessage: retryMessage });
+              console.error('vision single-page retry failed and recorded', { documentId, fileName: file.name, pageNumber: retryPage, error: retryMessage });
+            }
+
+            const retryCombinedText = [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n');
+            const retryProgressMessage = failedPages.length
+              ? `Vision 분석 중: ${getSuccessfulPageCount()}/${totalPageCount ?? normalizedPageEnd} · 재시도 후 실패 페이지: ${formatFailedPages(failedPages)}`
+              : `Vision 분석 중: ${getSuccessfulPageCount()}/${totalPageCount ?? normalizedPageEnd}`;
+            updateUploadedDocument(documentId, {
+              extractionStatus: 'Vision 분석 중',
+              extractedText: retryCombinedText,
+              documentAnalysisText: retryCombinedText || undefined,
+              extractedCharCount: retryCombinedText.length,
+              visionStatus: 'analyzing',
+              visionUsed: true,
+              visionPageCount: getSuccessfulPageCount(),
+              visionTotalPageCount: totalPageCount ?? normalizedPageEnd,
+              totalPageCount: totalPageCount ?? normalizedPageEnd,
+              visionAnalysis: accumulatedPages,
+              failedChunks: [...failedChunks],
+              failedPages: [...failedPages],
+              needsReview: failedPages.length > 0,
+              ocrAvailable: false,
+              warningMessage: retryProgressMessage,
+              errorMessage: failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
+            });
+            setUploadNotice({ type: 'warning', message: retryProgressMessage });
+          }
         }
 
         const combinedText = [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n');
-        const progressMessage = getVisionProcessingMessage(processedThroughPage, totalPageCount);
+        const progressMessage = failedPages.length
+          ? `Vision 분석 중: ${getSuccessfulPageCount()}/${totalPageCount ?? processedThroughPage} · 재시도 후 실패 페이지: ${formatFailedPages(failedPages)}`
+          : getVisionProcessingMessage(getSuccessfulPageCount(), totalPageCount);
         updateUploadedDocument(documentId, {
           extractionStatus: 'Vision 분석 중',
           extractedText: combinedText,
@@ -897,15 +1064,16 @@ export default function Home() {
           extractedCharCount: combinedText.length,
           visionStatus: 'analyzing',
           visionUsed: true,
-          visionPageCount: processedThroughPage,
+          visionPageCount: getSuccessfulPageCount(),
           visionTotalPageCount: totalPageCount,
           totalPageCount,
           visionAnalysis: accumulatedPages,
           failedChunks: [...failedChunks],
-          needsReview: failedChunks.length > 0,
+          failedPages: [...failedPages],
+          needsReview: failedPages.length > 0,
           ocrAvailable: false,
           warningMessage: progressMessage,
-          errorMessage: failedChunks.length ? `실패 구간: ${formatFailedChunks(failedChunks)}` : undefined,
+          errorMessage: failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
         });
         setUploadNotice({ type: 'warning', message: progressMessage });
 
@@ -913,67 +1081,73 @@ export default function Home() {
       }
 
       const combinedText = [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n');
-      const hasSuccessfulChunks = accumulatedTexts.some((text) => text.trim());
-      const finalStatus: ExtractionStatus = failedChunks.length
-        ? (hasSuccessfulChunks ? 'Vision 일부 완료' : 'Vision 분석 실패')
+      const hasSuccessfulPages = Boolean(combinedText.trim()) && getSuccessfulPageCount() > 0;
+      const finalStatus: ExtractionStatus = failedPages.length
+        ? (hasSuccessfulPages ? 'Vision 일부 완료' : 'Vision 분석 실패')
         : 'Vision 분석 완료';
       const finalVisionStatus: UploadedDocument['visionStatus'] = finalStatus === 'Vision 분석 완료'
         ? 'completed'
         : finalStatus === 'Vision 일부 완료'
           ? 'partial'
           : 'failed';
-      const failedMessage = failedChunks.length ? `실패 구간: ${formatFailedChunks(failedChunks)}` : undefined;
+      const failureSummary = buildFailureSummary();
+      const finalPageCount = totalPageCount ?? processedThroughPage ?? getSuccessfulPageCount();
       const finalMessage = finalStatus === 'Vision 분석 완료'
-        ? `Vision 분석 완료 · 페이지: ${processedThroughPage}/${totalPageCount ?? processedThroughPage}`
+        ? `Vision 분석 완료 · 페이지: ${getSuccessfulPageCount()}/${finalPageCount}`
         : finalStatus === 'Vision 일부 완료'
-          ? `Vision 일부 완료 · 페이지: ${processedThroughPage}/${totalPageCount ?? processedThroughPage} · ${failedMessage}`
-          : `Vision 분석 실패 · ${failedMessage ?? '분석 가능한 chunk가 없습니다.'}`;
+          ? `Vision 일부 완료 · 페이지: ${getSuccessfulPageCount()}/${finalPageCount} · ${failureSummary}`
+          : `Vision 분석 실패 · ${failureSummary || '분석 가능한 페이지가 없습니다.'}`;
 
       updateUploadedDocument(documentId, {
         extractionStatus: finalStatus,
-        extractedText: hasSuccessfulChunks ? combinedText : '',
-        documentAnalysisText: hasSuccessfulChunks ? combinedText : undefined,
-        extractedCharCount: hasSuccessfulChunks ? combinedText.length : 0,
+        extractedText: hasSuccessfulPages ? combinedText : '',
+        documentAnalysisText: hasSuccessfulPages ? combinedText : undefined,
+        extractedCharCount: hasSuccessfulPages ? combinedText.length : 0,
         visionStatus: finalVisionStatus,
         visionUsed: true,
-        visionPageCount: processedThroughPage,
-        visionTotalPageCount: totalPageCount ?? processedThroughPage,
-        totalPageCount: totalPageCount ?? processedThroughPage,
+        visionPageCount: getSuccessfulPageCount(),
+        visionTotalPageCount: finalPageCount,
+        totalPageCount: finalPageCount,
         visionAnalysis: accumulatedPages,
         failedChunks: [...failedChunks],
-        needsReview: failedChunks.length > 0,
+        failedPages: [...failedPages],
+        needsReview: failedPages.length > 0,
         ocrAvailable: false,
         warningMessage: finalStatus === 'Vision 일부 완료' ? finalMessage : undefined,
-        errorMessage: finalStatus === 'Vision 분석 실패' ? finalMessage : failedMessage,
+        errorMessage: finalStatus === 'Vision 분석 실패' ? finalMessage : failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
       });
-      console.info('vision chunked analysis finished', { documentId, fileName: file.name, processedThroughPage, totalPageCount, failedChunks: failedChunks.length, finalStatus });
+      console.info('vision chunked analysis finished', { documentId, fileName: file.name, successfulPages: getSuccessfulPageCount(), processedThroughPage, totalPageCount, failedChunks: failedChunks.length, failedPages: failedPages.length, finalStatus });
       setUploadNotice({ type: finalStatus === 'Vision 분석 완료' ? 'success' : finalStatus === 'Vision 일부 완료' ? 'warning' : 'error', message: finalMessage });
       if (finalStatus === 'Vision 분석 실패') setError(finalMessage);
     } catch (err) {
       const message = err instanceof Error ? `Vision API 호출 실패: ${err.message}` : 'Vision API 호출 실패';
       const combinedText = [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n');
-      const hasSuccessfulChunks = accumulatedTexts.some((text) => text.trim());
-      const finalStatus: ExtractionStatus = hasSuccessfulChunks ? 'Vision 일부 완료' : 'Vision 분석 실패';
+      const hasSuccessfulPages = Boolean(combinedText.trim()) && getSuccessfulPageCount() > 0;
+      const finalStatus: ExtractionStatus = hasSuccessfulPages ? 'Vision 일부 완료' : 'Vision 분석 실패';
+      const fallbackPageEnd = totalPageCount ? Math.min(pageStart + DEFAULT_VISION_CHUNK_SIZE - 1, totalPageCount) : pageStart + DEFAULT_VISION_CHUNK_SIZE - 1;
+      const nextFailedChunks = [...failedChunks, { pageStart, pageEnd: fallbackPageEnd, errorMessage: message }];
+      const finalPageCount = totalPageCount ?? processedThroughPage;
       updateUploadedDocument(documentId, {
         extractionStatus: finalStatus,
-        extractedText: hasSuccessfulChunks ? combinedText : '',
-        documentAnalysisText: hasSuccessfulChunks ? combinedText : undefined,
-        extractedCharCount: hasSuccessfulChunks ? combinedText.length : 0,
-        visionStatus: hasSuccessfulChunks ? 'partial' : 'failed',
+        extractedText: hasSuccessfulPages ? combinedText : '',
+        documentAnalysisText: hasSuccessfulPages ? combinedText : undefined,
+        extractedCharCount: hasSuccessfulPages ? combinedText.length : 0,
+        visionStatus: hasSuccessfulPages ? 'partial' : 'failed',
         visionUsed: true,
-        visionPageCount: processedThroughPage,
-        visionTotalPageCount: totalPageCount ?? (processedThroughPage || DEFAULT_VISION_CHUNK_SIZE),
-        totalPageCount: totalPageCount ?? processedThroughPage,
+        visionPageCount: getSuccessfulPageCount(),
+        visionTotalPageCount: finalPageCount || DEFAULT_VISION_CHUNK_SIZE,
+        totalPageCount: finalPageCount,
         visionAnalysis: accumulatedPages,
-        failedChunks: [...failedChunks, { pageStart, pageEnd: totalPageCount ? Math.min(pageStart + DEFAULT_VISION_CHUNK_SIZE - 1, totalPageCount) : pageStart + DEFAULT_VISION_CHUNK_SIZE - 1, errorMessage: message }],
+        failedChunks: nextFailedChunks,
+        failedPages: [...failedPages],
         needsReview: true,
         ocrAvailable: false,
-        warningMessage: hasSuccessfulChunks ? `Vision 일부 완료 · ${message}` : undefined,
-        errorMessage: message,
+        warningMessage: hasSuccessfulPages ? `Vision 일부 완료 · ${message}` : undefined,
+        errorMessage: failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)} · ${message}` : message,
       });
       console.error('vision chunked analysis failed', { documentId, fileName: file.name, error: message });
-      setUploadNotice({ type: hasSuccessfulChunks ? 'warning' : 'error', message });
-      if (!hasSuccessfulChunks) setError(message);
+      setUploadNotice({ type: hasSuccessfulPages ? 'warning' : 'error', message });
+      if (!hasSuccessfulPages) setError(message);
     }
   };
 
