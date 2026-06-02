@@ -162,9 +162,9 @@ function buildSelectedConceptSlide(): SlideOutline {
     slideNumber: 0,
     slideType: selectedConceptSlideType,
     slideTitle: 'Selected Concept Rationale',
-    slidePurpose: '선택된 콘셉트가 공간, 콘텐츠, 미디어, 공유 구조로 확장되어야 하는 이유를 제안서 문장으로 정리한다.',
-    keyMessage: '선택된 콘셉트는 제품/브랜드 가치를 방문객의 행동과 산출물로 바꾸는 경험 전개의 기준이다.',
-    mainCopy: '본 제안은 선택된 콘셉트를 중심으로 핵심 체험 자산, 방문객 여정, 공간/콘텐츠 구성, 미디어 반응, SNS 공유 구조를 하나의 경험 시퀀스로 연결한다.',
+    slidePurpose: '핵심 과제와 타깃 인사이트가 왜 선택 콘셉트로 귀결되는지, 그리고 그 논리가 실행 구조로 어떻게 전환되는지 제안서 톤으로 설명한다.',
+    keyMessage: '선택 콘셉트는 단순한 테마가 아니라 RFP 과제, 타깃의 참여 동기, 제품/브랜드 가치, 현장 확산 조건을 동시에 해결하기 위한 필연적 경험 전략이다.',
+    mainCopy: '본 제안은 핵심 과제에서 확인된 메시지 전달의 한계와 타깃이 기대하는 직접 체험·개인화·공유 욕구를 하나의 실행 논리로 연결한다. 선택 콘셉트는 제품/브랜드 가치를 방문객 미션, 반응형 콘텐츠, 결과물, SNS 공유까지 이어지게 만드는 가장 설득력 있는 제안 기준이다.',
     confirmNeededNote: '',
   };
 }
@@ -269,6 +269,7 @@ function extractNamedProductUnits(context?: ExperiencePlanContext) {
   return explicitCandidates
     .map(normalizeProductUnit)
     .filter((unit) => unit && !scopeCuePattern.test(unit) && !isTaskScopeExpression(unit))
+    .filter((unit) => matchProductCodes(unit).length <= 1)
     .filter((unit) => matchProductCodes(unit).every((code) => !excludedCodes.has(code)))
     .filter((unit, index, array) => array.indexOf(unit) === index)
     .slice(0, 8);
@@ -285,8 +286,10 @@ export function extractProductCodes(context?: ExperiencePlanContext) {
   const excludedCodes = new Set(matchProductCodes(excludedText));
   const namedUnits = extractNamedProductUnits(context);
   const codeUnits = matchProductCodes(scopedText).filter((code) => explicitCodes.has(code) || !excludedCodes.has(code));
+  const uniqueCodeUnits = codeUnits.filter((unit, index, array) => array.indexOf(unit) === index);
+  const productUnits = uniqueCodeUnits.length ? uniqueCodeUnits : namedUnits;
 
-  return [...codeUnits, ...namedUnits]
+  return productUnits
     .filter((unit, index, array) => array.indexOf(unit) === index)
     .slice(0, 8);
 }
