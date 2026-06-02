@@ -8,17 +8,39 @@ export interface ProjectInput {
 }
 
 export type ExtractionStatus =
+  | '텍스트 추출 중'
   | '텍스트 추출 완료'
   | '일부 텍스트만 추출'
   | '텍스트 추출 실패'
+  | '텍스트 품질 낮음'
   | '이미지 중심 PDF 가능성 높음'
   | 'OCR 필요'
   | 'OCR 추출 완료'
   | 'OCR 일부 추출'
   | 'OCR 추출 실패'
+  | '이미지 중심 PDF로 판단'
+  | 'Vision 분석 중'
+  | 'Vision 분석 완료'
+  | 'Vision 분석 실패'
   | '추가 메모 입력 필요'
   | '이미지 중심 문서 / OCR 필요'
   | '추출 실패';
+
+export interface VisionPageAnalysis {
+  pageNumber: number;
+  extractedText: string;
+  visualSummary: string;
+  detectedTables: string[];
+  detectedDiagrams: string[];
+  floorplanOrLayoutInfo: string;
+  keyRequirements: string[];
+  constraints: string[];
+  scheduleInfo: string[];
+  operationInfo: string[];
+  designOrVisualReferences: string[];
+  confidence: number;
+  needsReview: boolean;
+}
 
 export interface UploadedDocument {
   id: string;
@@ -26,7 +48,11 @@ export interface UploadedDocument {
   fileType: string;
   extractionStatus: ExtractionStatus;
   extractedText: string;
+  documentAnalysisText?: string;
   extractedCharCount: number;
+  visionUsed?: boolean;
+  visionPageCount?: number;
+  visionAnalysis?: VisionPageAnalysis[];
   ocrUsed?: boolean;
   ocrAvailable?: boolean;
   warningMessage?: string;

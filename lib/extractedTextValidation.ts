@@ -15,6 +15,13 @@ export const OCR_UNSUPPORTED_MESSAGE =
 export const OCR_PROCESSING_GUIDANCE =
   "이미지 중심 PDF는 OCR 처리에 시간이 걸릴 수 있습니다. 페이지 수가 많을 경우 일부 페이지만 먼저 처리하는 것을 권장합니다.";
 export const OCR_FIRST_10_PAGES_LABEL = "앞 10페이지 OCR";
+export const VISION_REQUIRED_MESSAGE =
+  "텍스트 품질 낮음 · 이미지 중심 PDF로 판단 · Vision 분석 자동 실행";
+export const VISION_PROCESSING_GUIDANCE =
+  "이미지 중심 PDF로 판단되어 앞 10페이지를 자동 분석 중입니다. Vision 분석에는 시간이 걸릴 수 있습니다.";
+export const VISION_PROCESSING_PAGE_LIMIT_MESSAGE =
+  "페이지 수가 많은 문서는 MVP에서 앞 10페이지만 우선 분석합니다.";
+export const VISION_FIRST_10_PAGES_LABEL = "앞 10페이지 Vision 분석";
 
 const binarySignaturePatterns = [
   /^%PDF/i,
