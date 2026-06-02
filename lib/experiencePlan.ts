@@ -1,5 +1,6 @@
 import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ConceptRecommendation, ProjectInput, SlideOutline } from '@/lib/types';
 import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
+import { isTaskScopeExpression, sanitizeOutlineSlides } from '@/lib/slideSanitizer';
 
 export const experienceDetailFields = [
   'productCode',
@@ -248,6 +249,7 @@ function looksLikeProductUnit(value: string) {
   const text = normalizeProductUnit(value);
   if (!text || text.length > 80) return false;
   if (scopeCuePattern.test(text)) return false;
+  if (isTaskScopeExpression(text)) return false;
   return /[A-Z]{1,3}\d{1,3}[A-Z]?|제품|서비스|모델|디바이스|기기|콘텐츠|체험|데모|시연|솔루션|앱|플랫폼|fold|galaxy|watch|buds|tab|phone/i.test(text);
 }
 
@@ -266,7 +268,7 @@ function extractNamedProductUnits(context?: ExperiencePlanContext) {
 
   return explicitCandidates
     .map(normalizeProductUnit)
-    .filter((unit) => unit && !scopeCuePattern.test(unit))
+    .filter((unit) => unit && !scopeCuePattern.test(unit) && !isTaskScopeExpression(unit))
     .filter((unit) => matchProductCodes(unit).every((code) => !excludedCodes.has(code)))
     .filter((unit, index, array) => array.indexOf(unit) === index)
     .slice(0, 8);
@@ -365,5 +367,5 @@ export function expandExperiencePlanOutline(outline: SlideOutline[], context?: E
     completed = [...completed.slice(0, insertIndex), ...mediaPlanSlides.map((template) => buildExpandedSlide(undefined, template)), ...completed.slice(insertIndex)];
   }
 
-  return renumber(removeInternalConceptComparisonSlides(completed));
+  return sanitizeOutlineSlides(renumber(removeInternalConceptComparisonSlides(completed)));
 }

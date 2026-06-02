@@ -5,6 +5,7 @@ import pptxgen from 'pptxgenjs';
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
+import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
 import { isInternalConceptComparisonSlide, removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import {
   OCR_UNSUPPORTED_MESSAGE,
@@ -489,7 +490,7 @@ function labelValue(label: string, value?: string) {
 }
 
 function getImagePlaceholder(slide: SlideContent) {
-  return slide.imagePlaceholder?.trim() || '대표 이미지 삽입 영역';
+  return sanitizeImagePlaceholderForPpt(slide.imagePlaceholder);
 }
 
 function buildStructuredSlideLines(slide: SlideContent) {
@@ -531,7 +532,7 @@ function buildStructuredSlideLines(slide: SlideContent) {
 }
 
 async function downloadPptx(input: ProjectInput, slides: SlideContent[], selectedConcept?: ConceptCandidate) {
-  const exportSlides = removeInternalConceptComparisonSlides(slides);
+  const exportSlides = sanitizeGeneratedSlides(removeInternalConceptComparisonSlides(slides));
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'AI Proposal Builder';

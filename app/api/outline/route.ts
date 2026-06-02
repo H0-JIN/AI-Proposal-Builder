@@ -43,10 +43,10 @@ export async function POST(request: Request) {
         '모뉴먼트가 RFP에 명시되지 않았다면 Monument를 핵심 자산으로 고정하지 말라.',
         '확인 필요 사항은 confirmNeededNote에만 작게 넣고 slideTitle, slidePurpose, keyMessage의 중심은 실제 제안 내용으로 구성하라.',
         '근거 없는 정량 효과 예측을 금지한다. KPI/Expected Effect 장표에는 analysis.numericInfo.targetKPI로 명확히 분류된 목표 KPI만 수치 목표로 사용하라. analysis.numericInfo.pastPerformance, lessonLearned, referenceMetric 수치는 목표처럼 표현하지 말고 Project Understanding, Key Challenge, Reference Insight의 배경/문제/인사이트 맥락으로만 사용하라. targetKPI가 비어 있으면 임의 수치를 만들지 말고 측정 항목 제안 장표로 구성하라.',
-        'Spatial / Content Plan은 절대 1장으로 요약하지 말고 최소 5장(Spatial Overview, Main Experience Image, 실제 체험명 기반 상세 장표 2장 이상, Experience Scenario)으로 구성하라. Zone Detail 01 같은 일반 제목 대신 Q8 멀티태스킹 챌린지, H8 4:3 몰입 콘텐츠 체험, B8 플렉스캠 셀피 스튜디오처럼 실제 체험명을 slideTitle로 사용하라.',
+        'Spatial / Content Plan은 절대 1장으로 요약하지 말고 최소 5장(Spatial Overview, Main Experience Image, 실제 체험명 기반 상세 장표, Experience Scenario)으로 구성하라. 동일 제품/동일 체험 상세 장표는 중복 생성하지 말고 제품당 1~2장으로 제한하라. Q8/H8/B8처럼 복수 제품이 있으면 제품별 상세 장표가 균형 있게 나오도록 배치하라. 같은 제품의 상세 장표가 여러 개 필요할 때는 Q8 체험 개요, Q8 체험 시나리오처럼 역할을 명확히 분리하라.',
         'Media / Interactive Plan은 절대 1장으로 요약하지 말고 최소 5장(Media Experience Overview, Key Media Scene, Interactive Flow, Content Mechanism, Output & Share)으로 구성하라. 미디어/인터랙션 요소가 많으면 핵심 체험 자산별 상세 장표를 추가하라.',
         '공간 구성과 콘텐츠 구성을 한 장에 뭉뚱그리지 말고 핵심 체험 단위별로 분리하라.',
-        'RFP나 분석 결과의 taskSections.requiredDeliverables/requiredScope/productInfo에 제품/서비스 단위가 있으면 그 단위별 Product Experience Detail 장표를 반드시 포함하라. referenceOnly/doNotTreatAsScope/existingAssets에서만 감지된 참고 사례, 기존 캠페인, 레슨런드 항목은 제품별 체험 상세 장표로 만들지 말라. 포괄적인 “폴더블 갤럭시 체험존” 대신 대화면 멀티태스킹 체험, 미디어 최적화 폼팩터 체험, 전면 디스플레이 셀피 체험처럼 방문객 행동 중심의 구체 제목을 사용하라.',
+        'RFP나 분석 결과의 taskSections.requiredDeliverables/requiredScope/productInfo에 제품/서비스 단위가 있으면 그 단위별 Product Experience Detail 장표를 포함하되, “제작”, “개발”, “운영”, “구성”, “기획”, “제안” 같은 과업/업무 범위 표현은 체험 콘텐츠명으로 사용하지 말라. 체험 상세 장표는 방문객 행동, 시스템 반응, 결과물이 명확한 콘텐츠만 생성한다. referenceOnly/doNotTreatAsScope/existingAssets에서만 감지된 참고 사례, 기존 캠페인, 레슨런드 항목은 제품별 체험 상세 장표로 만들지 말라. 포괄적인 “폴더블 갤럭시 체험존” 대신 대화면 멀티태스킹 체험, 미디어 최적화 폼팩터 체험, 전면 디스플레이 셀피 체험처럼 방문객 행동 중심의 구체 제목을 사용하라.',
         'slideNumber는 1부터 순서대로 부여하라. 각 슬라이드에는 사용자가 수정할 수 있는 mainCopy를 포함하고, mainCopy에는 해당 장표의 본문 방향 또는 대표 제안서 문장을 1~2문장으로 작성하라.',
       ].join('\n'),
       user: `제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
