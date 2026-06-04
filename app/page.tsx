@@ -116,11 +116,6 @@ const supplementalInfoFields: { key: keyof SupplementalInfo; label: string; plac
 const supplementalInfoMarker = '--- 보완 입력 정보 ---';
 const shortBriefGuidance = '입력 정보가 부족하면 제안서가 일반적으로 생성될 수 있습니다. 아래 정보를 추가하면 결과 품질이 개선됩니다.';
 
-const sampleBrief = `현대 모빌리티 브랜드의 신규 전기차 라인업을 소개하는 4주간의 브랜드 체험관을 제안해 주세요.
-목표는 2030 고객에게 지속가능한 라이프스타일과 기술 혁신 이미지를 전달하는 것입니다.
-서울 성수동 150평 내외 팝업 공간을 가정하며, 시승 예약, 인터랙티브 미디어월, 굿즈 존, SNS 공유 이벤트가 필요합니다.
-예산은 중간 규모이며, 오픈 전 6주 내 기획/디자인/시공/운영 준비가 완료되어야 합니다.`;
-
 async function parseJsonResponse<T>(response: Response, context: string): Promise<T> {
   const contentType = response.headers.get('content-type') || '';
   const text = await response.text();
@@ -198,23 +193,27 @@ function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<t
     high: '높음',
   };
   const tone = quality.isInsufficient
-    ? 'border-amber-200 bg-amber-50 text-amber-950'
-    : 'border-emerald-200 bg-emerald-50 text-emerald-950';
+    ? compact
+      ? 'border-amber-100 bg-amber-50/70 text-amber-900'
+      : 'border-amber-200 bg-amber-50 text-amber-950'
+    : compact
+      ? 'border-emerald-100 bg-emerald-50/70 text-emerald-900'
+      : 'border-emerald-200 bg-emerald-50 text-emerald-950';
 
   return (
-    <div className={`rounded-3xl border p-5 ${tone}`}>
+    <div className={`${compact ? 'rounded-2xl p-4' : 'rounded-3xl p-5'} border ${tone}`}>
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="text-sm font-black">입력 정보 충분도: {levelLabels[quality.level]}</p>
-          <h3 className="mt-2 text-xl font-black">{quality.isInsufficient ? '추가 정보 입력 권장' : '입력 정보 품질 양호'}</h3>
-          <p className="mt-2 text-sm leading-6">{quality.guidance}</p>
+          <h3 className={`${compact ? 'mt-1 text-lg' : 'mt-2 text-xl'} font-black`}>{quality.isInsufficient ? '추가 정보 입력 권장' : '입력 정보 품질 양호'}</h3>
+          <p className={`${compact ? 'mt-1' : 'mt-2'} text-sm leading-6`}>{quality.guidance}</p>
         </div>
-        <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-semibold shadow-sm">
+        <div className={`${compact ? 'rounded-xl px-3 py-2 text-xs' : 'rounded-2xl px-4 py-3 text-sm'} bg-white/70 font-semibold shadow-sm`}>
           브리프 {quality.briefLength.toLocaleString()}자 · 확인된 정보 {quality.presentItems.length}/9
         </div>
       </div>
 
-      {quality.aiMissingInfo.length > 0 && (
+      {quality.aiMissingInfo.length > 0 && !compact && (
         <div className="mt-4 rounded-2xl bg-white/70 p-4">
           <p className="text-sm font-bold">추가 확인이 필요한 정보</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
@@ -241,6 +240,23 @@ function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<t
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function LoadingOverlay({ message }: { message: string }) {
+  if (!message) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-5 backdrop-blur-sm" role="status" aria-live="polite" aria-label="작업 진행 중">
+      <div className="w-full max-w-md rounded-[2rem] border border-white/30 bg-white p-8 text-center shadow-2xl shadow-slate-950/30">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+        </div>
+        <p className="mt-6 text-sm font-black uppercase tracking-[0.24em] text-blue-600">Processing</p>
+        <h2 className="mt-2 text-2xl font-black text-slate-950">잠시만 기다려주세요</h2>
+        <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">{message}</p>
+      </div>
     </div>
   );
 }
@@ -520,15 +536,19 @@ function ConfirmationNeedsSummary({ data }: { data: AnalysisResult }) {
 }
 
 function KeyValueList({ data }: { data: AnalysisResult }) {
-  const taskSummary = uniqueItems(data.taskSections?.flatMap((section) => [
-    section.taskTitle || section.taskId,
-    ...section.keyRequirements,
-  ]) ?? []);
+  const rfpSummary = uniqueItems([
+    data.projectOverview && `프로젝트 목적: ${data.projectOverview}`,
+    data.clientChallenge && `프로젝트 목적: ${data.clientChallenge}`,
+    data.operationCondition && `운영 방향: ${data.operationCondition}`,
+    data.contentCondition && `운영 방향: ${data.contentCondition}`,
+    ...(data.taskSections?.flatMap((section) => [
+      section.taskTitle && `과업 개요: ${section.taskTitle}`,
+      ...section.keyRequirements.map((requirement) => `과업 개요: ${requirement}`),
+    ]) ?? []),
+    data.targetInfo && `과업 개요: ${data.targetInfo}`,
+  ]);
   const requiredProposalItems = uniqueItems([
     ...(data.requiredDeliverables ?? []),
-    ...(data.requiredItems ?? []),
-    ...(data.scopeOfWork ?? []),
-    ...(data.requiredScope ?? []),
     ...(data.taskSections?.flatMap((section) => section.requiredDeliverables) ?? []),
   ]);
   const goalsAndKpis = uniqueItems([
@@ -562,7 +582,7 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
         <p className="mt-1 text-slate-800">{data.inferredProposalType ? proposalTypeLabels[data.inferredProposalType] : '해당 없음'} · {data.proposalTypeReasoning}</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <CompactBulletSection title="과제 요약" items={taskSummary.length ? taskSummary : uniqueItems([data.clientChallenge, data.targetInfo])} />
+        <CompactBulletSection title="RFP 요약" items={rfpSummary} />
         <CompactBulletSection title="핵심 목표 / KPI" items={goalsAndKpis} />
         <CompactBulletSection title="필수 제안 항목" items={requiredProposalItems} />
         <CompactBulletSection title="주요 제약 / 참고 사항" items={constraintsAndNotes} />
@@ -1929,6 +1949,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen px-5 py-8 md:px-10">
+      <LoadingOverlay message={loading} />
       <div className="mx-auto max-w-6xl">
         <header className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -1940,7 +1961,6 @@ export default function Home() {
         </header>
 
         {error && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 font-medium text-red-700">{error}</div>}
-        {loading && <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 p-4 font-medium text-blue-700">{loading}</div>}
 
         {step === 'home' && (
           <section className="rounded-[2rem] bg-gradient-to-br from-blue-600 to-slate-950 p-8 text-white shadow-2xl shadow-blue-900/20 md:p-12">
@@ -2027,7 +2047,6 @@ export default function Home() {
             )}
             <div className="mt-6 flex flex-wrap gap-3">
               <PrimaryButton onClick={runAnalyze} disabled={!canAnalyze || Boolean(loading)}>업로드 자료와 메모로 AI 분석하기</PrimaryButton>
-              <SecondaryButton onClick={() => updateInput('briefText', sampleBrief)}>샘플 메모 채우기</SecondaryButton>
             </div>
           </SectionCard>
         )}
@@ -2042,13 +2061,16 @@ export default function Home() {
                   <p>추가 분석 완료 후 재분석 권장</p>
                 </div>
               )}
-              <InputQualityPanel quality={inputQuality} />
               <ConfirmationNeedsSummary data={state.analysis} />
               <KeyValueList data={state.analysis} />
               <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
             </div>
             {hasConfirmationNeeds && (
-              <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <>
+                <div className="mt-6">
+                  <InputQualityPanel quality={inputQuality} compact />
+                </div>
+                <div className="mt-3 rounded-3xl border border-amber-200 bg-amber-50 p-5">
                 <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                   <div>
                     <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">추가 정보 입력</p>
@@ -2077,17 +2099,18 @@ export default function Home() {
                     </label>
                   ))}
                 </div>
-              </div>
+                </div>
+              </>
             )}
             <div className="mt-6 flex flex-wrap gap-3">
-              <SecondaryButton onClick={() => setStep('create')}>입력 수정</SecondaryButton>
+              <SecondaryButton onClick={() => setStep('create')}>이전</SecondaryButton>
               {state.analysisBasis?.type === 'partial' && !hasFullVisionAnalysisInProgress && (
                 <PrimaryButton onClick={runAnalyze} disabled={Boolean(loading)}>전체 분석 결과로 다시 AI 분석하기</PrimaryButton>
               )}
               {hasConfirmationNeeds ? (
                 <>
                   <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
-                  <SecondaryButton onClick={runConcepts} disabled={Boolean(loading)}>정보 부족하지만 콘셉트 생성하기</SecondaryButton>
+                  <SecondaryButton onClick={runConcepts} disabled={Boolean(loading)}>콘셉트 생성</SecondaryButton>
                 </>
               ) : (
                 <PrimaryButton onClick={runConcepts} disabled={Boolean(loading)}>콘셉트 후보 생성</PrimaryButton>
