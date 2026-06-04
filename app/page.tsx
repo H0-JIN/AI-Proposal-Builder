@@ -512,24 +512,51 @@ function CompactBulletSection({ title, items }: { title: string; items: string[]
   );
 }
 
-function ConfirmationNeedsSummary({ data }: { data: AnalysisResult }) {
+function AdditionalInfoRecommendationPanel({ data, quality }: { data: AnalysisResult; quality: ReturnType<typeof assessInputQuality> }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const confirmationNeeds = getAnalysisConfirmationNeeds(data);
+  const missingItemCount = uniqueItems([
+    ...confirmationNeeds,
+    ...quality.missingItems.map((item) => item.label),
+    ...quality.aiMissingInfo,
+  ]).length;
 
   return (
-    <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+    <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">추가 확인 필요 요약</p>
-          <h3 className="mt-2 text-xl font-black">{confirmationNeeds.length ? '확인 후 보완하면 제안 정확도가 높아집니다.' : '현재 추가 확인 필요 항목이 없습니다.'}</h3>
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">추가 정보 입력 권장</p>
+          <h3 className="mt-1 text-lg font-black">확인 필요 {missingItemCount}건 · 추가 입력 시 분석 정확도 향상</h3>
         </div>
-        <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-bold text-amber-900 shadow-sm">
-          확인 필요 {confirmationNeeds.length}건
-        </div>
+        <button
+          type="button"
+          onClick={() => setIsExpanded((current) => !current)}
+          className="w-full rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm font-black text-amber-800 transition hover:bg-amber-100 md:w-auto"
+          aria-expanded={isExpanded}
+        >
+          {isExpanded ? '상세 항목 접기' : '상세 항목 보기'}
+        </button>
       </div>
-      {confirmationNeeds.length > 0 && (
-        <ul className="mt-4 list-disc space-y-1 pl-5 text-sm leading-6">
-          {confirmationNeeds.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
-        </ul>
+
+      {isExpanded && (
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
+            <p className="text-sm font-bold text-amber-900">AI 확인 필요 항목</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
+              {confirmationNeeds.length ? confirmationNeeds.map((item, index) => <li key={`${item}-${index}`}>{item}</li>) : <li>현재 AI 확인 필요 항목이 없습니다.</li>}
+            </ul>
+          </div>
+          <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
+            <p className="text-sm font-bold text-amber-900">자동 체크리스트 부족 항목</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
+              {quality.missingItems.length ? quality.missingItems.map((item) => (
+                <li key={item.key}>
+                  <span className="font-semibold">{item.label}</span>: {item.description}
+                </li>
+              )) : <li>자동 체크리스트 기준 필수 항목이 모두 확인되었습니다.</li>}
+            </ul>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -537,20 +564,22 @@ function ConfirmationNeedsSummary({ data }: { data: AnalysisResult }) {
 
 function KeyValueList({ data }: { data: AnalysisResult }) {
   const rfpSummary = uniqueItems([
+    data.clientChallenge && `프로젝트 배경: ${data.clientChallenge}`,
+    ...(data.numericInfo?.currentIssue ?? []).slice(0, 2).map((item) => `프로젝트 배경: ${item}`),
     data.projectOverview && `프로젝트 목적: ${data.projectOverview}`,
-    data.clientChallenge && `프로젝트 목적: ${data.clientChallenge}`,
     data.operationCondition && `운영 방향: ${data.operationCondition}`,
     data.contentCondition && `운영 방향: ${data.contentCondition}`,
-    ...(data.taskSections?.flatMap((section) => [
-      section.taskTitle && `과업 개요: ${section.taskTitle}`,
-      ...section.keyRequirements.map((requirement) => `과업 개요: ${requirement}`),
-    ]) ?? []),
-    data.targetInfo && `과업 개요: ${data.targetInfo}`,
+    data.spatialCondition && `운영 방향: ${data.spatialCondition}`,
+    data.targetInfo && `운영 방향: ${data.targetInfo}`,
+    ...(data.taskSections?.map((section) => section.taskTitle && `핵심 과제: ${section.taskTitle}`) ?? []),
+    ...(data.scopeOfWork ?? []).slice(0, 4).map((item) => `핵심 과제: ${item}`),
   ]);
+  const rfpSummaryContent = new Set(rfpSummary.map((item) => item.replace(/^[^:]+:\s*/, '').trim()));
   const requiredProposalItems = uniqueItems([
     ...(data.requiredDeliverables ?? []),
+    ...(data.requiredItems ?? []),
     ...(data.taskSections?.flatMap((section) => section.requiredDeliverables) ?? []),
-  ]);
+  ]).filter((item) => !rfpSummaryContent.has(item.trim()));
   const goalsAndKpis = uniqueItems([
     ...(data.kpiObjectives ?? []),
     ...(data.numericInfo?.targetKPI ?? []),
@@ -2061,14 +2090,13 @@ export default function Home() {
                   <p>추가 분석 완료 후 재분석 권장</p>
                 </div>
               )}
-              <ConfirmationNeedsSummary data={state.analysis} />
               <KeyValueList data={state.analysis} />
               <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
             </div>
             {hasConfirmationNeeds && (
               <>
                 <div className="mt-6">
-                  <InputQualityPanel quality={inputQuality} compact />
+                  <AdditionalInfoRecommendationPanel data={state.analysis} quality={inputQuality} />
                 </div>
                 <div className="mt-3 rounded-3xl border border-amber-200 bg-amber-50 p-5">
                 <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
