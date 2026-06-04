@@ -6,6 +6,7 @@ import {
   OCR_UNSUPPORTED_MESSAGE,
   TEXT_EXTRACTION_LOW_QUALITY_MESSAGE,
   VISION_FALLBACK_IN_PROGRESS_MESSAGE,
+  assessExtractedPdfPages,
   assessExtractedTextQuality,
   PDF_TEXT_EXTRACTION_PARTIAL_SUCCESS_MESSAGE,
   PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
@@ -39,6 +40,7 @@ type PdfPageExtraction = {
 
 type PdfExtractionResult = {
   text: string;
+  pages: PdfPageExtraction[];
   pageCount: number;
   extractedPageCount: number;
   emptyPageCount: number;
@@ -425,6 +427,7 @@ function extractPdfText(buffer: Buffer): PdfExtractionResult {
 
   return {
     text: pageText || fallbackText,
+    pages: effectiveExtractions,
     pageCount: effectiveExtractions.length,
     extractedPageCount: extractedPages.length,
     emptyPageCount: Math.max(effectiveExtractions.length - extractedPages.length, 0),
@@ -464,6 +467,7 @@ export async function POST(request: Request) {
     }
 
     const pdfExtraction = extractPdfText(buffer);
+    const pageQuality = assessExtractedPdfPages(pdfExtraction.pages, file.size);
     const qualityAssessment = assessExtractedTextQuality(pdfExtraction.text, file.size);
     const validation = validateExtractedText(pdfExtraction.text);
 
@@ -475,6 +479,8 @@ export async function POST(request: Request) {
           ocrNotice: OCR_UNSUPPORTED_MESSAGE,
           extractionQuality: 'low',
           qualityReasons: qualityAssessment.reasons,
+          pages: pdfExtraction.pages,
+          pageQuality,
           pageCount: pdfExtraction.pageCount,
           extractedPageCount: pdfExtraction.extractedPageCount,
           extractedCharCount: qualityAssessment.charCount,
@@ -489,6 +495,8 @@ export async function POST(request: Request) {
       status: isPartial ? 'partial' : 'success',
       message: isPartial ? PDF_TEXT_EXTRACTION_PARTIAL_SUCCESS_MESSAGE : PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
       ocrNotice: isPartial ? OCR_UNSUPPORTED_MESSAGE : undefined,
+      pages: pdfExtraction.pages,
+      pageQuality,
       pageCount: pdfExtraction.pageCount,
       extractedPageCount: pdfExtraction.extractedPageCount,
     });
