@@ -396,7 +396,10 @@ function RetrievalEvidencePanel({ evidence }: { evidence?: RetrievalEvidenceItem
   const hiddenCount = Math.max(evidence.length - visibleEvidence.length, 0);
   const highImportanceCount = evidence.filter((item) => item.importance === 'high').length;
   const categorySummary = Array.from(
-    evidence.reduce((counts, item) => counts.set(item.category, (counts.get(item.category) ?? 0) + 1), new Map<string, number>()),
+    evidence.reduce((counts, item) => {
+      (item.categories?.length ? item.categories : [item.category]).forEach((category) => counts.set(category, (counts.get(category) ?? 0) + 1));
+      return counts;
+    }, new Map<string, number>()),
   )
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
@@ -433,7 +436,7 @@ function RetrievalEvidencePanel({ evidence }: { evidence?: RetrievalEvidenceItem
               <div key={`${item.sourceDocument}-${item.pageNumber ?? 'na'}-${index}`} className="rounded-2xl bg-white/80 p-4 text-sm leading-6 shadow-sm">
                 <p className="font-black text-cyan-800">{item.sourceDocument}</p>
                 <p className="mt-1 text-xs font-bold text-cyan-700">
-                  {item.pageNumber ? `${item.pageNumber}p` : '페이지 미상'} · {item.category}
+                  {item.pageNumber ? `${item.pageNumber}p` : '페이지 미상'} · {(item.categories?.length ? item.categories : [item.category]).slice(0, 5).join(' / ')}
                   {item.importance ? ` · ${item.importance}` : ''}
                 </p>
                 <ul className="mt-3 list-disc space-y-1 pl-5 text-slate-800">
@@ -714,18 +717,27 @@ function parseAnalysisApiResponse(response: AnalysisApiResponse) {
   return { result: response, evidence: [] };
 }
 
+const chunkImportanceWeight = { high: 3, medium: 2, low: 1 } as const;
+
 function getTopCategories(document: UploadedDocument) {
-  const counts = new Map<string, number>();
-  const highImportanceOrder = ['requiredDeliverables', 'kpi', 'performanceGoal', 'schedule', 'evaluationCriteria', 'projectObjective'];
-  const highImportanceRank = new Map(highImportanceOrder.map((category, index) => [category, highImportanceOrder.length - index]));
-  (document.chunks ?? []).forEach((chunk) => counts.set(chunk.category, (counts.get(chunk.category) ?? 0) + 1));
-  return Array.from(counts.entries())
-    .sort((a, b) => {
-      const importanceDiff = (highImportanceRank.get(b[0]) ?? 0) - (highImportanceRank.get(a[0]) ?? 0);
-      return importanceDiff || b[1] - a[1];
-    })
+  const categoryStats = new Map<string, { count: number; importanceScore: number; highCount: number }>();
+  (document.chunks ?? []).forEach((chunk) => {
+    const categories = chunk.categories?.length ? chunk.categories : [chunk.category];
+    const weight = chunkImportanceWeight[chunk.importance] ?? chunkImportanceWeight.low;
+    categories.forEach((category) => {
+      const current = categoryStats.get(category) ?? { count: 0, importanceScore: 0, highCount: 0 };
+      categoryStats.set(category, {
+        count: current.count + 1,
+        importanceScore: current.importanceScore + weight,
+        highCount: current.highCount + (chunk.importance === 'high' ? 1 : 0),
+      });
+    });
+  });
+
+  return Array.from(categoryStats.entries())
+    .sort((a, b) => b[1].importanceScore - a[1].importanceScore || b[1].highCount - a[1].highCount || b[1].count - a[1].count || a[0].localeCompare(b[0]))
     .slice(0, 5)
-    .map(([category, count]) => `${category} ${count}`)
+    .map(([category, stats]) => `${category} ${stats.count}`)
     .join(', ') || '-';
 }
 

@@ -343,6 +343,7 @@ export interface RetrievalEvidenceItem {
   sourceDocument: string;
   pageNumber?: number;
   category: string;
+  categories?: string[];
   importance?: 'high' | 'medium' | 'low';
   bulletSummary: string[];
   shortExcerpt: string;
