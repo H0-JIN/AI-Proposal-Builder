@@ -512,21 +512,23 @@ function CompactBulletSection({ title, items }: { title: string; items: string[]
   );
 }
 
-function AdditionalInfoRecommendationPanel({ data, quality }: { data: AnalysisResult; quality: ReturnType<typeof assessInputQuality> }) {
+type ConfirmationInfo = {
+  analysisNeeds: string[];
+  checklistMissingItems: ReturnType<typeof assessInputQuality>['missingItems'];
+  aiMissingInfo: string[];
+  items: string[];
+  count: number;
+};
+
+function AdditionalInfoRecommendationPanel({ confirmationInfo }: { confirmationInfo: ConfirmationInfo }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const confirmationNeeds = getAnalysisConfirmationNeeds(data);
-  const missingItemCount = uniqueItems([
-    ...confirmationNeeds,
-    ...quality.missingItems.map((item) => item.label),
-    ...quality.aiMissingInfo,
-  ]).length;
 
   return (
     <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">추가 정보 입력 권장</p>
-          <h3 className="mt-1 text-lg font-black">확인 필요 {missingItemCount}건 · 추가 입력 시 분석 정확도 향상</h3>
+          <h3 className="mt-1 text-lg font-black">확인 필요 {confirmationInfo.count}건 · 추가 입력 시 분석 정확도 향상</h3>
         </div>
         <button
           type="button"
@@ -543,13 +545,13 @@ function AdditionalInfoRecommendationPanel({ data, quality }: { data: AnalysisRe
           <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
             <p className="text-sm font-bold text-amber-900">AI 확인 필요 항목</p>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
-              {confirmationNeeds.length ? confirmationNeeds.map((item, index) => <li key={`${item}-${index}`}>{item}</li>) : <li>현재 AI 확인 필요 항목이 없습니다.</li>}
+              {confirmationInfo.analysisNeeds.length ? confirmationInfo.analysisNeeds.map((item, index) => <li key={`${item}-${index}`}>{item}</li>) : <li>현재 AI 확인 필요 항목이 없습니다.</li>}
             </ul>
           </div>
           <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
             <p className="text-sm font-bold text-amber-900">자동 체크리스트 부족 항목</p>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
-              {quality.missingItems.length ? quality.missingItems.map((item) => (
+              {confirmationInfo.checklistMissingItems.length ? confirmationInfo.checklistMissingItems.map((item) => (
                 <li key={item.key}>
                   <span className="font-semibold">{item.label}</span>: {item.description}
                 </li>
@@ -562,19 +564,103 @@ function AdditionalInfoRecommendationPanel({ data, quality }: { data: AnalysisRe
   );
 }
 
-function KeyValueList({ data }: { data: AnalysisResult }) {
-  const rfpSummary = uniqueItems([
-    data.clientChallenge && `프로젝트 배경: ${data.clientChallenge}`,
-    ...(data.numericInfo?.currentIssue ?? []).slice(0, 2).map((item) => `프로젝트 배경: ${item}`),
-    data.projectOverview && `프로젝트 목적: ${data.projectOverview}`,
-    data.operationCondition && `운영 방향: ${data.operationCondition}`,
-    data.contentCondition && `운영 방향: ${data.contentCondition}`,
-    data.spatialCondition && `운영 방향: ${data.spatialCondition}`,
-    data.targetInfo && `운영 방향: ${data.targetInfo}`,
-    ...(data.taskSections?.map((section) => section.taskTitle && `핵심 과제: ${section.taskTitle}`) ?? []),
-    ...(data.scopeOfWork ?? []).slice(0, 4).map((item) => `핵심 과제: ${item}`),
-  ]);
-  const rfpSummaryContent = new Set(rfpSummary.map((item) => item.replace(/^[^:]+:\s*/, '').trim()));
+type RfpSummarySection = {
+  title: string;
+  text: string;
+};
+
+function normalizeSummarySentence(value: string) {
+  return value.replace(/[\s\p{P}\p{S}]+/gu, '').toLowerCase();
+}
+
+function splitSummarySentences(value: string) {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  if (!normalized) return [];
+
+  const sentences = normalized.match(/[^.!?。！？]+[.!?。！？]?/g)?.map((sentence) => sentence.trim()).filter(Boolean) ?? [];
+  return sentences.length ? sentences : [normalized];
+}
+
+function getEvidenceCategoryCandidates(evidence: RetrievalEvidenceItem[] | undefined, category: string) {
+  return uniqueItems(
+    (evidence ?? [])
+      .filter((item) => (item.categories?.length ? item.categories : [item.category]).includes(category))
+      .flatMap((item) => (item.bulletSummary?.length ? item.bulletSummary : [item.shortExcerpt])),
+  );
+}
+
+function buildRfpSummarySectionText(candidates: string[], usedSentences: Set<string>, maxSentences = 3) {
+  const selected: string[] = [];
+
+  candidates.some((candidate) => {
+    return splitSummarySentences(candidate).some((sentence) => {
+      const normalized = normalizeSummarySentence(sentence);
+      if (!normalized || usedSentences.has(normalized)) return false;
+
+      selected.push(sentence);
+      usedSentences.add(normalized);
+      return selected.length >= maxSentences;
+    });
+  });
+
+  return selected.join(' ');
+}
+
+function buildRfpSummarySections(data: AnalysisResult, evidence?: RetrievalEvidenceItem[]): RfpSummarySection[] {
+  const usedSentences = new Set<string>();
+  const sectionConfigs = [
+    {
+      title: '프로젝트 배경',
+      category: 'backgroundInsight',
+      fallback: [data.clientChallenge, ...(data.numericInfo?.currentIssue ?? [])],
+    },
+    {
+      title: '프로젝트 목적',
+      category: 'projectObjective',
+      fallback: [data.projectOverview],
+    },
+    {
+      title: '운영 방향',
+      category: 'operationDirection',
+      fallback: [data.operationCondition, data.contentCondition, data.spatialCondition, data.targetInfo],
+    },
+    {
+      title: '핵심 과제',
+      category: 'requiredDeliverables',
+      fallback: [
+        ...(data.requiredDeliverables ?? []),
+        ...(data.taskSections?.map((section) => section.taskTitle) ?? []),
+        ...(data.scopeOfWork ?? []),
+      ],
+    },
+  ];
+
+  return sectionConfigs.map(({ title, category, fallback }) => {
+    const categoryCandidates = getEvidenceCategoryCandidates(evidence, category);
+    const text = buildRfpSummarySectionText(categoryCandidates.length ? categoryCandidates : uniqueItems(fallback), usedSentences);
+    return { title, text: text || 'RFP 원문 또는 추가 입력에서 확인이 필요합니다.' };
+  });
+}
+
+function RfpSummaryPanel({ sections }: { sections: RfpSummarySection[] }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 p-4 md:col-span-2">
+      <p className="text-sm font-semibold text-blue-700">RFP Summary</p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {sections.map((section) => (
+          <div key={section.title} className="rounded-2xl bg-slate-50 p-3">
+            <p className="text-sm font-black text-slate-900">{section.title}</p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">{section.text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KeyValueList({ data, evidence }: { data: AnalysisResult; evidence?: RetrievalEvidenceItem[] }) {
+  const rfpSummarySections = buildRfpSummarySections(data, evidence);
+  const rfpSummaryContent = new Set(rfpSummarySections.flatMap((section) => splitSummarySentences(section.text).map((item) => item.trim())));
   const requiredProposalItems = uniqueItems([
     ...(data.requiredDeliverables ?? []),
     ...(data.requiredItems ?? []),
@@ -611,7 +697,7 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
         <p className="mt-1 text-slate-800">{data.inferredProposalType ? proposalTypeLabels[data.inferredProposalType] : '해당 없음'} · {data.proposalTypeReasoning}</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <CompactBulletSection title="RFP 요약" items={rfpSummary} />
+        <RfpSummaryPanel sections={rfpSummarySections} />
         <CompactBulletSection title="핵심 목표 / KPI" items={goalsAndKpis} />
         <CompactBulletSection title="필수 제안 항목" items={requiredProposalItems} />
         <CompactBulletSection title="주요 제약 / 참고 사항" items={constraintsAndNotes} />
@@ -692,8 +778,21 @@ function getAnalysisConfirmationNeeds(analysis?: AnalysisResult) {
   return uniqueItems([...(analysis.confirmNeeded ?? []), ...(analysis.missingInfo ?? [])]).slice(0, 12);
 }
 
-function hasAnalysisConfirmationNeeds(analysis?: AnalysisResult) {
-  return getAnalysisConfirmationNeeds(analysis).length > 0;
+function getConfirmationInfo(analysis: AnalysisResult | undefined, quality: ReturnType<typeof assessInputQuality>): ConfirmationInfo {
+  const analysisNeeds = getAnalysisConfirmationNeeds(analysis);
+  const items = uniqueItems([
+    ...analysisNeeds,
+    ...quality.missingItems.map((item) => item.label),
+    ...quality.aiMissingInfo,
+  ]);
+
+  return {
+    analysisNeeds,
+    checklistMissingItems: quality.missingItems,
+    aiMissingInfo: quality.aiMissingInfo,
+    items,
+    count: items.length,
+  };
 }
 
 function buildSupplementalInfoBlock(info: SupplementalInfo) {
@@ -1064,7 +1163,8 @@ export default function Home() {
     : uploadNotice;
   const inputQuality = useMemo(() => assessInputQuality(analysisInput, step === 'analysis' ? state.analysis : undefined), [analysisInput, state.analysis, step]);
   const documentChunks = useMemo(() => getAllDocumentChunks(uploadedDocuments.map(enrichDocumentWithChunks)), [uploadedDocuments]);
-  const hasConfirmationNeeds = useMemo(() => hasAnalysisConfirmationNeeds(state.analysis), [state.analysis]);
+  const confirmationInfo = useMemo(() => getConfirmationInfo(state.analysis, inputQuality), [state.analysis, inputQuality]);
+  const hasConfirmationNeeds = confirmationInfo.count > 0;
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
@@ -2090,13 +2190,13 @@ export default function Home() {
                   <p>추가 분석 완료 후 재분석 권장</p>
                 </div>
               )}
-              <KeyValueList data={state.analysis} />
+              <KeyValueList data={state.analysis} evidence={state.retrievalEvidence} />
               <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
             </div>
             {hasConfirmationNeeds && (
               <>
                 <div className="mt-6">
-                  <AdditionalInfoRecommendationPanel data={state.analysis} quality={inputQuality} />
+                  <AdditionalInfoRecommendationPanel confirmationInfo={confirmationInfo} />
                 </div>
                 <div className="mt-3 rounded-3xl border border-amber-200 bg-amber-50 p-5">
                 <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
@@ -2111,7 +2211,7 @@ export default function Home() {
                     </p>
                   </div>
                   <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-bold text-amber-900 shadow-sm">
-                    확인 필요 {getAnalysisConfirmationNeeds(state.analysis).length}건
+                    확인 필요 {confirmationInfo.count}건
                   </div>
                 </div>
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
