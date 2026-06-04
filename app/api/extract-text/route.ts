@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server';
 import JSZip from 'jszip';
 import { inflateSync } from 'node:zlib';
 import {
+  ENCODING_CORRUPTION_DETECTED_MESSAGE,
   OCR_UNSUPPORTED_MESSAGE,
+  TEXT_EXTRACTION_LOW_QUALITY_MESSAGE,
+  VISION_FALLBACK_IN_PROGRESS_MESSAGE,
   assessExtractedTextQuality,
   PDF_TEXT_EXTRACTION_PARTIAL_SUCCESS_MESSAGE,
   PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
@@ -468,8 +471,9 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           text: qualityAssessment.normalizedText,
-          warning: OCR_UNSUPPORTED_MESSAGE,
+          warning: [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · '),
           ocrNotice: OCR_UNSUPPORTED_MESSAGE,
+          extractionQuality: 'low',
           qualityReasons: qualityAssessment.reasons,
           pageCount: pdfExtraction.pageCount,
           extractedPageCount: pdfExtraction.extractedPageCount,
