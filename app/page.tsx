@@ -494,7 +494,7 @@ function CompactBulletSection({ title, items }: { title: string; items: string[]
 }
 
 function ConfirmationNeedsSummary({ data }: { data: AnalysisResult }) {
-  const confirmationNeeds = uniqueItems([...(data.confirmNeeded ?? []), ...(data.missingInfo ?? [])]);
+  const confirmationNeeds = getAnalysisConfirmationNeeds(data);
 
   return (
     <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
@@ -509,11 +509,8 @@ function ConfirmationNeedsSummary({ data }: { data: AnalysisResult }) {
       </div>
       {confirmationNeeds.length > 0 && (
         <ul className="mt-4 list-disc space-y-1 pl-5 text-sm leading-6">
-          {confirmationNeeds.slice(0, 6).map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
+          {confirmationNeeds.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
         </ul>
-      )}
-      {confirmationNeeds.length > 6 && (
-        <p className="mt-2 text-xs font-bold text-amber-800">외 {confirmationNeeds.length - 6}건은 추가 정보 입력 영역에서 보완할 수 있습니다.</p>
       )}
     </div>
   );
@@ -638,44 +635,13 @@ function ConceptRecommendationPanel({ recommendation }: { recommendation?: Conce
   );
 }
 
+function getAnalysisConfirmationNeeds(analysis?: AnalysisResult) {
+  if (!analysis) return [];
+  return uniqueItems([...(analysis.confirmNeeded ?? []), ...(analysis.missingInfo ?? [])]).slice(0, 12);
+}
+
 function hasAnalysisConfirmationNeeds(analysis?: AnalysisResult) {
-  if (!analysis) return false;
-
-  const valuesToCheck = [
-    analysis.projectOverview,
-    analysis.clientChallenge,
-    analysis.targetInfo,
-    analysis.spatialCondition,
-    analysis.contentCondition,
-    ...analysis.requiredItems,
-    ...(analysis.requiredDeliverables ?? []),
-    ...(analysis.scopeOfWork ?? []),
-    ...(analysis.evaluationCriteria ?? []),
-    ...(analysis.requiredScope ?? []),
-    ...(analysis.productInfo ?? []),
-    ...(analysis.taskSections?.flatMap((section) => [
-      ...section.requiredDeliverables,
-      ...section.referenceMentions,
-      ...section.existingAssets,
-      ...section.constraints,
-      ...section.kpi,
-      ...section.schedule,
-      ...section.confirmNeeded,
-    ]) ?? []),
-    ...(analysis.referenceOnly ?? []),
-    ...(analysis.existingAssets ?? []),
-    ...(analysis.doNotTreatAsScope ?? []),
-    ...(analysis.kpiObjectives ?? []),
-    ...(analysis.numericInfo?.targetKPI ?? []),
-    ...(analysis.numericInfo?.proposedMeasurement ?? []),
-    ...(analysis.schedule ?? []),
-    ...(analysis.confirmNeeded ?? []),
-    ...analysis.constraints,
-    ...(analysis.kpiScheduleConstraints ?? []),
-    ...analysis.missingInfo,
-  ];
-
-  return analysis.missingInfo.length > 0 || (analysis.confirmNeeded?.length ?? 0) > 0 || valuesToCheck.some((value) => value.includes('확인 필요'));
+  return getAnalysisConfirmationNeeds(analysis).length > 0;
 }
 
 function buildSupplementalInfoBlock(info: SupplementalInfo) {
@@ -750,10 +716,15 @@ function parseAnalysisApiResponse(response: AnalysisApiResponse) {
 
 function getTopCategories(document: UploadedDocument) {
   const counts = new Map<string, number>();
+  const highImportanceOrder = ['requiredDeliverables', 'kpi', 'performanceGoal', 'schedule', 'evaluationCriteria', 'projectObjective'];
+  const highImportanceRank = new Map(highImportanceOrder.map((category, index) => [category, highImportanceOrder.length - index]));
   (document.chunks ?? []).forEach((chunk) => counts.set(chunk.category, (counts.get(chunk.category) ?? 0) + 1));
   return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
+    .sort((a, b) => {
+      const importanceDiff = (highImportanceRank.get(b[0]) ?? 0) - (highImportanceRank.get(a[0]) ?? 0);
+      return importanceDiff || b[1] - a[1];
+    })
+    .slice(0, 5)
     .map(([category, count]) => `${category} ${count}`)
     .join(', ') || '-';
 }
@@ -2070,7 +2041,7 @@ export default function Home() {
                     </p>
                   </div>
                   <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-bold text-amber-900 shadow-sm">
-                    확인 필요 {state.analysis.missingInfo.length}건
+                    확인 필요 {getAnalysisConfirmationNeeds(state.analysis).length}건
                   </div>
                 </div>
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
