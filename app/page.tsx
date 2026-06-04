@@ -16,6 +16,7 @@ import {
   VISION_FALLBACK_COMPLETED_MESSAGE,
   VISION_FALLBACK_IN_PROGRESS_MESSAGE,
   VISION_FULL_CHUNKED_LABEL,
+  MIN_EXTRACTED_TEXT_LENGTH,
   VISION_PROCESSING_GUIDANCE,
   VISION_PROCESSING_PAGE_LIMIT_MESSAGE,
   VISION_REQUIRED_MESSAGE,
@@ -31,6 +32,16 @@ type UploadNotice = {
   message: string;
 };
 
+type ExtractedPdfPage = {
+  pageNumber: number;
+  text: string;
+};
+
+type ExtractedPageQuality = ExtractedPdfPage & {
+  useVision: boolean;
+  reasons: string[];
+};
+
 type ExtractTextResponse = {
   text?: string;
   status?: 'success' | 'partial';
@@ -40,6 +51,10 @@ type ExtractTextResponse = {
   ocrNotice?: string;
   qualityReasons?: string[];
   extractionQuality?: 'low';
+  pages?: ExtractedPdfPage[];
+  pageQuality?: ExtractedPageQuality[];
+  pageCount?: number;
+  extractedPageCount?: number;
 };
 
 type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[] };
@@ -234,6 +249,8 @@ function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<t
 function getVisionAnalysisLabel(document: UploadedDocument) {
   if (document.visionStatus === 'quick_analyzing' || document.extractionStatus === '빠른 Vision 분석 중') return '빠른 분석 중';
   if (document.visionStatus === 'quick_completed' || document.extractionStatus === '빠른 Vision 분석 완료') return '빠른 분석 완료';
+  if (document.extractionStatus === '하이브리드 PDF 분석 중') return '하이브리드 분석 중';
+  if (document.extractionStatus === '하이브리드 PDF 분석 완료') return '하이브리드 완료';
   if (document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '전체 Vision 분석 중') return '전체 분석 중';
   if (document.visionStatus === 'completed' || document.extractionStatus === 'Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 완료') return '전체 완료';
   if (document.visionStatus === 'partial' || document.extractionStatus === 'Vision 일부 완료') return '일부 완료';
@@ -243,7 +260,7 @@ function getVisionAnalysisLabel(document: UploadedDocument) {
 }
 
 function getVisionPageLabel(document: UploadedDocument) {
-  if (document.visionStatus === 'quick_analyzing' || document.visionStatus === 'quick_completed' || document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 중') {
+  if (document.visionStatus === 'quick_analyzing' || document.visionStatus === 'quick_completed' || document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === '하이브리드 PDF 분석 중') {
     return `${document.visionPageCount ?? 0}/${document.totalPageCount ?? document.visionTotalPageCount ?? DEFAULT_VISION_CHUNK_SIZE}`;
   }
 
@@ -251,6 +268,7 @@ function getVisionPageLabel(document: UploadedDocument) {
     return '-';
   }
 
+  if (document.visionPageNumbers?.length) return `${document.visionPageCount ?? 0}/${document.visionPageNumbers.length}`;
   const totalPageCount = document.totalPageCount ?? document.visionTotalPageCount;
   if (document.visionPageCount !== undefined && totalPageCount) return `${document.visionPageCount}/${totalPageCount}`;
   if (document.visionPageCount !== undefined) return `${document.visionPageCount}p`;
@@ -279,6 +297,8 @@ function UploadedDocumentsList({
     '빠른 Vision 분석 완료': 'bg-sky-50 text-sky-700 ring-sky-200',
     '전체 Vision 분석 중': 'bg-indigo-50 text-indigo-700 ring-indigo-200',
     '전체 Vision 분석 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    '하이브리드 PDF 분석 중': 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+    '하이브리드 PDF 분석 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     'Vision 분석 중': 'bg-blue-50 text-blue-700 ring-blue-200',
     'Vision 분석 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     'Vision 일부 완료': 'bg-amber-50 text-amber-800 ring-amber-200',
@@ -318,6 +338,7 @@ function UploadedDocumentsList({
                 {document.extractionStatus}
               </span>
               {document.warningMessage && <p className="mt-2 text-xs leading-5 text-slate-500">{document.warningMessage}</p>}
+              {document.visionPageNumbers?.length ? <p className="mt-2 text-xs leading-5 text-indigo-700">Vision 분석 페이지: {formatPageNumberList(document.visionPageNumbers)} · 텍스트 사용 페이지: {formatPageNumberList(document.textExtractionPageNumbers ?? [])}</p> : null}
               {document.failedChunks?.length ? <p className="mt-2 text-xs leading-5 text-slate-500">실패 구간: {formatFailedChunks(document.failedChunks)}</p> : null}
               {document.failedPages?.length ? <p className="mt-2 text-xs font-semibold leading-5 text-red-600">재시도 후 실패 페이지: {formatFailedPages(document.failedPages)}</p> : null}
               {document.errorMessage && document.errorMessage !== document.warningMessage && <p className="mt-2 text-xs font-semibold leading-5 text-red-600">{document.errorMessage}</p>}
@@ -365,87 +386,127 @@ function AnalysisSectionPanel({ title, section }: { title: string; section?: Ana
 
 
 function RetrievalEvidencePanel({ evidence }: { evidence?: RetrievalEvidenceItem[] }) {
+  const [showAll, setShowAll] = useState(false);
   if (!evidence?.length) return null;
+
+  const visibleEvidence = showAll ? evidence : evidence.slice(0, 6);
+  const hiddenCount = Math.max(evidence.length - visibleEvidence.length, 0);
 
   return (
     <div className="rounded-3xl border border-cyan-100 bg-cyan-50 p-5 text-cyan-950">
       <p className="text-sm font-black uppercase tracking-[0.2em] text-cyan-700">검색에 사용된 근거 자료</p>
       <h3 className="mt-2 text-xl font-black">RAG Retrieval Evidence</h3>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {evidence.map((item, index) => (
+        {visibleEvidence.map((item, index) => (
           <div key={`${item.sourceDocument}-${item.pageNumber ?? 'na'}-${index}`} className="rounded-2xl bg-white/80 p-4 text-sm leading-6 shadow-sm">
-            <p className="font-black text-cyan-800">{item.sourceDocument}{item.pageNumber ? ` · p.${item.pageNumber}` : ''}</p>
-            <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-cyan-600">{item.category}</p>
-            <p className="mt-2 text-slate-700">{item.shortExcerpt}</p>
+            <p className="font-black text-cyan-800">출처: {item.pageNumber ? `${item.pageNumber}p` : '페이지 미상'} / {item.category}</p>
+            <p className="mt-1 text-xs font-bold text-cyan-700">source document: {item.sourceDocument}</p>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-slate-800">
+              {(item.bulletSummary?.length ? item.bulletSummary : [item.shortExcerpt]).map((bullet, bulletIndex) => (
+                <li key={`${bullet}-${bulletIndex}`}>{bullet}</li>
+              ))}
+            </ul>
+            {item.shortExcerpt && (
+              <details className="mt-3 rounded-xl bg-cyan-50 px-3 py-2 text-xs text-slate-600">
+                <summary className="cursor-pointer font-bold text-cyan-700">short excerpt 보기</summary>
+                <p className="mt-2 leading-5">{item.shortExcerpt}</p>
+              </details>
+            )}
           </div>
         ))}
       </div>
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="mt-4 rounded-2xl border border-cyan-200 bg-white px-4 py-2 text-sm font-black text-cyan-700 transition hover:bg-cyan-100"
+        >
+          근거 {hiddenCount}개 더 보기
+        </button>
+      )}
+      {showAll && evidence.length > 6 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(false)}
+          className="mt-4 ml-2 rounded-2xl border border-cyan-200 bg-white px-4 py-2 text-sm font-black text-cyan-700 transition hover:bg-cyan-100"
+        >
+          접기
+        </button>
+      )}
+    </div>
+  );
+}
+
+function uniqueItems(items: Array<string | undefined>) {
+  return Array.from(new Set(items.map((item) => item?.trim()).filter(Boolean) as string[]));
+}
+
+function CompactBulletSection({ title, items }: { title: string; items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="rounded-2xl border border-slate-200 p-4">
+      <p className="text-sm font-semibold text-blue-700">{title}</p>
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+        {items.slice(0, 8).map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
+      </ul>
+      {items.length > 8 && <p className="mt-2 text-xs font-bold text-slate-500">외 {items.length - 8}개 항목은 후속 생성 단계에서 근거로 유지됩니다.</p>}
     </div>
   );
 }
 
 function KeyValueList({ data }: { data: AnalysisResult }) {
-  const rows = [
-    ['프로젝트 개요', data.projectOverview],
-    ['클라이언트 과제', data.clientChallenge],
-    ['타깃 정보', data.targetInfo],
-    ['공간 조건', data.spatialCondition],
-    ['콘텐츠 조건', data.contentCondition],
-    ['운영 조건', data.operationCondition],
-    ['RFP 분석 기반 유형', data.inferredProposalType ? proposalTypeLabels[data.inferredProposalType] : '해당 없음'],
-    ['유형 판단 근거', data.proposalTypeReasoning],
-  ];
+  const taskSummary = uniqueItems(data.taskSections?.flatMap((section) => [
+    section.taskTitle || section.taskId,
+    ...section.keyRequirements,
+  ]) ?? []);
+  const requiredProposalItems = uniqueItems([
+    ...(data.requiredDeliverables ?? []),
+    ...(data.requiredItems ?? []),
+    ...(data.scopeOfWork ?? []),
+    ...(data.requiredScope ?? []),
+    ...(data.taskSections?.flatMap((section) => section.requiredDeliverables) ?? []),
+  ]);
+  const goalsAndKpis = uniqueItems([
+    ...(data.kpiObjectives ?? []),
+    ...(data.numericInfo?.targetKPI ?? []),
+    ...(data.numericInfo?.proposedMeasurement ?? []),
+  ]);
+  const constraintsAndNotes = uniqueItems([
+    ...(data.constraints ?? []),
+    ...(data.existingAssets ?? []),
+    ...(data.doNotTreatAsScope ?? []),
+    data.spatialCondition,
+    data.contentCondition,
+    data.operationCondition,
+    ...(data.taskSections?.flatMap((section) => [...section.existingAssets, ...section.constraints, ...section.referenceMentions]) ?? []),
+  ]);
+  const scheduleAndEvaluation = uniqueItems([
+    ...(data.schedule ?? []),
+    ...(data.evaluationCriteria ?? []),
+    ...(data.kpiScheduleConstraints ?? []),
+  ]);
 
   return (
     <div className="space-y-4">
-      {rows.map(([label, value]) => (
-        <div key={label} className="rounded-2xl bg-slate-50 p-4">
-          <p className="text-sm font-semibold text-blue-700">{label}</p>
-          <p className="mt-1 text-slate-800">{value}</p>
-        </div>
-      ))}
-      <div className="grid gap-4 md:grid-cols-3">
-        {[
-          ['과제별 필수 산출물', data.taskSections?.flatMap((section) => section.requiredDeliverables.map((deliverable) => `${section.taskTitle || section.taskId}: ${deliverable}`)) ?? []],
-          ['제안서 필수 항목 / 제출 요구사항', data.requiredDeliverables ?? data.requiredItems],
-          ['과업 범위 / Scope of Work', data.scopeOfWork ?? data.requiredScope],
-          ['평가 기준', data.evaluationCriteria ?? []],
-          ['필수 항목', data.requiredItems],
-          ['실제 과업', data.requiredScope],
-          ['제품/서비스 정보', data.productInfo],
-          ['참고 사례 / Reference Only', data.referenceOnly],
-          ['기존 자산', data.existingAssets],
-          ['과업 범위 제외', data.doNotTreatAsScope],
-          ['목표 KPI (targetKPI)', data.numericInfo?.targetKPI ?? data.kpiObjectives],
-          ['측정 항목 제안', data.numericInfo?.proposedMeasurement ?? []],
-          ['기존 성과 수치', data.numericInfo?.pastPerformance ?? []],
-          ['레슨런드 수치', data.numericInfo?.lessonLearned ?? []],
-          ['현재 문제 수치', data.numericInfo?.currentIssue ?? []],
-          ['참고 지표', data.numericInfo?.referenceMetric ?? []],
-          ['일정', data.schedule],
-          ['제약 조건', data.constraints],
-          ['KPI/일정/제약', data.kpiScheduleConstraints],
-          ['범위 확인 필요', data.confirmNeeded],
-          ['추가 확인 필요', data.missingInfo],
-        ].map(([label, items]) => (
-          <div key={label as string} className="rounded-2xl border border-slate-200 p-4">
-            <p className="text-sm font-semibold text-blue-700">{label as string}</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-              {((items as string[] | undefined) ?? []).map((item, index) => (
-                <li key={`${item}-${index}`}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        ))}
+      <div className="rounded-2xl bg-slate-50 p-4">
+        <p className="text-sm font-semibold text-blue-700">프로젝트 개요</p>
+        <p className="mt-1 text-slate-800">{data.projectOverview}</p>
       </div>
-      <AnalysisSectionPanel title="RFP 요구사항 / 제안 방향 / 확인 Note" section={data.rfpRequirements} />
-      <AnalysisSectionPanel title="클라이언트 과제" section={data.clientTask} />
-      <AnalysisSectionPanel title="타깃·공간·콘텐츠·운영 조건" section={data.targetSpaceContentOperation} />
-      <AnalysisSectionPanel title="KPI·일정·제약 조건" section={data.kpiTimelineConstraints} />
+      <div className="rounded-2xl bg-slate-50 p-4">
+        <p className="text-sm font-semibold text-blue-700">RFP 기반 제안서 유형</p>
+        <p className="mt-1 text-slate-800">{data.inferredProposalType ? proposalTypeLabels[data.inferredProposalType] : '해당 없음'} · {data.proposalTypeReasoning}</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CompactBulletSection title="과제 요약" items={taskSummary.length ? taskSummary : uniqueItems([data.clientChallenge, data.targetInfo])} />
+        <CompactBulletSection title="핵심 목표 / KPI" items={goalsAndKpis} />
+        <CompactBulletSection title="필수 제안 항목" items={requiredProposalItems} />
+        <CompactBulletSection title="주요 제약 / 참고 사항" items={constraintsAndNotes} />
+        <CompactBulletSection title="일정 / 평가 기준" items={scheduleAndEvaluation} />
+        <CompactBulletSection title="추가 확인 필요" items={uniqueItems([...(data.confirmNeeded ?? []), ...(data.missingInfo ?? [])])} />
+      </div>
     </div>
   );
 }
-
 
 
 function scoreSummary(concept: ConceptCandidate) {
@@ -602,7 +663,8 @@ function enrichDocumentWithChunks(document: UploadedDocument): UploadedDocument 
         documentType,
         text,
         sourceType,
-        visionPages: document.visionAnalysis?.map((page) => ({
+        pageSources: document.pageTextSources,
+        visionPages: document.pageTextSources?.length ? undefined : document.visionAnalysis?.map((page) => ({
           pageNumber: page.pageNumber,
           extractedText: page.extractedText,
           visualSummary: page.visualSummary,
@@ -644,6 +706,53 @@ function formatFailedPages(failedPages: NonNullable<UploadedDocument['failedPage
   return failedPages.map((page) => `${page.pageNumber}p`).join(', ');
 }
 
+
+function formatPageNumberList(pageNumbers: number[]) {
+  const sorted = Array.from(new Set(pageNumbers)).sort((a, b) => a - b);
+  if (!sorted.length) return '-';
+
+  const ranges: string[] = [];
+  let start = sorted[0];
+  let previous = sorted[0];
+
+  for (const pageNumber of sorted.slice(1)) {
+    if (pageNumber === previous + 1) {
+      previous = pageNumber;
+      continue;
+    }
+    ranges.push(start === previous ? `${start}p` : `${start}~${previous}p`);
+    start = pageNumber;
+    previous = pageNumber;
+  }
+
+  ranges.push(start === previous ? `${start}p` : `${start}~${previous}p`);
+  return ranges.join(', ');
+}
+
+function buildTextPageSources(pages: ExtractedPdfPage[] = [], visionPageNumbers: number[] = []) {
+  const visionPageSet = new Set(visionPageNumbers);
+  return pages
+    .filter((page) => !visionPageSet.has(page.pageNumber) && page.text.trim().length >= MIN_EXTRACTED_TEXT_LENGTH)
+    .map((page) => ({ pageNumber: page.pageNumber, text: `[Text Page ${page.pageNumber}]\n${page.text.trim()}`, sourceType: 'textExtraction' as const }));
+}
+
+function mergeHybridPageSources(textPageSources: NonNullable<UploadedDocument['pageTextSources']>, visionPages: VisionPageAnalysis[] = []) {
+  const visionSources = visionPages.map((page) => ({
+    pageNumber: page.pageNumber,
+    text: [page.extractedText, page.visualSummary].filter(Boolean).join('\n'),
+    sourceType: 'visionAnalysis' as const,
+    visualSummary: page.visualSummary,
+  }));
+
+  return [...textPageSources, ...visionSources]
+    .filter((page) => page.text.trim())
+    .sort((a, b) => a.pageNumber - b.pageNumber);
+}
+
+function buildDocumentTextFromPageSources(pageSources: NonNullable<UploadedDocument['pageTextSources']>) {
+  return pageSources.map((page) => page.text.trim()).filter(Boolean).join('\n\n');
+}
+
 function getSuccessfulUploadedDocuments(documents: UploadedDocument[] = []) {
   return documents.filter((document) =>
     (document.extractionStatus === '텍스트 추출 완료' ||
@@ -653,6 +762,8 @@ function getSuccessfulUploadedDocuments(documents: UploadedDocument[] = []) {
       document.extractionStatus === '빠른 Vision 분석 완료' ||
       document.extractionStatus === '전체 Vision 분석 중' ||
       document.extractionStatus === '전체 Vision 분석 완료' ||
+      document.extractionStatus === '하이브리드 PDF 분석 중' ||
+      document.extractionStatus === '하이브리드 PDF 분석 완료' ||
       document.extractionStatus === 'Vision 분석 완료' ||
       document.extractionStatus === 'Vision 일부 완료') &&
     document.extractedText.trim(),
@@ -830,20 +941,20 @@ export default function Home() {
   const uploadedDocuments = state.uploadedDocuments ?? [];
   const analysisInput = useMemo(() => ({ ...state.input, briefText: buildAnalysisBriefText(state.input, uploadedDocuments) }), [state.input, uploadedDocuments]);
   const hasFastVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'quick_analyzing' || document.extractionStatus === '빠른 Vision 분석 중');
-  const hasFullVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'analyzing' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === 'Vision 분석 중');
+  const hasFullVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'analyzing' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === '하이브리드 PDF 분석 중' || document.extractionStatus === 'Vision 분석 중');
   const hasVisionAnalysisInProgress = hasFastVisionAnalysisInProgress || hasFullVisionAnalysisInProgress;
   const hasPartialVisionAnalysisInput = uploadedDocuments.some((document) =>
-    (document.visionStatus === 'quick_completed' || document.visionStatus === 'analyzing' || document.extractionStatus === '빠른 Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 중') &&
+    (document.visionStatus === 'quick_completed' || document.visionStatus === 'analyzing' || document.extractionStatus === '빠른 Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === '하이브리드 PDF 분석 중') &&
     Boolean((document.documentAnalysisText || document.extractedText).trim()) &&
-    !(document.visionStatus === 'completed' || document.extractionStatus === '전체 Vision 분석 완료' || document.extractionStatus === 'Vision 분석 완료'),
+    !(document.visionStatus === 'completed' || document.extractionStatus === '전체 Vision 분석 완료' || document.extractionStatus === '하이브리드 PDF 분석 완료' || document.extractionStatus === 'Vision 분석 완료'),
   );
   const partialVisionAnalysisDocument = uploadedDocuments.find((document) =>
-    (document.visionStatus === 'quick_completed' || document.visionStatus === 'analyzing' || document.extractionStatus === '빠른 Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 중') &&
+    (document.visionStatus === 'quick_completed' || document.visionStatus === 'analyzing' || document.extractionStatus === '빠른 Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === '하이브리드 PDF 분석 중') &&
     Boolean((document.documentAnalysisText || document.extractedText).trim()) &&
-    !(document.visionStatus === 'completed' || document.extractionStatus === '전체 Vision 분석 완료' || document.extractionStatus === 'Vision 분석 완료'),
+    !(document.visionStatus === 'completed' || document.extractionStatus === '전체 Vision 분석 완료' || document.extractionStatus === '하이브리드 PDF 분석 완료' || document.extractionStatus === 'Vision 분석 완료'),
   );
   const canAnalyze = useMemo(() => Boolean(state.input.projectName && state.input.clientName && analysisInput.briefText) && !hasFastVisionAnalysisInProgress, [state.input.clientName, state.input.projectName, analysisInput.briefText, hasFastVisionAnalysisInProgress]);
-  const activeVisionDocument = uploadedDocuments.find((document) => document.visionStatus === 'quick_analyzing' || document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 중' || document.extractionStatus === '전체 Vision 분석 중');
+  const activeVisionDocument = uploadedDocuments.find((document) => document.visionStatus === 'quick_analyzing' || document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 중' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === '하이브리드 PDF 분석 중');
   const currentUploadNotice = activeVisionDocument?.warningMessage
     ? { type: 'warning' as const, message: activeVisionDocument.warningMessage }
     : uploadNotice;
@@ -881,7 +992,7 @@ export default function Home() {
     extractionStatus: ExtractionStatus,
     extractedText = '',
     warningMessage?: string,
-    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'failedChunks' | 'failedPages' | 'needsReview' | 'errorMessage'> = {},
+    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'pageTextSources' | 'textExtractionPageNumbers' | 'visionPageNumbers' | 'failedChunks' | 'failedPages' | 'needsReview' | 'errorMessage'> = {},
   ): UploadedDocument => enrichDocumentWithChunks({
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     fileName: file.name,
@@ -897,6 +1008,9 @@ export default function Home() {
     visionTotalPageCount: options.visionTotalPageCount,
     totalPageCount: options.totalPageCount,
     visionAnalysis: options.visionAnalysis,
+    pageTextSources: options.pageTextSources,
+    textExtractionPageNumbers: options.textExtractionPageNumbers,
+    visionPageNumbers: options.visionPageNumbers,
     failedChunks: options.failedChunks,
     failedPages: options.failedPages,
     needsReview: options.needsReview,
@@ -1266,6 +1380,193 @@ export default function Home() {
     }
   };
 
+
+  const runHybridPdfAnalysis = async (documentId: string, file: File, pages: ExtractedPdfPage[], pageQuality: ExtractedPageQuality[]) => {
+    const visionPageNumbers = pageQuality.filter((page) => page.useVision).map((page) => page.pageNumber);
+    const textPageSources = buildTextPageSources(pages, visionPageNumbers);
+    const textPageNumbers = textPageSources.map((page) => page.pageNumber);
+    const visionLabel = formatPageNumberList(visionPageNumbers);
+    const textLabel = formatPageNumberList(textPageNumbers);
+    const initialText = buildDocumentTextFromPageSources(textPageSources);
+    const initialMessage = `텍스트 추출 + 일부 페이지 Vision 분석 · Vision 분석 페이지: ${visionLabel} · 텍스트 사용 페이지: ${textLabel}`;
+
+    updateUploadedDocument(documentId, {
+      extractionStatus: '하이브리드 PDF 분석 중',
+      extractedText: initialText,
+      documentAnalysisText: initialText || undefined,
+      extractedCharCount: initialText.length,
+      visionStatus: 'analyzing',
+      visionUsed: true,
+      visionPageCount: 0,
+      visionTotalPageCount: visionPageNumbers.length,
+      totalPageCount: pages.length,
+      visionAnalysis: [],
+      pageTextSources: textPageSources,
+      textExtractionPageNumbers: textPageNumbers,
+      visionPageNumbers,
+      failedChunks: [],
+      failedPages: [],
+      needsReview: false,
+      warningMessage: initialMessage,
+      errorMessage: undefined,
+    });
+    setUploadNotice({ type: 'warning', message: initialMessage });
+    setLoading('PDF 하이브리드 분석 중...');
+
+    const accumulatedVisionPages: VisionPageAnalysis[] = [];
+    const failedChunks: NonNullable<UploadedDocument['failedChunks']> = [];
+    const failedPages: NonNullable<UploadedDocument['failedPages']> = [];
+    const successfulVisionPages = new Set<number>();
+
+    const updateHybridProgress = (message: string) => {
+      const pageSources = mergeHybridPageSources(textPageSources, accumulatedVisionPages);
+      const combinedText = buildDocumentTextFromPageSources(pageSources);
+      updateUploadedDocument(documentId, {
+        extractionStatus: '하이브리드 PDF 분석 중',
+        extractedText: combinedText,
+        documentAnalysisText: combinedText || undefined,
+        extractedCharCount: combinedText.length,
+        visionStatus: 'analyzing',
+        visionUsed: true,
+        visionPageCount: successfulVisionPages.size,
+        visionTotalPageCount: visionPageNumbers.length,
+        totalPageCount: pages.length,
+        visionAnalysis: accumulatedVisionPages,
+        pageTextSources: pageSources,
+        textExtractionPageNumbers: textPageNumbers,
+        visionPageNumbers,
+        failedChunks: [...failedChunks],
+        failedPages: [...failedPages],
+        needsReview: failedPages.length > 0,
+        ocrAvailable: false,
+        warningMessage: message,
+        errorMessage: failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
+      });
+      setUploadNotice({ type: 'warning', message });
+    };
+
+    const analyzeVisionRange = async (rangeStart: number, rangeEnd: number) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('mode', DEFAULT_VISION_MODE);
+      formData.append('pageStart', String(rangeStart));
+      formData.append('pageEnd', String(rangeEnd));
+      const response = await fetch('/api/vision-pdf', { method: 'POST', body: formData });
+      const data = await parseJsonResponse<VisionPdfResponse>(response, 'Vision API');
+      const visionText = data.documentAnalysisText || data.text || '';
+      const succeeded = response.ok && data.ok !== false && (data.status === 'success' || data.status === 'partial') && Boolean(visionText.trim());
+      return { data, visionText, succeeded, errorMessage: succeeded ? undefined : buildVisionErrorMessage(data, 'Vision 분석 실패') };
+    };
+
+    const appendVisionPages = (visionText: string, visionPages: VisionPageAnalysis[] = [], rangeStart: number, rangeEnd: number) => {
+      if (visionPages.length) {
+        accumulatedVisionPages.push(...visionPages.filter((page) => visionPageNumbers.includes(page.pageNumber)));
+        visionPages.forEach((page) => successfulVisionPages.add(page.pageNumber));
+        return;
+      }
+      const validation = validateExtractedText(visionText);
+      const normalizedText = validation.ok ? validation.text : visionText.trim();
+      accumulatedVisionPages.push({
+        pageNumber: rangeStart,
+        extractedText: normalizedText,
+        visualSummary: '',
+        detectedTables: [],
+        detectedDiagrams: [],
+        floorplanOrLayoutInfo: '',
+        keyRequirements: [],
+        constraints: [],
+        scheduleInfo: [],
+        operationInfo: [],
+        designOrVisualReferences: [],
+        confidence: 0.6,
+        needsReview: rangeStart !== rangeEnd,
+      });
+      for (let pageNumber = rangeStart; pageNumber <= rangeEnd; pageNumber += 1) successfulVisionPages.add(pageNumber);
+    };
+
+    const ranges: Array<{ pageStart: number; pageEnd: number }> = [];
+    for (const pageNumber of visionPageNumbers) {
+      const previous = ranges[ranges.length - 1];
+      if (previous && pageNumber === previous.pageEnd + 1 && previous.pageEnd - previous.pageStart + 1 < DEFAULT_VISION_CHUNK_SIZE) {
+        previous.pageEnd = pageNumber;
+      } else {
+        ranges.push({ pageStart: pageNumber, pageEnd: pageNumber });
+      }
+    }
+
+    try {
+      for (const range of ranges) {
+        const progressMessage = `텍스트 추출 + 일부 페이지 Vision 분석 · ${range.pageStart}~${range.pageEnd}p 분석 중 · Vision 분석 페이지: ${visionLabel} · 텍스트 사용 페이지: ${textLabel}`;
+        updateHybridProgress(progressMessage);
+
+        try {
+          const result = await analyzeVisionRange(range.pageStart, range.pageEnd);
+          if (result.succeeded) {
+            appendVisionPages(result.visionText, result.data.pages ?? [], range.pageStart, range.pageEnd);
+          } else {
+            failedChunks.push({ pageStart: range.pageStart, pageEnd: range.pageEnd, errorMessage: result.errorMessage ?? 'Vision chunk 분석 실패' });
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Vision chunk 요청 실패';
+          failedChunks.push({ pageStart: range.pageStart, pageEnd: range.pageEnd, errorMessage: message });
+        }
+
+        const failedChunk = failedChunks.find((chunk) => chunk.pageStart === range.pageStart && chunk.pageEnd === range.pageEnd);
+        if (failedChunk) {
+          updateHybridProgress(`${range.pageStart}~${range.pageEnd}p chunk 실패, 필요한 페이지만 1페이지 단위 재시도 중`);
+          for (let pageNumber = range.pageStart; pageNumber <= range.pageEnd; pageNumber += 1) {
+            try {
+              const retryResult = await analyzeVisionRange(pageNumber, pageNumber);
+              if (retryResult.succeeded) {
+                appendVisionPages(retryResult.visionText, retryResult.data.pages ?? [], pageNumber, pageNumber);
+              } else {
+                failedPages.push({ pageNumber, errorMessage: retryResult.errorMessage ?? 'Vision 1페이지 재시도 실패' });
+              }
+            } catch (retryError) {
+              const message = retryError instanceof Error ? retryError.message : 'Vision 1페이지 재시도 요청 실패';
+              failedPages.push({ pageNumber, errorMessage: message });
+            }
+            updateHybridProgress(`텍스트 추출 + 일부 페이지 Vision 분석 · 완료 ${successfulVisionPages.size}/${visionPageNumbers.length}p · Vision 분석 페이지: ${visionLabel} · 텍스트 사용 페이지: ${textLabel}`);
+          }
+        }
+      }
+
+      const pageSources = mergeHybridPageSources(textPageSources, accumulatedVisionPages);
+      const combinedText = buildDocumentTextFromPageSources(pageSources);
+      const finalStatus: ExtractionStatus = failedPages.length ? 'Vision 일부 완료' : '하이브리드 PDF 분석 완료';
+      const finalMessage = failedPages.length
+        ? `하이브리드 PDF 분석 일부 완료 · Vision 실패 페이지: ${formatFailedPages(failedPages)} · 텍스트 사용 페이지: ${textLabel}`
+        : `텍스트 추출 + 일부 페이지 Vision 분석 완료 · Vision 분석 페이지: ${visionLabel} · 텍스트 사용 페이지: ${textLabel}`;
+
+      updateUploadedDocument(documentId, {
+        extractionStatus: finalStatus,
+        extractedText: combinedText,
+        documentAnalysisText: combinedText || undefined,
+        extractedCharCount: combinedText.length,
+        visionStatus: failedPages.length ? 'partial' : 'completed',
+        visionUsed: true,
+        visionPageCount: successfulVisionPages.size,
+        visionTotalPageCount: visionPageNumbers.length,
+        totalPageCount: pages.length,
+        visionAnalysis: accumulatedVisionPages,
+        pageTextSources: pageSources,
+        textExtractionPageNumbers: textPageNumbers,
+        visionPageNumbers,
+        failedChunks: [...failedChunks],
+        failedPages: [...failedPages],
+        needsReview: failedPages.length > 0,
+        ocrAvailable: false,
+        warningMessage: failedPages.length ? finalMessage : undefined,
+        errorMessage: failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
+      });
+      setUploadNotice({ type: failedPages.length ? 'warning' : 'success', message: finalMessage });
+    } catch (error) {
+      const message = error instanceof Error ? `하이브리드 Vision 분석 실패: ${error.message}` : '하이브리드 Vision 분석 실패';
+      updateHybridProgress(message);
+      setError(message);
+    }
+  };
+
   const handleBriefFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -1311,6 +1612,31 @@ export default function Home() {
       formData.append('file', file);
       const response = await fetch('/api/extract-text', { method: 'POST', body: formData });
       const data = await parseJsonResponse<ExtractTextResponse>(response, '텍스트 추출 API');
+
+      const pdfPageQualities = extension === 'pdf' ? (data.pageQuality ?? []) : [];
+      const pdfPages = extension === 'pdf' ? (data.pages ?? []) : [];
+      const pagesNeedingVision = pdfPageQualities.filter((page) => page.useVision).map((page) => page.pageNumber);
+
+      if (extension === 'pdf' && pdfPages.length && pagesNeedingVision.length) {
+        const textPageSources = buildTextPageSources(pdfPages, pagesNeedingVision);
+        const textPageNumbers = textPageSources.map((page) => page.pageNumber);
+        const initialText = buildDocumentTextFromPageSources(textPageSources);
+        const message = `텍스트 추출 + 일부 페이지 Vision 분석 · Vision 분석 페이지: ${formatPageNumberList(pagesNeedingVision)} · 텍스트 사용 페이지: ${formatPageNumberList(textPageNumbers)}`;
+        const document = createUploadedDocument(file, '하이브리드 PDF 분석 중', initialText, message, {
+          visionStatus: 'analyzing',
+          visionUsed: true,
+          visionPageCount: 0,
+          visionTotalPageCount: pagesNeedingVision.length,
+          totalPageCount: data.pageCount ?? pdfPages.length,
+          documentAnalysisText: initialText || undefined,
+          pageTextSources: textPageSources,
+          textExtractionPageNumbers: textPageNumbers,
+          visionPageNumbers: pagesNeedingVision,
+        });
+        addUploadedDocument(document, 'warning', message);
+        await runHybridPdfAnalysis(document.id, file, pdfPages, pdfPageQualities);
+        return;
+      }
 
       if (!response.ok || !data.text) {
         const qualityMessage = data.qualityReasons?.length ? ` 품질 판단: ${data.qualityReasons.join(', ')}` : '';

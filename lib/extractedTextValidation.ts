@@ -328,6 +328,42 @@ export function assessExtractedTextQuality(
   };
 }
 
+export type ExtractedPageQualityAssessment = ExtractedTextQualityAssessment & {
+  pageNumber: number;
+  text: string;
+  useVision: boolean;
+};
+
+export function assessExtractedPdfPages(
+  pages: { pageNumber: number; text: string }[],
+  fileSizeBytes: number,
+): ExtractedPageQualityAssessment[] {
+  const approximatePageSize = Math.max(Math.round(fileSizeBytes / Math.max(pages.length, 1)), 1);
+
+  return pages.map((page) => {
+    const assessment = assessExtractedTextQuality(page.text, approximatePageSize);
+    const lowTextDensity = assessment.charCount < MIN_EXTRACTED_TEXT_LENGTH;
+    const imageOrTableLikely = assessment.charCount < MIN_SUFFICIENT_EXTRACTED_TEXT_LENGTH && assessment.hangulLatinNumberRatio < 0.45;
+    const koreanEncodingRisk = assessment.koreanLikely && assessment.hangulRatio < 0.05 && (assessment.mojibakeRatio > 0.005 || assessment.replacementRatio > 0.005);
+    const useVision = assessment.isLowQuality || lowTextDensity || imageOrTableLikely || koreanEncodingRisk;
+    const reasons = [
+      ...assessment.reasons,
+      lowTextDensity ? '페이지 추출 글자 수가 너무 적음' : undefined,
+      imageOrTableLikely ? '표/이미지 중심 페이지로 판단됨' : undefined,
+      koreanEncodingRisk ? '한국어 문서로 추정되지만 한글 비율이 낮음' : undefined,
+    ].filter(Boolean) as string[];
+
+    return {
+      ...assessment,
+      pageNumber: page.pageNumber,
+      text: assessment.normalizedText,
+      useVision,
+      isLowQuality: useVision,
+      reasons: Array.from(new Set(reasons)),
+    };
+  });
+}
+
 export function sanitizeCorruptedText(value: string): string {
   return normalizeExtractedText(value)
     .replace(mojibakeSequencePattern, ' ')

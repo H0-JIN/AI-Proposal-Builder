@@ -209,13 +209,16 @@ export function createDocumentChunks(params: {
   visualSummary?: string;
   pageNumber?: number;
   visionPages?: { pageNumber: number; extractedText: string; visualSummary: string }[];
+  pageSources?: { pageNumber: number; text: string; sourceType: ChunkSourceType; visualSummary?: string }[];
   createdAt?: string;
 }): DocumentChunk[] {
   const documentType = params.documentType ?? inferDocumentType(params.documentName);
   const createdAt = params.createdAt ?? new Date().toISOString();
-  const sourcePages = params.visionPages?.length
-    ? params.visionPages.map((page) => ({ text: [page.extractedText, page.visualSummary].filter(Boolean).join('\n'), pageNumber: page.pageNumber, visualSummary: page.visualSummary }))
-    : [{ text: params.text, pageNumber: params.pageNumber, visualSummary: params.visualSummary }];
+  const sourcePages = params.pageSources?.length
+    ? params.pageSources
+    : params.visionPages?.length
+      ? params.visionPages.map((page) => ({ text: [page.extractedText, page.visualSummary].filter(Boolean).join('\n'), pageNumber: page.pageNumber, visualSummary: page.visualSummary, sourceType: 'visionAnalysis' as ChunkSourceType }))
+      : [{ text: params.text, pageNumber: params.pageNumber, visualSummary: params.visualSummary, sourceType: params.sourceType }];
 
   let chunkIndex = 0;
   return sourcePages.flatMap((page) => splitTextIntoChunks(page.text)
@@ -234,7 +237,7 @@ export function createDocumentChunks(params: {
         chunkIndex,
         chunkText,
         visualSummary: page.visualSummary,
-        sourceType: params.sourceType,
+        sourceType: page.sourceType,
         category,
         tags,
         importance: inferChunkImportance(category, chunkText),
@@ -285,11 +288,29 @@ export function formatChunksForPrompt(chunks: DocumentChunk[], maxChars = 9000) 
   }
   return output;
 }
+function buildBulletSummary(text: string, category: ChunkCategory) {
+  const cleaned = sanitizeCorruptedText(text).replace(/\s+/g, ' ').trim();
+  const sentences = cleaned
+    .split(/(?<=[.!?。！？])\s+|\n+|(?:^|\s)(?=[•*-]\s+)/g)
+    .map((sentence) => sentence.replace(/^[•*-]\s*/, '').trim())
+    .filter((sentence) => sentence.length >= 8);
+  const candidates = sentences.length ? sentences : cleaned.split(/[,;·]/g).map((part) => part.trim()).filter((part) => part.length >= 8);
+  const bullets = candidates.slice(0, 3).map((sentence) => sentence.slice(0, 120));
+  if (bullets.length) return bullets;
+  return [`${category} 관련 근거: ${cleaned.slice(0, 100)}`];
+}
+
+
 export function buildEvidenceItems(chunks: DocumentChunk[], limit = 8) {
-  return chunks.filter((chunk) => isUsableRagText(chunk.chunkText)).slice(0, limit).map((chunk) => ({
-    sourceDocument: chunk.documentName,
-    pageNumber: chunk.pageNumber,
-    category: chunk.category,
-    shortExcerpt: sanitizeCorruptedText(chunk.chunkText).replace(/\s+/g, ' ').slice(0, 220),
-  }));
+  return chunks
+    .map((chunk) => ({ chunk, cleanedText: sanitizeCorruptedText(chunk.chunkText) }))
+    .filter((item) => isUsableRagText(item.cleanedText))
+    .slice(0, limit)
+    .map(({ chunk, cleanedText }) => ({
+      sourceDocument: chunk.documentName,
+      pageNumber: chunk.pageNumber,
+      category: chunk.category,
+      bulletSummary: buildBulletSummary(cleanedText, chunk.category),
+      shortExcerpt: cleanedText.replace(/\s+/g, ' ').slice(0, 220),
+    }));
 }

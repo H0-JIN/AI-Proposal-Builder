@@ -25,6 +25,8 @@ export type ExtractionStatus =
   | '빠른 Vision 분석 완료'
   | '전체 Vision 분석 중'
   | '전체 Vision 분석 완료'
+  | '하이브리드 PDF 분석 중'
+  | '하이브리드 PDF 분석 완료'
   | 'Vision 분석 중'
   | 'Vision 분석 완료'
   | 'Vision 일부 완료'
@@ -62,6 +64,13 @@ export interface VisionFailedPage {
   errorMessage: string;
 }
 
+export interface DocumentPageTextSource {
+  pageNumber: number;
+  text: string;
+  sourceType: 'textExtraction' | 'visionAnalysis';
+  visualSummary?: string;
+}
+
 export interface UploadedDocument {
   id: string;
   fileName: string;
@@ -77,6 +86,9 @@ export interface UploadedDocument {
   visionTotalPageCount?: number;
   totalPageCount?: number;
   visionAnalysis?: VisionPageAnalysis[];
+  pageTextSources?: DocumentPageTextSource[];
+  textExtractionPageNumbers?: number[];
+  visionPageNumbers?: number[];
   failedChunks?: VisionFailedChunk[];
   failedPages?: VisionFailedPage[];
   needsReview?: boolean;
@@ -331,6 +343,7 @@ export interface RetrievalEvidenceItem {
   sourceDocument: string;
   pageNumber?: number;
   category: string;
+  bulletSummary: string[];
   shortExcerpt: string;
 }
 
