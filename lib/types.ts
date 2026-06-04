@@ -205,6 +205,10 @@ export interface AnalysisResult {
 }
 
 export interface ConceptDevelopmentLogic {
+  clientIntent: string;
+  audienceTakeaway: string;
+  strategicTension: string;
+  conceptSeed: string;
   coreChallenge: string;
   targetInsight: string;
   brandOrProductValue: string;

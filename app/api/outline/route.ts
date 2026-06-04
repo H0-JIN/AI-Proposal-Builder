@@ -10,6 +10,7 @@ import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import { ensureRfpRequirementCoverage } from '@/lib/rfpRequirements';
 import { formatCategoryEvidenceGroupsForPrompt, retrieveCategoryEvidenceGroups } from '@/lib/rag';
 import { applyProposalStructureGuardToOutline, buildProposalStructureGuard, proposalScopeTypeLabels } from '@/lib/proposalStructureGuard';
+import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 
 const styleGuides = {
   basic: '프로젝트 이해, 과제 정의, 경험 전략, 콘셉트, 공간/콘텐츠 구성, 운영 및 기대 효과가 이어지는 기본형 구조.',
@@ -52,6 +53,8 @@ export async function POST(request: Request) {
       ],
     });
     const retrievalContext = formatCategoryEvidenceGroupsForPrompt(outlineEvidenceGroups, 11000);
+    const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis);
+    const strategicMessageSummary = strategicMessageFieldsFromLogic(body.conceptDevelopmentLogic);
 
     const result = await createStructuredJson<{ slides: SlideOutline[] }>({
       schemaName: 'proposal_outline',
@@ -70,6 +73,7 @@ export async function POST(request: Request) {
         'analysis.scopeOfWork의 주요 과업 범위도 반드시 반영하라. 단순 요약으로 끝내지 말고 운영 계획, 제작 범위, 공간 구성, 시스템 계획, 일정, 예산, 인력 운영 중 적절한 장표에서 실행 계획 또는 대응 방향으로 변환하라. 과업 범위가 많으면 Scope Response Matrix 또는 RFP Requirement Response / 과업 대응표 장표를 포함하라.',
         'requiredDeliverables 또는 scopeOfWork에 누락이 있으면 먼저 기존 장표의 mainCopy 또는 confirmNeededNote에 매핑하고, 불가능한 경우에만 Portfolio / Organization, Budget & Scope, System / Equipment, Setup / Dismantling, Content Production, Hospitality / Reception, Compliance / Exclusions 등 유사 항목 보완 섹션으로 묶어 생성하라.',
         'referenceOnly가 있으면 FF7, S26 Showcase, MDW Art Wall, Foldable Monument를 우선 검토해 Reference Insight 또는 Design Reference Direction 장표를 선택적으로 포함해 referenceName, referenceType, whatToLearn, howToApply, caution 관점으로 정리하라. 단, 이 장표는 참고 사례를 과업으로 오해하지 않도록 “참고 방향/레퍼런스 인사이트”로 표현하라.',
+        referenceGuardInstruction,
         'FF7 모뉴먼트, S26 쇼케이스, 기존 슈퍼스테디, 뉴페이스셀피, 기존 게임사 팝업, 기존 러닝/야구 스튜디오 같은 referenceOnly/doNotTreatAsScope 항목을 FF7 체험 상세, S26 체험 상세, C2 체험 상세 같은 장표로 생성하지 말라.',
         'Key Experience Asset은 프로젝트를 대표하는 1~3개 핵심 체험 자산만 압축해 보여주는 장표로 설계하라. 일반 assetType 후보 목록을 나열하지 말고, 각 자산의 이름/역할/방문객 행동/작동 방식/공간 배치/결과물을 중심으로 구성하라.',
         '모뉴먼트가 RFP에 명시되지 않았다면 Monument를 핵심 자산으로 고정하지 말라.',
@@ -97,6 +101,9 @@ ${retrievalContext || '검색된 chunk 없음'}
 분석 결과 JSON:
 ${JSON.stringify(body.analysis, null, 2)}
 
+전략 메시지 추출 요약:
+${strategicMessageSummary || '전략 메시지 추출 필드 없음'}
+
 경험 접근 로직 JSON:
 ${JSON.stringify(body.conceptDevelopmentLogic ?? null, null, 2)}
 
@@ -116,7 +123,7 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
 
     const expandedSlides = expandExperiencePlanOutline(result.slides, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
     const coverageCheckedSlides = ensureRfpRequirementCoverage(removeInternalConceptComparisonSlides(expandedSlides), body.analysis, body.documentChunks ?? []);
-    const guardedSlides = applyProposalStructureGuardToOutline(coverageCheckedSlides, body.input, body.analysis);
+    const guardedSlides = applyReferenceGuardToOutline(applyProposalStructureGuardToOutline(coverageCheckedSlides, body.input, body.analysis), body.analysis);
 
     return NextResponse.json(guardedSlides);
   } catch (error) {
