@@ -77,7 +77,9 @@ export interface RetrievalQuery {
   limit?: number;
   chunks?: DocumentChunk[];
   categoryMatchMode?: 'boost' | 'filter';
+  categoryWeights?: Partial<Record<ChunkCategory, number>>;
 }
+
 
 export interface RetrievalCategoryGroup {
   label: string;
@@ -386,8 +388,8 @@ const referencePriorityPatterns = [
   /Foldable\s*Monument|폴더블\s*모뉴먼트/i,
 ];
 
-function maxStageCategoryWeight(stage: RetrievalStage, chunkCategories: ChunkCategory[], targetCategories: Set<ChunkCategory>) {
-  const weights = stageCategoryWeights[stage];
+function maxStageCategoryWeight(stage: RetrievalStage, chunkCategories: ChunkCategory[], targetCategories: Set<ChunkCategory>, categoryWeights?: Partial<Record<ChunkCategory, number>>) {
+  const weights = categoryWeights ?? stageCategoryWeights[stage];
   return chunkCategories.reduce((max, category) => {
     if (!targetCategories.has(category)) return max;
     return Math.max(max, weights ? (weights[category] ?? 5) : 45);
@@ -409,7 +411,7 @@ function referencePriorityScore(stage: RetrievalStage, text: string, chunkCatego
 const importanceScore: Record<ChunkImportance, number> = { high: 30, medium: 15, low: 5 };
 const documentTypeScore: Record<DocumentType, number> = { rfp: 20, finalProposal: 14, portfolio: 10, template: 9, reference: 7, budgetSample: 8, scheduleSample: 8, organizationSample: 8 };
 
-export function retrieveRelevantChunks({ stage, proposalType, slideTitle, categories, query, limit = 8, chunks = [], categoryMatchMode = 'boost' }: RetrievalQuery): DocumentChunk[] {
+export function retrieveRelevantChunks({ stage, proposalType, slideTitle, categories, query, limit = 8, chunks = [], categoryMatchMode = 'boost', categoryWeights }: RetrievalQuery): DocumentChunk[] {
   const targetCategories = new Set(categories?.length ? categories : stageCategories[stage]);
   const queryTokens = tokenize([query, slideTitle, proposalType].filter(Boolean).join(' '));
 
@@ -418,7 +420,7 @@ export function retrieveRelevantChunks({ stage, proposalType, slideTitle, catego
       const text = normalize([chunk.chunkText, chunk.slideTitle, chunk.sectionTitle, chunk.keyMessage, chunk.tags.join(' ')].filter(Boolean).join(' '));
       const chunkCategoryList = chunk.categories ?? [chunk.category];
       const categoryMatch = chunkCategoryList.some((category) => targetCategories.has(category));
-      const categoryScore = maxStageCategoryWeight(stage, chunkCategoryList, targetCategories);
+      const categoryScore = maxStageCategoryWeight(stage, chunkCategoryList, targetCategories, categoryWeights);
       const tagScore = chunk.tags.reduce((score, tag) => score + (queryTokens.includes(normalize(tag)) ? 8 : 0), 0);
       const keywordScore = queryTokens.reduce((score, token) => score + (text.includes(token) ? 5 : 0), 0);
       const proposalScore = proposalType && chunk.proposalType === proposalType ? 10 : 0;
