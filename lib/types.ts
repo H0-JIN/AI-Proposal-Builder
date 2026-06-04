@@ -2,6 +2,15 @@ import type { ChunkCategory, DocumentChunk, DocumentType } from './rag';
 
 export type ProposalType = 'basic' | 'cheil' | 'innocean' | 'hyundai' | 'mice_event_operation' | 'conference_forum';
 
+export type ProposalScopeType =
+  | 'contentDevelopment'
+  | 'boothExhibition'
+  | 'experienceMarketing'
+  | 'brandActivation'
+  | 'operationOnly'
+  | 'designBuild'
+  | 'publicTender';
+
 export interface ProjectInput {
   proposalType: ProposalType;
   projectName: string;
@@ -166,6 +175,8 @@ export interface AnalysisResult {
   taskSections: TaskSection[];
   inferredProposalType: ProposalType;
   proposalTypeReasoning: string;
+  proposalScopeTypes: ProposalScopeType[];
+  proposalStructureGuard: string;
   requiredDeliverables: string[];
   scopeOfWork: string[];
   evaluationCriteria: string[];
