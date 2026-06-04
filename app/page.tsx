@@ -717,20 +717,35 @@ function parseAnalysisApiResponse(response: AnalysisApiResponse) {
   return { result: response, evidence: [] };
 }
 
+const chunkImportanceWeight = { high: 3, medium: 2, low: 1 } as const;
+
 function getTopCategories(document: UploadedDocument) {
-  const counts = new Map<string, number>();
-  const highImportanceOrder = ['requiredDeliverables', 'kpi', 'performanceGoal', 'schedule', 'evaluationCriteria', 'projectObjective'];
-  const highImportanceRank = new Map(highImportanceOrder.map((category, index) => [category, highImportanceOrder.length - index]));
+  const categoryStats = new Map<string, { categoryCount: number; importanceScore: number; highChunkCount: number }>();
+
   (document.chunks ?? []).forEach((chunk) => {
-    (chunk.categories?.length ? chunk.categories : [chunk.category]).forEach((category) => counts.set(category, (counts.get(category) ?? 0) + 1));
+    const categories = chunk.categories?.length ? chunk.categories : [chunk.category];
+    const weight = chunkImportanceWeight[chunk.importance] ?? chunkImportanceWeight.low;
+
+    categories.forEach((category) => {
+      const current = categoryStats.get(category) ?? { categoryCount: 0, importanceScore: 0, highChunkCount: 0 };
+      categoryStats.set(category, {
+        categoryCount: current.categoryCount + 1,
+        importanceScore: current.importanceScore + weight,
+        highChunkCount: current.highChunkCount + (chunk.importance === 'high' ? 1 : 0),
+      });
+    });
   });
-  return Array.from(counts.entries())
-    .sort((a, b) => {
-      const importanceDiff = (highImportanceRank.get(b[0]) ?? 0) - (highImportanceRank.get(a[0]) ?? 0);
-      return importanceDiff || b[1] - a[1];
-    })
+
+  return Array.from(categoryStats.entries())
+    .sort(
+      (a, b) =>
+        b[1].importanceScore - a[1].importanceScore ||
+        b[1].highChunkCount - a[1].highChunkCount ||
+        b[1].categoryCount - a[1].categoryCount ||
+        a[0].localeCompare(b[0]),
+    )
     .slice(0, 5)
-    .map(([category, count]) => `${category} ${count}`)
+    .map(([category, stats]) => `${category} ${stats.categoryCount}`)
     .join(', ') || '-';
 }
 
