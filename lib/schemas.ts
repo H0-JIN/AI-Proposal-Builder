@@ -35,6 +35,18 @@ const taskSectionSchema = {
 } as const;
 
 
+
+const productFeatureSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    product: { type: 'string' },
+    keyFeature: { type: 'string' },
+    valueProposition: { type: 'string' },
+  },
+  required: ['product', 'keyFeature', 'valueProposition'],
+} as const;
+
 const numericInfoSchema = {
   type: 'object',
   additionalProperties: false,
@@ -79,6 +91,7 @@ export const analysisJsonSchema = {
     referenceOnly: stringArray,
     existingAssets: stringArray,
     productInfo: stringArray,
+    productFeatures: { type: 'array', items: productFeatureSchema },
     kpiObjectives: stringArray,
     numericInfo: numericInfoSchema,
     constraints: stringArray,
@@ -110,6 +123,7 @@ export const analysisJsonSchema = {
     'referenceOnly',
     'existingAssets',
     'productInfo',
+    'productFeatures',
     'kpiObjectives',
     'numericInfo',
     'constraints',

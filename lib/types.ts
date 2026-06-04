@@ -144,6 +144,13 @@ export interface RfpRequirementCoverage {
   note: string;
 }
 
+
+export interface ProductFeature {
+  product: string;
+  keyFeature: string;
+  valueProposition: string;
+}
+
 export interface NumericInformation {
   pastPerformance: string[];
   lessonLearned: string[];
@@ -167,6 +174,7 @@ export interface AnalysisResult {
   referenceOnly: string[];
   existingAssets: string[];
   productInfo: string[];
+  productFeatures: ProductFeature[];
   kpiObjectives: string[];
   numericInfo: NumericInformation;
   constraints: string[];

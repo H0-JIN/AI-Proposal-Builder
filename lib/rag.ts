@@ -8,6 +8,7 @@ export const chunkCategories = [
   'projectObjective',
   'kpi',
   'performanceGoal',
+  'productFeature',
   'constraints',
   'schedule',
   'budget',
@@ -86,10 +87,10 @@ export interface RetrievalCategoryGroup {
 }
 
 const stageCategories: Record<RetrievalStage, ChunkCategory[]> = {
-  analysis: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'budget', 'venue', 'existingAsset', 'designDirection', 'backgroundInsight', 'referenceOnly', 'operationDirection'],
-  concept: ['requiredDeliverables', 'venue', 'referenceOnly', 'designDirection', 'projectObjective', 'target', 'backgroundInsight', 'existingAsset'],
-  outline: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'budget', 'venue', 'referenceOnly', 'existingAsset', 'designDirection', 'operationDirection'],
-  slide: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'program', 'venue', 'registration', 'systemOperation', 'boothOperation', 'catering', 'staffing', 'portfolio', 'organization', 'riskManagement', 'setupDismantling', 'existingAsset', 'designDirection', 'backgroundInsight', 'referenceOnly', 'operationDirection', 'concept', 'approach'],
+  analysis: ['requiredDeliverables', 'projectObjective', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'productFeature', 'scopeOfWork', 'kpi', 'budget', 'venue', 'existingAsset', 'designDirection', 'backgroundInsight', 'referenceOnly', 'operationDirection'],
+  concept: ['requiredDeliverables', 'performanceGoal', 'venue', 'referenceOnly', 'constraints', 'productFeature', 'designDirection', 'projectObjective', 'target', 'backgroundInsight', 'existingAsset'],
+  outline: ['requiredDeliverables', 'evaluationCriteria', 'performanceGoal', 'constraints', 'venue', 'productFeature', 'scopeOfWork', 'projectObjective', 'kpi', 'schedule', 'budget', 'referenceOnly', 'existingAsset', 'designDirection', 'operationDirection'],
+  slide: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'productFeature', 'evaluationCriteria', 'constraints', 'schedule', 'program', 'venue', 'registration', 'systemOperation', 'boothOperation', 'catering', 'staffing', 'portfolio', 'organization', 'riskManagement', 'setupDismantling', 'existingAsset', 'designDirection', 'backgroundInsight', 'referenceOnly', 'operationDirection', 'concept', 'approach'],
   finalReview: ['requiredDeliverables', 'scopeOfWork', 'evaluationCriteria'],
 };
 
@@ -121,18 +122,20 @@ const categoryKeywords: Record<ChunkCategory, string[]> = {
   target: ['타깃', '대상', '고객', '참석자', '방문객', 'audience', 'target'],
   referenceOnly: ['참고', '예시', '예:', '벤치마크', '레퍼런스', '사례', 'reference', 'lesson learned', '별첨', '전시 참고 사례', 'FF7 스튜디오 모뉴먼트', 'S26 쇼케이스', '장줄리앙', '밀라노 디자인 위크', '아트월', 'C 브랜드 폴더블 모뉴먼트'],
   existingAsset: ['기존', '보유', '활용 가능', '현재', 'as-is', '자산', '기집행', '기존 집기 활용', '내부 LED', '파사드', '스페이셜 사이니지', '현재 집기 활용 기준'],
+  productFeature: ['Q8', 'H8', 'B8', '제품 특징', '제품 특장점', '핵심 기능', '주요 기능', 'key feature', 'feature', 'value proposition', '가치 제안', '제품 가치', '멀티태스킹', '폼팩터', '전면 디스플레이', '셀피'],
   kpi: ['KPI', 'kpi 달성 목표', '방문객 확대', '전년비', '1.1배', '25% 이상', '비중 확대', '상담', '판매 긍정 지표', '성과 지표', '목표 지표'],
   performanceGoal: ['성과 목표', '달성 목표', '방문객 확대', '전년비', '1.1배', '25% 이상', '비중 확대', '상담/판매 긍정 지표', '긍정 지표'],
   unknown: [],
 };
 
-const highCategories = new Set<ChunkCategory>(['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria']);
+const highCategories = new Set<ChunkCategory>(['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'productFeature', 'evaluationCriteria']);
 const mediumHighCategories = new Set<ChunkCategory>(['constraints', 'schedule', 'budget', 'venue', 'existingAsset']);
 
 const primaryCategoryPriority: ChunkCategory[] = [
   'requiredDeliverables',
   'kpi',
   'performanceGoal',
+  'productFeature',
   'schedule',
   'evaluationCriteria',
   'constraints',
@@ -150,6 +153,7 @@ const multiLabelBoosts: Partial<Record<ChunkCategory, RegExp[]>> = {
   requiredDeliverables: [/제안\s*요청사항/i, /과제\s*[12]/i, /필수\s*(제안|요청|포함)/i, /실행안\s*(필요|제안)|제안\s*필요/i],
   kpi: [/kpi\s*달성\s*목표/i, /kpi/i, /성과\s*지표/i, /목표\s*지표/i],
   performanceGoal: [/달성\s*목표/i, /성과\s*목표/i, /전년비|\d+(?:\.\d+)?\s*배|\d+\s*%/i],
+  productFeature: [/\b(?:Q8|H8|B8)\b/i, /제품\s*(?:특징|특장점|기능|가치)/i, /핵심\s*기능|주요\s*기능|가치\s*제안/i],
   schedule: [/일정/i, /제안서\s*제출|대면\s*보고|업체\s*선정|통보/i, /\d{1,2}\s*\/\s*\d{1,2}/],
   evaluationCriteria: [/평가/i, /업체\s*선정/i, /배점|심사|가점/i],
   constraints: [/보안\s*운영\s*프로세스/i, /보안|준수|제약|제한|유의/i],
@@ -210,6 +214,7 @@ function documentTypeDefaultCategories(documentType: DocumentType): ChunkCategor
 
 function orderInferredCategories(categories: ChunkCategory[], text: string) {
   const contextualPriority: ChunkCategory[] = [];
+  if (/\b(?:Q8|H8|B8)\b/i.test(text)) contextualPriority.push('productFeature');
   if (/kpi/i.test(text)) contextualPriority.push('kpi', 'performanceGoal');
   if (/별첨\s*2|보안\s*운영\s*프로세스/i.test(text)) contextualPriority.push('constraints', 'existingAsset', 'operationDirection');
   if (/별첨\s*1|전시\s*참고\s*사례/i.test(text)) contextualPriority.push('referenceOnly', 'designDirection');
@@ -346,6 +351,61 @@ export function createDocumentChunks(params: {
     }));
 }
 
+const stageCategoryWeights: Partial<Record<RetrievalStage, Partial<Record<ChunkCategory, number>>>> = {
+  concept: {
+    requiredDeliverables: 40,
+    performanceGoal: 20,
+    venue: 15,
+    referenceOnly: 15,
+    constraints: 10,
+    productFeature: 15,
+  },
+  analysis: {
+    requiredDeliverables: 25,
+    projectObjective: 20,
+    performanceGoal: 20,
+    evaluationCriteria: 15,
+    constraints: 10,
+    schedule: 10,
+    productFeature: 15,
+  },
+  outline: {
+    requiredDeliverables: 35,
+    evaluationCriteria: 20,
+    performanceGoal: 20,
+    constraints: 15,
+    venue: 10,
+    productFeature: 15,
+  },
+};
+
+const referencePriorityPatterns = [
+  /\bFF\s*7\b|FF7|스튜디오\s*모뉴먼트/i,
+  /\bS\s*26\b|S26|쇼케이스/i,
+  /MDW|밀라노\s*디자인\s*위크|아트\s*월|Art\s*Wall/i,
+  /Foldable\s*Monument|폴더블\s*모뉴먼트/i,
+];
+
+function maxStageCategoryWeight(stage: RetrievalStage, chunkCategories: ChunkCategory[], targetCategories: Set<ChunkCategory>) {
+  const weights = stageCategoryWeights[stage];
+  return chunkCategories.reduce((max, category) => {
+    if (!targetCategories.has(category)) return max;
+    return Math.max(max, weights ? (weights[category] ?? 5) : 45);
+  }, 0);
+}
+
+function referencePriorityScore(stage: RetrievalStage, text: string, chunkCategories: ChunkCategory[], queryContext: string) {
+  const isReferenceChunk = chunkCategories.includes('referenceOnly') || chunkCategories.includes('designDirection');
+  if (!isReferenceChunk) return 0;
+
+  const namedReferenceScore = referencePriorityPatterns.reduce((score, pattern) => score + (pattern.test(text) ? 18 : 0), 0);
+  if (!namedReferenceScore) return 0;
+
+  const influencesConcept = stage === 'concept';
+  const influencesSpatialStrategy = (stage === 'outline' || stage === 'slide') && /spatial|space|zone|venue|공간|동선|배치|연출/i.test(queryContext);
+  return influencesConcept || influencesSpatialStrategy ? namedReferenceScore : Math.floor(namedReferenceScore / 2);
+}
+
 const importanceScore: Record<ChunkImportance, number> = { high: 30, medium: 15, low: 5 };
 const documentTypeScore: Record<DocumentType, number> = { rfp: 20, finalProposal: 14, portfolio: 10, template: 9, reference: 7, budgetSample: 8, scheduleSample: 8, organizationSample: 8 };
 
@@ -356,17 +416,19 @@ export function retrieveRelevantChunks({ stage, proposalType, slideTitle, catego
   const scoredChunks = chunks
     .map((chunk) => {
       const text = normalize([chunk.chunkText, chunk.slideTitle, chunk.sectionTitle, chunk.keyMessage, chunk.tags.join(' ')].filter(Boolean).join(' '));
-      const categoryMatch = (chunk.categories ?? [chunk.category]).some((category) => targetCategories.has(category));
-      const categoryScore = categoryMatch ? 45 : 0;
+      const chunkCategoryList = chunk.categories ?? [chunk.category];
+      const categoryMatch = chunkCategoryList.some((category) => targetCategories.has(category));
+      const categoryScore = maxStageCategoryWeight(stage, chunkCategoryList, targetCategories);
       const tagScore = chunk.tags.reduce((score, tag) => score + (queryTokens.includes(normalize(tag)) ? 8 : 0), 0);
       const keywordScore = queryTokens.reduce((score, token) => score + (text.includes(token) ? 5 : 0), 0);
       const proposalScore = proposalType && chunk.proposalType === proposalType ? 10 : 0;
       const slideScore = slideTitle && normalize([chunk.slideTitle ?? '', chunk.sectionTitle ?? ''].join(' ')).includes(normalize(slideTitle)) ? 20 : 0;
       const finalProposalScore = stage === 'outline' || stage === 'slide' ? (chunk.documentType === 'finalProposal' ? 18 : 0) : 0;
+      const prioritizedReferenceScore = referencePriorityScore(stage, text, chunkCategoryList, [query, slideTitle].filter(Boolean).join(' '));
       return {
         chunk,
         categoryMatch,
-        score: categoryScore + tagScore + keywordScore + proposalScore + slideScore + finalProposalScore + importanceScore[chunk.importance] + documentTypeScore[chunk.documentType],
+        score: categoryScore + prioritizedReferenceScore + tagScore + keywordScore + proposalScore + slideScore + finalProposalScore + importanceScore[chunk.importance] + documentTypeScore[chunk.documentType],
       };
     })
     .filter((item) => item.score > 0);
