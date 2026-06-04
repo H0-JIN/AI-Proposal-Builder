@@ -50,6 +50,7 @@ export interface DocumentChunk {
   visualSummary?: string;
   sourceType: ChunkSourceType;
   category: ChunkCategory;
+  categories?: ChunkCategory[];
   tags: string[];
   importance: ChunkImportance;
   createdAt: string;
@@ -120,6 +121,38 @@ const categoryKeywords: Record<ChunkCategory, string[]> = {
 const highCategories = new Set<ChunkCategory>(['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria']);
 const mediumHighCategories = new Set<ChunkCategory>(['constraints', 'schedule', 'budget', 'venue', 'existingAsset']);
 
+const primaryCategoryPriority: ChunkCategory[] = [
+  'requiredDeliverables',
+  'kpi',
+  'performanceGoal',
+  'schedule',
+  'evaluationCriteria',
+  'constraints',
+  'existingAsset',
+  'venue',
+  'designDirection',
+  'operationDirection',
+  'backgroundInsight',
+  'referenceOnly',
+  'scopeOfWork',
+  'projectObjective',
+];
+
+const multiLabelBoosts: Partial<Record<ChunkCategory, RegExp[]>> = {
+  requiredDeliverables: [/제안\s*요청사항/i, /과제\s*[12]/i, /필수\s*(제안|요청|포함)/i, /실행안\s*(필요|제안)|제안\s*필요/i],
+  kpi: [/kpi\s*달성\s*목표/i, /kpi/i, /성과\s*지표/i, /목표\s*지표/i],
+  performanceGoal: [/달성\s*목표/i, /성과\s*목표/i, /전년비|\d+(?:\.\d+)?\s*배|\d+\s*%/i],
+  schedule: [/일정/i, /제안서\s*제출|대면\s*보고|업체\s*선정|통보/i, /\d{1,2}\s*\/\s*\d{1,2}/],
+  evaluationCriteria: [/평가/i, /업체\s*선정/i, /배점|심사|가점/i],
+  constraints: [/보안\s*운영\s*프로세스/i, /보안|준수|제약|제한|유의/i],
+  existingAsset: [/별첨\s*2/i, /기존|현재|보유|활용\s*가능/i, /보안\s*운영\s*프로세스/i],
+  venue: [/장소|공간|삼성강남|홍대|매장|오디토리움|동선/i],
+  designDirection: [/별첨\s*1/i, /전시\s*참고\s*사례/i, /디자인|브랜딩|아트월|모뉴먼트|쇼케이스/i],
+  referenceOnly: [/별첨\s*1/i, /참고|예시|사례|레퍼런스|벤치마크/i],
+  operationDirection: [/운영\s*방향/i, /운영\s*(방안|계획|프로세스)/i, /현장\s*운영|동선\s*운영/i],
+  backgroundInsight: [/상반기\s*운영/i, /lesson\s*learned/i, /레슨런드|레슨\s*런드|인사이트|현황|전년비/i],
+};
+
 function normalize(value: string) {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
@@ -150,24 +183,63 @@ export function inferDocumentType(fileName: string): DocumentType {
   return 'rfp';
 }
 
+function scoreCategory(text: string, category: ChunkCategory) {
+  const keywordScore = scoreKeywordHits(text, categoryKeywords[category]);
+  const boostScore = (multiLabelBoosts[category] ?? []).reduce((score, pattern) => score + (pattern.test(text) ? 10 : 0), 0);
+  return keywordScore + boostScore;
+}
+
+function documentTypeDefaultCategories(documentType: DocumentType): ChunkCategory[] | undefined {
+  if (documentType === 'portfolio') return ['portfolio'];
+  if (documentType === 'template') return ['existingAsset'];
+  if (documentType === 'budgetSample') return ['budget'];
+  if (documentType === 'scheduleSample') return ['schedule'];
+  if (documentType === 'organizationSample') return ['organization'];
+  if (documentType === 'reference') return ['referenceOnly'];
+  return undefined;
+}
+
+
+function orderInferredCategories(categories: ChunkCategory[], text: string) {
+  const contextualPriority: ChunkCategory[] = [];
+  if (/kpi/i.test(text)) contextualPriority.push('kpi', 'performanceGoal');
+  if (/별첨\s*2|보안\s*운영\s*프로세스/i.test(text)) contextualPriority.push('constraints', 'existingAsset', 'operationDirection');
+  if (/별첨\s*1|전시\s*참고\s*사례/i.test(text)) contextualPriority.push('referenceOnly', 'designDirection');
+  if (/lesson\s*learned|레슨런드|레슨\s*런드|상반기\s*운영/i.test(text)) contextualPriority.push('backgroundInsight');
+  if (/과제\s*[12]|제안\s*요청사항/i.test(text)) contextualPriority.push('requiredDeliverables');
+
+  if (!contextualPriority.length) return categories;
+  const priority = new Map(contextualPriority.map((category, index) => [category, contextualPriority.length - index]));
+  return [...categories].sort((a, b) => (priority.get(b) ?? 0) - (priority.get(a) ?? 0));
+}
+
+export function inferChunkCategories(text: string, documentType: DocumentType): ChunkCategory[] {
+  const defaultCategories = documentTypeDefaultCategories(documentType);
+  if (defaultCategories) return defaultCategories;
+
+  const scored = chunkCategories
+    .filter((category) => category !== 'unknown')
+    .map((category) => ({ category, score: scoreCategory(text, category) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => {
+      const priorityDiff = (primaryCategoryPriority.indexOf(a.category) === -1 ? 999 : primaryCategoryPriority.indexOf(a.category)) - (primaryCategoryPriority.indexOf(b.category) === -1 ? 999 : primaryCategoryPriority.indexOf(b.category));
+      return b.score - a.score || priorityDiff;
+    });
+
+  if (!scored.length) return [documentType === 'finalProposal' ? 'referenceOnly' : 'unknown'];
+
+  const scoreThreshold = Math.max(2, Math.floor(scored[0].score * 0.35));
+  const categories = scored
+    .filter((item) => item.score >= scoreThreshold)
+    .map((item) => item.category)
+    .filter((category) => !(documentType === 'finalProposal' && ['requiredDeliverables', 'scopeOfWork', 'evaluationCriteria'].includes(category)))
+    .slice(0, 5);
+
+  return orderInferredCategories(categories.length ? categories : [documentType === 'finalProposal' ? 'referenceOnly' : scored[0].category], text);
+}
+
 export function inferChunkCategory(text: string, documentType: DocumentType): ChunkCategory {
-  if (documentType === 'portfolio') return 'portfolio';
-  if (documentType === 'template') return 'existingAsset';
-  if (documentType === 'budgetSample') return 'budget';
-  if (documentType === 'scheduleSample') return 'schedule';
-  if (documentType === 'organizationSample') return 'organization';
-  if (documentType === 'reference') return 'referenceOnly';
-
-  let best: { category: ChunkCategory; score: number } = { category: 'unknown', score: 0 };
-  for (const category of chunkCategories) {
-    if (category === 'unknown') continue;
-    const score = scoreKeywordHits(text, categoryKeywords[category]);
-    if (score > best.score) best = { category, score };
-  }
-
-  if (best.score === 0) return documentType === 'finalProposal' ? 'referenceOnly' : 'unknown';
-  if (documentType === 'finalProposal' && ['requiredDeliverables', 'scopeOfWork', 'evaluationCriteria'].includes(best.category)) return 'referenceOnly';
-  return best.category;
+  return inferChunkCategories(text, documentType)[0];
 }
 
 export function inferChunkImportance(category: ChunkCategory, text: string): ChunkImportance {
@@ -240,9 +312,10 @@ export function createDocumentChunks(params: {
     .map((chunkText) => sanitizeCorruptedText(chunkText))
     .filter((chunkText) => isUsableRagText(chunkText))
     .map((chunkText) => {
-      const category = inferChunkCategory(chunkText, documentType);
+      const categories = inferChunkCategories(chunkText, documentType);
+      const category = categories[0];
       const metadata = documentType === 'finalProposal' ? extractFinalProposalMetadata(chunkText) : {};
-      const tags = Array.from(new Set([...tokenize(chunkText), category, documentType])).slice(0, 30);
+      const tags = Array.from(new Set([...tokenize(chunkText), ...categories, documentType])).slice(0, 30);
       const chunk: DocumentChunk = {
         id: `${params.documentId}-chunk-${chunkIndex}`,
         documentId: params.documentId,
@@ -254,6 +327,7 @@ export function createDocumentChunks(params: {
         visualSummary: page.visualSummary,
         sourceType: page.sourceType,
         category,
+        categories,
         tags,
         importance: inferChunkImportance(category, chunkText),
         createdAt,
@@ -274,7 +348,7 @@ export function retrieveRelevantChunks({ stage, proposalType, slideTitle, catego
   return chunks
     .map((chunk) => {
       const text = normalize([chunk.chunkText, chunk.slideTitle, chunk.sectionTitle, chunk.keyMessage, chunk.tags.join(' ')].filter(Boolean).join(' '));
-      const categoryScore = targetCategories.has(chunk.category) ? 45 : 0;
+      const categoryScore = (chunk.categories ?? [chunk.category]).some((category) => targetCategories.has(category)) ? 45 : 0;
       const tagScore = chunk.tags.reduce((score, tag) => score + (queryTokens.includes(normalize(tag)) ? 8 : 0), 0);
       const keywordScore = queryTokens.reduce((score, token) => score + (text.includes(token) ? 5 : 0), 0);
       const proposalScore = proposalType && chunk.proposalType === proposalType ? 10 : 0;
@@ -297,7 +371,7 @@ export function formatChunksForPrompt(chunks: DocumentChunk[], maxChars = 9000) 
     const chunkText = sanitizeCorruptedText(chunk.chunkText);
     if (!isUsableRagText(chunkText)) continue;
 
-    const block = `[${chunk.documentName}${chunk.pageNumber ? ` p.${chunk.pageNumber}` : ''} | ${chunk.documentType} | ${chunk.category} | ${chunk.importance}]\n${chunk.sectionTitle ? `sectionTitle: ${sanitizeCorruptedText(chunk.sectionTitle)}\n` : ''}${chunk.slideTitle ? `slideTitle: ${sanitizeCorruptedText(chunk.slideTitle)}\n` : ''}${chunk.keyMessage ? `keyMessage: ${sanitizeCorruptedText(chunk.keyMessage)}\n` : ''}${chunkText}`;
+    const block = `[${chunk.documentName}${chunk.pageNumber ? ` p.${chunk.pageNumber}` : ''} | ${chunk.documentType} | ${(chunk.categories ?? [chunk.category]).join(', ')} | ${chunk.importance}]\n${chunk.sectionTitle ? `sectionTitle: ${sanitizeCorruptedText(chunk.sectionTitle)}\n` : ''}${chunk.slideTitle ? `slideTitle: ${sanitizeCorruptedText(chunk.slideTitle)}\n` : ''}${chunk.keyMessage ? `keyMessage: ${sanitizeCorruptedText(chunk.keyMessage)}\n` : ''}${chunkText}`;
     if ((output + '\n\n' + block).length > maxChars) break;
     output = [output, block].filter(Boolean).join('\n\n');
   }
@@ -324,7 +398,8 @@ export function buildEvidenceItems(chunks: DocumentChunk[], limit = 8) {
     .map(({ chunk, cleanedText }) => ({
       sourceDocument: chunk.documentName,
       pageNumber: chunk.pageNumber,
-      category: chunk.category,
+      category: (chunk.categories ?? [chunk.category]).join(', '),
+      categories: chunk.categories ?? [chunk.category],
       importance: chunk.importance,
       bulletSummary: buildBulletSummary(cleanedText, chunk.category),
       shortExcerpt: cleanedText.replace(/\s+/g, ' ').slice(0, 220),
