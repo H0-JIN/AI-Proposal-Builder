@@ -5,6 +5,9 @@ export const chunkCategories = [
   'requiredDeliverables',
   'scopeOfWork',
   'evaluationCriteria',
+  'projectObjective',
+  'kpi',
+  'performanceGoal',
   'constraints',
   'schedule',
   'budget',
@@ -20,6 +23,8 @@ export const chunkCategories = [
   'riskManagement',
   'setupDismantling',
   'designDirection',
+  'operationDirection',
+  'backgroundInsight',
   'concept',
   'approach',
   'projectPurpose',
@@ -72,21 +77,21 @@ export interface RetrievalQuery {
 }
 
 const stageCategories: Record<RetrievalStage, ChunkCategory[]> = {
-  analysis: ['requiredDeliverables', 'scopeOfWork', 'evaluationCriteria', 'constraints', 'schedule', 'budget'],
-  concept: ['projectPurpose', 'target', 'approach', 'concept', 'designDirection', 'referenceOnly', 'existingAsset'],
-  outline: ['requiredDeliverables', 'scopeOfWork', 'evaluationCriteria', 'constraints', 'schedule', 'budget', 'referenceOnly'],
-  slide: ['requiredDeliverables', 'scopeOfWork', 'evaluationCriteria', 'constraints', 'program', 'venue', 'registration', 'systemOperation', 'boothOperation', 'catering', 'staffing', 'portfolio', 'organization', 'riskManagement', 'setupDismantling', 'designDirection', 'concept', 'approach'],
+  analysis: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'budget', 'venue', 'existingAsset', 'designDirection', 'backgroundInsight', 'referenceOnly', 'operationDirection'],
+  concept: ['projectPurpose', 'projectObjective', 'target', 'approach', 'concept', 'designDirection', 'backgroundInsight', 'referenceOnly', 'existingAsset', 'operationDirection'],
+  outline: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'budget', 'referenceOnly', 'existingAsset', 'designDirection', 'operationDirection'],
+  slide: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'program', 'venue', 'registration', 'systemOperation', 'boothOperation', 'catering', 'staffing', 'portfolio', 'organization', 'riskManagement', 'setupDismantling', 'existingAsset', 'designDirection', 'backgroundInsight', 'referenceOnly', 'operationDirection', 'concept', 'approach'],
   finalReview: ['requiredDeliverables', 'scopeOfWork', 'evaluationCriteria'],
 };
 
 const categoryKeywords: Record<ChunkCategory, string[]> = {
-  requiredDeliverables: ['필수', '제출', '산출물', 'deliverable', '제안서', '포함', '제안 항목', '요구 항목', '제출물'],
+  requiredDeliverables: ['필수', '제출', '산출물', 'deliverable', '제안서', '포함', '제안 항목', '요구 항목', '제출물', '제안 요청사항', '과제 1', '과제 2', '필수 제안', '제안 필요', '운영 방안 제안', '콘텐츠 제안', '전시 제안', '공간 구성 제안', '실행안 필요'],
   scopeOfWork: ['과업', '범위', 'scope', '수행', '대행', '제작', '개발', '운영', '설치', '철거', '납품'],
-  evaluationCriteria: ['평가', '심사', '배점', '가점', '선정 기준', 'evaluation', 'criteria', 'score'],
-  constraints: ['제약', '조건', '금지', '제외', '제한', '준수', '리스크', '유의', '보안'],
-  schedule: ['일정', '기간', '마감', '착수', '완료', '납기', '오픈', '운영일', 'timeline', 'schedule'],
+  evaluationCriteria: ['평가', '심사', '배점', '가점', '선정 기준', 'evaluation', 'criteria', 'score', '업체선정', '업체 선정', '개별 과제로 평가', '아이디어 중심 평가', '2차 제안 요청'],
+  constraints: ['제약', '조건', '금지', '제외', '제한', '준수', '리스크', '유의', '보안', 'AI 클래스 미운영', '보안 운영 프로세스', '별도 제약', '가이드 無', '가이드 무'],
+  schedule: ['일정', '기간', '마감', '착수', '완료', '납기', '오픈', '운영일', 'timeline', 'schedule', '제안서 제출', '대면 보고', '업체 선정 결과 통보', '5/29', '6/1', '6/2'],
   budget: ['예산', '비용', '견적', '금액', 'budget', 'price', '원', 'vat'],
-  venue: ['장소', '공간', 'venue', '홀', '회의실', '전시장', '부스', '동선', 'floor'],
+  venue: ['장소', '공간', 'venue', '홀', '회의실', '전시장', '부스', '동선', 'floor', '삼성강남', '홍대', '회전식 계단', '오디토리움', '포비 공간', '매장 구조', '베뉴별 공간 특색'],
   program: ['프로그램', '세션', 'agenda', '행사', '포럼', '컨퍼런스', '네트워킹', '만찬'],
   registration: ['등록', '접수', '키오스크', 'check-in', '참가자 db', '현장 등록'],
   systemOperation: ['시스템', '음향', '조명', 'led', '프롬프터', '장비', '송출', '운영'],
@@ -97,18 +102,23 @@ const categoryKeywords: Record<ChunkCategory, string[]> = {
   organization: ['조직', 'pm', 'r&r', '보고 체계', '커뮤니케이션', '팀 구성'],
   riskManagement: ['리스크', '위험', '안전', '비상', '대응', '백업', 'contingency'],
   setupDismantling: ['설치', '철거', '반입', '반출', '시공', '셋업', '원상복구'],
-  designDirection: ['디자인', '톤앤매너', 'visual', '공간 연출', '무드', 'look', '브랜딩'],
+  designDirection: ['디자인', '톤앤매너', 'visual', '공간 연출', '무드', 'look', '브랜딩', '전시 참고 사례', 'FF7 스튜디오 모뉴먼트', 'S26 쇼케이스', '장줄리앙', '밀라노 디자인 위크', '아트월', 'C 브랜드 폴더블 모뉴먼트'],
+  operationDirection: ['운영 방향', '운영 방안', '운영 계획', '운영 프로세스', '동선 운영', '현장 운영', '보안 운영 프로세스'],
+  backgroundInsight: ['배경', '인사이트', '현황', '전년', '전년비', 'lesson learned', '레슨런드', '문제점', '방문객 확대'],
   concept: ['콘셉트', '컨셉', 'concept', 'core idea', 'big idea', '메시지'],
   approach: ['전략', '접근', '방향', '방법론', 'approach', 'strategy', '운영 방식'],
   projectPurpose: ['목적', '배경', '기대효과', 'goal', 'objective', 'why', '프로젝트 개요'],
+  projectObjective: ['프로젝트 목표', '목표', 'objective', 'project objective', '달성 목표', '추진 목표', '핵심 목표'],
   target: ['타깃', '대상', '고객', '참석자', '방문객', 'audience', 'target'],
-  referenceOnly: ['참고', '예시', '예:', '벤치마크', '레퍼런스', '사례', 'reference', 'lesson learned'],
-  existingAsset: ['기존', '보유', '활용 가능', '현재', 'as-is', '자산', '기집행'],
+  referenceOnly: ['참고', '예시', '예:', '벤치마크', '레퍼런스', '사례', 'reference', 'lesson learned', '별첨', '전시 참고 사례', 'FF7 스튜디오 모뉴먼트', 'S26 쇼케이스', '장줄리앙', '밀라노 디자인 위크', '아트월', 'C 브랜드 폴더블 모뉴먼트'],
+  existingAsset: ['기존', '보유', '활용 가능', '현재', 'as-is', '자산', '기집행', '기존 집기 활용', '내부 LED', '파사드', '스페이셜 사이니지', '현재 집기 활용 기준'],
+  kpi: ['KPI', 'kpi 달성 목표', '방문객 확대', '전년비', '1.1배', '25% 이상', '비중 확대', '상담', '판매 긍정 지표', '성과 지표', '목표 지표'],
+  performanceGoal: ['성과 목표', '달성 목표', '방문객 확대', '전년비', '1.1배', '25% 이상', '비중 확대', '상담/판매 긍정 지표', '긍정 지표'],
   unknown: [],
 };
 
-const highCategories = new Set<ChunkCategory>(['requiredDeliverables', 'scopeOfWork', 'evaluationCriteria']);
-const mediumHighCategories = new Set<ChunkCategory>(['constraints', 'schedule', 'budget']);
+const highCategories = new Set<ChunkCategory>(['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria']);
+const mediumHighCategories = new Set<ChunkCategory>(['constraints', 'schedule', 'budget', 'venue', 'existingAsset']);
 
 function normalize(value: string) {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -120,7 +130,12 @@ function tokenize(value: string) {
 
 function scoreKeywordHits(text: string, keywords: string[]) {
   const normalized = normalize(text);
-  return keywords.reduce((score, keyword) => score + (normalized.includes(normalize(keyword)) ? 1 : 0), 0);
+  return keywords.reduce((score, keyword) => {
+    const normalizedKeyword = normalize(keyword);
+    if (!normalizedKeyword || !normalized.includes(normalizedKeyword)) return score;
+    const isSpecificPhrase = normalizedKeyword.includes(' ') || /\d/.test(normalizedKeyword) || normalizedKeyword.length >= 6;
+    return score + (isSpecificPhrase ? 4 : 1);
+  }, 0);
 }
 
 export function inferDocumentType(fileName: string): DocumentType {
