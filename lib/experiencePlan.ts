@@ -261,6 +261,7 @@ function collectScopedText(context?: ExperiencePlanContext) {
     ...(analysis.scopeOfWork ?? []),
     ...(analysis.requiredScope ?? []),
     ...(analysis.productInfo ?? []),
+    ...(analysis.productFeatures?.flatMap((feature) => [feature.product, feature.keyFeature, feature.valueProposition]) ?? []),
     ...(analysis.requiredItems ?? []),
   ];
 
@@ -312,6 +313,7 @@ function extractNamedProductUnits(context?: ExperiencePlanContext) {
 
   const explicitCandidates = [
     ...(analysis.productInfo ?? []),
+    ...(analysis.productFeatures?.map((feature) => [feature.product, feature.keyFeature, feature.valueProposition].filter(Boolean).join(' · ')) ?? []),
     ...(analysis.requiredDeliverables ?? []).filter(looksLikeProductUnit),
     ...(analysis.scopeOfWork ?? []).filter(looksLikeProductUnit),
     ...(analysis.requiredScope ?? []).filter(looksLikeProductUnit),
@@ -334,11 +336,12 @@ export function extractProductCodes(context?: ExperiencePlanContext) {
   const scopedText = collectScopedText(context);
   const excludedText = collectExcludedScopeText(context);
   const productInfoText = context?.analysis?.productInfo?.join('\n') ?? '';
+  const productFeaturesText = context?.analysis?.productFeatures?.map((feature) => [feature.product, feature.keyFeature, feature.valueProposition].filter(Boolean).join(' · ')).join('\n') ?? '';
   const requiredScopeText = context?.analysis?.requiredScope?.join('\n') ?? '';
   const requiredDeliverablesText = context?.analysis?.requiredDeliverables?.join('\n') ?? '';
   const scopeOfWorkText = context?.analysis?.scopeOfWork?.join('\n') ?? '';
   const taskDeliverablesText = context?.analysis?.taskSections?.flatMap((section) => section.requiredDeliverables ?? []).join('\n') ?? '';
-  const explicitScopeText = [taskDeliverablesText, requiredDeliverablesText, scopeOfWorkText, productInfoText, requiredScopeText].join('\n');
+  const explicitScopeText = [taskDeliverablesText, requiredDeliverablesText, scopeOfWorkText, productInfoText, productFeaturesText, requiredScopeText].join('\n');
   const explicitCodes = new Set(matchProductCodes(explicitScopeText));
   const excludedCodes = new Set(matchProductCodes(excludedText));
   const namedUnits = extractNamedProductUnits(context);
