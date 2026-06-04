@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { slideContentJsonSchema } from '@/lib/schemas';
 import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ProjectInput, SlideContent, SlideOutline } from '@/lib/types';
+import type { DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { assessInputQuality } from '@/lib/inputQuality';
@@ -9,6 +10,7 @@ import { sanitizeKpiSlides } from '@/lib/kpiGuard';
 import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import { sanitizeGeneratedSlides } from '@/lib/slideSanitizer';
 import { ensureRfpRequirementCoverage } from '@/lib/rfpRequirements';
+import { formatChunksForPrompt, retrieveRelevantChunks } from '@/lib/rag';
 
 
 function normalizeSentence(value?: string) {
@@ -143,7 +145,7 @@ const assetTypeGuide = [
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; outline: SlideOutline[]; conceptDevelopmentLogic?: ConceptDevelopmentLogic };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; outline: SlideOutline[]; conceptDevelopmentLogic?: ConceptDevelopmentLogic; documentChunks?: DocumentChunk[] };
 
     if (!body.input || !body.analysis || !body.selectedConcept || !body.outline?.length) {
       return NextResponse.json({ error: '프로젝트 입력값, 분석 결과, 선택된 콘셉트, 아웃라인이 필요합니다.' }, { status: 400 });
@@ -158,7 +160,16 @@ export async function POST(request: Request) {
     const expandedOutline = ensureRfpRequirementCoverage(
       removeInternalConceptComparisonSlides(expandExperiencePlanOutline(body.outline, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic })),
       body.analysis,
+      body.documentChunks ?? [],
     );
+    const retrievedChunks = retrieveRelevantChunks({
+      stage: 'slide',
+      proposalType: effectiveProposalType,
+      query: `${body.input.projectName} ${expandedOutline.map((slide) => slide.slideTitle).join(' ')}`,
+      limit: 18,
+      chunks: body.documentChunks ?? [],
+    });
+    const retrievalContext = formatChunksForPrompt(retrievedChunks, 11000);
 
     const result = await createStructuredJson<{ slides: SlideContent[] }>({
       schemaName: 'proposal_slide_contents',
@@ -193,6 +204,9 @@ export async function POST(request: Request) {
 RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}
 프로젝트명: ${body.input.projectName}
 클라이언트명: ${body.input.clientName}
+
+검색된 근거 chunk:
+${retrievalContext || '검색된 chunk 없음'}
 
 분석 결과:
 ${JSON.stringify(body.analysis, null, 2)}
