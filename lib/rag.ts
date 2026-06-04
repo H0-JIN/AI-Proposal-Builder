@@ -310,6 +310,7 @@ export function buildEvidenceItems(chunks: DocumentChunk[], limit = 8) {
       sourceDocument: chunk.documentName,
       pageNumber: chunk.pageNumber,
       category: chunk.category,
+      importance: chunk.importance,
       bulletSummary: buildBulletSummary(cleanedText, chunk.category),
       shortExcerpt: cleanedText.replace(/\s+/g, ' ').slice(0, 220),
     }));
