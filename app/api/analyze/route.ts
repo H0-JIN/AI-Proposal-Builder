@@ -4,7 +4,7 @@ import type { AnalysisResult, ProjectInput, RetrievalEvidenceItem } from '@/lib/
 import type { DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
-import { buildEvidenceItems, formatChunksForPrompt, retrieveRelevantChunks } from '@/lib/rag';
+import { buildEvidenceItems, flattenCategoryEvidenceGroups, formatCategoryEvidenceGroupsForPrompt, retrieveCategoryEvidenceGroups } from '@/lib/rag';
 import { refineAnalysisConfirmationNeeds } from '@/lib/confirmationNeeds';
 
 export async function POST(request: Request) {
@@ -12,18 +12,25 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as ProjectInput | { input: ProjectInput; documentChunks?: DocumentChunk[] };
     const input = 'input' in payload ? payload.input : payload;
     const documentChunks = 'input' in payload ? payload.documentChunks ?? [] : [];
-    const retrievedChunks = retrieveRelevantChunks({
+    const categoryEvidenceGroups = retrieveCategoryEvidenceGroups({
       projectId: input.projectName,
       stage: 'analysis',
       proposalType: input.proposalType,
       query: `${input.projectName} ${input.clientName} ${input.briefText}`,
-      limit: 12,
       chunks: documentChunks,
+      groups: [
+        { label: '필수 산출물/과업 구조', categories: ['requiredDeliverables'], description: 'requiredDeliverables, requiredItems, taskSections.requiredDeliverables 추출에만 사용', limit: 4 },
+        { label: '프로젝트 목적/KPI/성과 목표', categories: ['projectObjective', 'kpi', 'performanceGoal'], description: 'projectObjective, numericInfo.targetKPI, kpiObjectives, performanceGoal 분석에 사용', limit: 4 },
+        { label: '평가 기준', categories: ['evaluationCriteria'], description: 'evaluationCriteria 및 평가 대응 관점에만 사용', limit: 3 },
+        { label: '일정/공간/제약/기존 자산/운영 조건', categories: ['schedule', 'venue', 'constraints', 'existingAsset', 'operationDirection'], description: 'schedule, spatialCondition, constraints, existingAssets, operationCondition 분석에 사용', limit: 5 },
+        { label: '디자인 방향/배경 인사이트/참고 자료', categories: ['designDirection', 'backgroundInsight', 'referenceOnly'], description: 'designDirection, backgroundInsight, referenceOnly, doNotTreatAsScope 분리에만 사용', limit: 4 },
+      ],
     });
-    const retrievalContext = formatChunksForPrompt(retrievedChunks);
+    const retrievedChunks = flattenCategoryEvidenceGroups(categoryEvidenceGroups);
+    const retrievalContext = formatCategoryEvidenceGroupsForPrompt(categoryEvidenceGroups);
     const evidence = buildEvidenceItems(retrievedChunks) as RetrievalEvidenceItem[];
 
-    if (!input.projectName || !input.clientName || (!input.briefText && !retrievalContext)) {
+    if (!input.projectName || !input.clientName || (!input.briefText && !retrievedChunks.length)) {
       return NextResponse.json({ error: '프로젝트명, 클라이언트명, 업로드 자료 또는 추가 메모를 모두 입력하세요.' }, { status: 400 });
     }
 
@@ -35,6 +42,8 @@ export async function POST(request: Request) {
         '이 단계는 AI 분석 단계다. 제안 콘셉트나 장표 문안을 만들지 말고 RFP/브리프에 명시된 사실, 과제, 조건, 제약, 확인 필요 항목만 정리하라.',
         '가장 먼저 RFP의 상위 과제 구조를 파악해 taskSections 배열로 추출하라. 개별 문장을 바로 제품/체험 단위로 해석하지 말고 과제 1, 과제 2, Phase 1, Phase 2, 제안 요청사항, 요청 범위, 필수 제안 항목, 제출 범위, Scope, Deliverables 같은 상위 구분을 최우선 구조로 삼아라.',
         'RFP 원문을 우선순위에 따라 분리하라: 1) 제안서 필수 항목/제출 요구사항/Deliverables, 2) 대행 범위/과업 범위/Scope of Work, 3) 평가 기준, 4) 프로젝트 개요/목적/기대효과, 5) 운영 조건/장소/일정/예산/제약, 6) 참고 사례/기존 자료/예시, 7) 키워드 기반 보조 신호.',
+        '검색 근거는 category별로 섹션화되어 제공된다. 각 분석 섹션은 지정된 관련 category 근거만 사용하라: requiredDeliverables는 필수 산출물/과업 구조, kpi/performanceGoal은 KPI/성과 목표, evaluationCriteria는 평가 기준, constraints/existingAsset/operationDirection은 실행 제약과 기존 자산, venue는 공간 조건, referenceOnly/designDirection/backgroundInsight는 참고 방향과 배경 인사이트로만 사용한다.',
+        '서로 다른 category 근거를 섞어 추론하지 말라. 특히 referenceOnly/backgroundInsight/existingAsset 근거를 requiredDeliverables, requiredScope, productInfo, targetKPI로 승격하지 말고, requiredDeliverables/kpi/evaluationCriteria에 없는 내용을 해당 분석 섹션에 만들지 말라.',
         'requiredDeliverables에는 제안서 필수 항목, 제출 요구사항, Deliverables, 반드시 포함해야 하는 제안 내용을 구조화해 넣어라. scopeOfWork에는 대행 범위, 과업 범위, 제작/운영/설치/철거/운송/시스템/콘텐츠 포함 범위를 구조화해 넣어라. evaluationCriteria에는 평가 기준만 넣어라.',
         'proposalType은 단순 키워드 빈도가 아니라 requiredDeliverables와 scopeOfWork를 최우선 근거로 inferredProposalType에 분류하라. 평가 기준은 보조 근거, 개요/목적/기대효과와 장소/일정/예산은 후순위 근거, 참고 사례/기존 자료/예시는 핵심 근거에서 제외하라.',
         '필수 항목 또는 제출 요구사항에 행사 운영안, 프로그램 운영안, 장소별 시스템 운영 계획, 발표 LED/음향/조명/프롬프터 운영, 쉬는 시간 및 네트워킹 동선 관리, 등록 키오스크 운영안, 사전 등록 DB 활용, 현장 등록 계획, 파트너 부스 운영안, 케이터링/만찬 운영, 전체 추진 일정, 설치/철거 계획, 운영 인력 계획, 리스크 관리, 예상 견적이 포함되면 mice_event_operation 또는 conference_forum을 우선 검토하라. 단, 같은 표현이 참고 사례/기존 사례/예시에만 있으면 proposalType 핵심 근거로 쓰지 말고 referenceOnly로만 분류하라.',
@@ -58,7 +67,7 @@ export async function POST(request: Request) {
 프로젝트명: ${input.projectName}
 클라이언트명: ${input.clientName}
 
-검색된 근거 chunk:
+검색된 category별 근거 chunk:
 ${retrievalContext || '검색된 chunk 없음 - 사용자 추가 메모만 사용'}
 
 사용자 추가 메모:

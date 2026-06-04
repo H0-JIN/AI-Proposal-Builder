@@ -75,12 +75,20 @@ export interface RetrievalQuery {
   query?: string;
   limit?: number;
   chunks?: DocumentChunk[];
+  categoryMatchMode?: 'boost' | 'filter';
+}
+
+export interface RetrievalCategoryGroup {
+  label: string;
+  description?: string;
+  categories: ChunkCategory[];
+  limit?: number;
 }
 
 const stageCategories: Record<RetrievalStage, ChunkCategory[]> = {
   analysis: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'budget', 'venue', 'existingAsset', 'designDirection', 'backgroundInsight', 'referenceOnly', 'operationDirection'],
-  concept: ['projectPurpose', 'projectObjective', 'target', 'approach', 'concept', 'designDirection', 'backgroundInsight', 'referenceOnly', 'existingAsset', 'operationDirection'],
-  outline: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'budget', 'referenceOnly', 'existingAsset', 'designDirection', 'operationDirection'],
+  concept: ['requiredDeliverables', 'venue', 'referenceOnly', 'designDirection', 'projectObjective', 'target', 'backgroundInsight', 'existingAsset'],
+  outline: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'budget', 'venue', 'referenceOnly', 'existingAsset', 'designDirection', 'operationDirection'],
   slide: ['requiredDeliverables', 'scopeOfWork', 'projectObjective', 'kpi', 'performanceGoal', 'evaluationCriteria', 'constraints', 'schedule', 'program', 'venue', 'registration', 'systemOperation', 'boothOperation', 'catering', 'staffing', 'portfolio', 'organization', 'riskManagement', 'setupDismantling', 'existingAsset', 'designDirection', 'backgroundInsight', 'referenceOnly', 'operationDirection', 'concept', 'approach'],
   finalReview: ['requiredDeliverables', 'scopeOfWork', 'evaluationCriteria'],
 };
@@ -341,14 +349,15 @@ export function createDocumentChunks(params: {
 const importanceScore: Record<ChunkImportance, number> = { high: 30, medium: 15, low: 5 };
 const documentTypeScore: Record<DocumentType, number> = { rfp: 20, finalProposal: 14, portfolio: 10, template: 9, reference: 7, budgetSample: 8, scheduleSample: 8, organizationSample: 8 };
 
-export function retrieveRelevantChunks({ stage, proposalType, slideTitle, categories, query, limit = 8, chunks = [] }: RetrievalQuery): DocumentChunk[] {
+export function retrieveRelevantChunks({ stage, proposalType, slideTitle, categories, query, limit = 8, chunks = [], categoryMatchMode = 'boost' }: RetrievalQuery): DocumentChunk[] {
   const targetCategories = new Set(categories?.length ? categories : stageCategories[stage]);
   const queryTokens = tokenize([query, slideTitle, proposalType].filter(Boolean).join(' '));
 
-  return chunks
+  const scoredChunks = chunks
     .map((chunk) => {
       const text = normalize([chunk.chunkText, chunk.slideTitle, chunk.sectionTitle, chunk.keyMessage, chunk.tags.join(' ')].filter(Boolean).join(' '));
-      const categoryScore = (chunk.categories ?? [chunk.category]).some((category) => targetCategories.has(category)) ? 45 : 0;
+      const categoryMatch = (chunk.categories ?? [chunk.category]).some((category) => targetCategories.has(category));
+      const categoryScore = categoryMatch ? 45 : 0;
       const tagScore = chunk.tags.reduce((score, tag) => score + (queryTokens.includes(normalize(tag)) ? 8 : 0), 0);
       const keywordScore = queryTokens.reduce((score, token) => score + (text.includes(token) ? 5 : 0), 0);
       const proposalScore = proposalType && chunk.proposalType === proposalType ? 10 : 0;
@@ -356,13 +365,60 @@ export function retrieveRelevantChunks({ stage, proposalType, slideTitle, catego
       const finalProposalScore = stage === 'outline' || stage === 'slide' ? (chunk.documentType === 'finalProposal' ? 18 : 0) : 0;
       return {
         chunk,
+        categoryMatch,
         score: categoryScore + tagScore + keywordScore + proposalScore + slideScore + finalProposalScore + importanceScore[chunk.importance] + documentTypeScore[chunk.documentType],
       };
     })
-    .filter((item) => item.score > 0)
+    .filter((item) => item.score > 0);
+
+  const categoryFilteredChunks = categoryMatchMode === 'filter' ? scoredChunks.filter((item) => item.categoryMatch) : scoredChunks;
+  const rankedChunks = categoryFilteredChunks.length ? categoryFilteredChunks : scoredChunks;
+
+  return rankedChunks
     .sort((a, b) => b.score - a.score || a.chunk.chunkIndex - b.chunk.chunkIndex)
     .slice(0, limit)
     .map((item) => item.chunk);
+}
+
+function dedupeChunks(chunks: DocumentChunk[]) {
+  const seen = new Set<string>();
+  return chunks.filter((chunk) => {
+    if (seen.has(chunk.id)) return false;
+    seen.add(chunk.id);
+    return true;
+  });
+}
+
+export function retrieveCategoryEvidenceGroups(params: Omit<RetrievalQuery, 'categories' | 'limit' | 'categoryMatchMode'> & {
+  groups: RetrievalCategoryGroup[];
+  defaultLimitPerGroup?: number;
+}) {
+  return params.groups.map((group) => ({
+    ...group,
+    chunks: retrieveRelevantChunks({
+      ...params,
+      categories: group.categories,
+      limit: group.limit ?? params.defaultLimitPerGroup ?? 4,
+      categoryMatchMode: 'filter',
+    }),
+  }));
+}
+
+export function flattenCategoryEvidenceGroups(groups: Array<RetrievalCategoryGroup & { chunks: DocumentChunk[] }>) {
+  return dedupeChunks(groups.flatMap((group) => group.chunks));
+}
+
+export function formatCategoryEvidenceGroupsForPrompt(groups: Array<RetrievalCategoryGroup & { chunks: DocumentChunk[] }>, maxChars = 12000) {
+  let output = '';
+
+  for (const group of groups) {
+    const formattedChunks = formatChunksForPrompt(group.chunks, Math.max(1800, Math.floor(maxChars / Math.max(groups.length, 1))));
+    const block = [`## ${group.label}`, `categories: ${group.categories.join(', ')}`, group.description ? `사용 목적: ${group.description}` : '', formattedChunks || '해당 category 근거 없음'].filter(Boolean).join('\n');
+    if ((output + '\n\n' + block).length > maxChars) break;
+    output = [output, block].filter(Boolean).join('\n\n');
+  }
+
+  return output;
 }
 
 export function formatChunksForPrompt(chunks: DocumentChunk[], maxChars = 9000) {
