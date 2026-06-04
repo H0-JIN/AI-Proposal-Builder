@@ -8,8 +8,13 @@ import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
 import { isInternalConceptComparisonSlide, removeInternalConceptComparisonSlides, sanitizeFinalPptxSlides, sanitizeFinalPptxText } from '@/lib/internalSlides';
 import {
+  ENCODING_CORRUPTION_DETECTED_MESSAGE,
   PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
   TEXT_EXTRACTION_FAILED_MESSAGE,
+  TEXT_EXTRACTION_LOW_QUALITY_MESSAGE,
+  VISION_CHUNK_CREATION_MESSAGE,
+  VISION_FALLBACK_COMPLETED_MESSAGE,
+  VISION_FALLBACK_IN_PROGRESS_MESSAGE,
   VISION_FULL_CHUNKED_LABEL,
   VISION_PROCESSING_GUIDANCE,
   VISION_PROCESSING_PAGE_LIMIT_MESSAGE,
@@ -34,6 +39,7 @@ type ExtractTextResponse = {
   error?: string;
   ocrNotice?: string;
   qualityReasons?: string[];
+  extractionQuality?: 'low';
 };
 
 type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[] };
@@ -900,8 +906,10 @@ export default function Home() {
     errorMessage: options.errorMessage,
   });
 
-  const runAutomaticVisionAnalysis = async (documentId: string, file: File, textPrefix = '') => {
-    const processingMessage = '빠른 Vision 분석 중 · 앞 3페이지를 먼저 분석합니다.'
+  const runAutomaticVisionAnalysis = async (documentId: string, file: File, textPrefix = '', qualityFallback = false) => {
+    const processingMessage = qualityFallback
+      ? [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · ')
+      : '빠른 Vision 분석 중 · 앞 3페이지를 먼저 분석합니다.'
 
     updateUploadedDocument(documentId, {
       extractionStatus: '빠른 Vision 분석 중',
@@ -922,7 +930,7 @@ export default function Home() {
       errorMessage: undefined,
     });
     setUploadNotice({ type: 'warning', message: processingMessage });
-    setLoading('PDF 빠른 Vision 분석 중...');
+    setLoading(qualityFallback ? 'PDF 텍스트 품질 낮음 · Vision 분석으로 전환 중...' : 'PDF 빠른 Vision 분석 중...');
     console.info('vision chunked analysis started', { documentId, fileName: file.name, chunkSize: DEFAULT_VISION_CHUNK_SIZE });
 
     const accumulatedTexts: string[] = [];
@@ -990,7 +998,7 @@ export default function Home() {
           : pageStart + DEFAULT_VISION_CHUNK_SIZE - 1;
         const isFastAnalysisChunk = !fastAnalysisReady && pageStart === 1;
         const chunkMessage = isFastAnalysisChunk
-          ? '빠른 Vision 분석 중 · 앞 3페이지를 먼저 분석합니다.'
+          ? (qualityFallback ? [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · ') : '빠른 Vision 분석 중 · 앞 3페이지를 먼저 분석합니다.')
           : `전체 Vision 분석 중 · ${pageStart}~${pageEnd}p 분석 중`;
 
         updateUploadedDocument(documentId, {
@@ -1155,7 +1163,7 @@ export default function Home() {
         const progressMessage = failedPages.length
           ? `${isFastAnalysisChunk ? '빠른 Vision 분석 완료' : '전체 Vision 분석 중'} · 페이지: ${getSuccessfulPageCount()}/${totalPageCount ?? processedThroughPage} · 재시도 후 실패 페이지: ${formatFailedPages(failedPages)}`
           : isFastAnalysisChunk
-            ? `빠른 분석 완료 · 페이지: ${getSuccessfulPageCount()}/${totalPageCount ?? processedThroughPage} · AI 분석 가능 · 전체 문서 분석은 계속 진행 중`
+            ? `${qualityFallback ? '텍스트 추출 품질 낮음 → Vision 분석 완료' : '빠른 분석 완료'} · 페이지: ${getSuccessfulPageCount()}/${totalPageCount ?? processedThroughPage} · ${VISION_CHUNK_CREATION_MESSAGE} · AI 분석 가능 · 전체 문서 분석은 계속 진행 중`
             : getVisionProcessingMessage(getSuccessfulPageCount(), totalPageCount);
         const nextCombinedText = combinedText;
         const nextStatus = isFastAnalysisChunk ? '빠른 Vision 분석 완료' : '전체 Vision 분석 중';
@@ -1200,7 +1208,7 @@ export default function Home() {
       const failureSummary = buildFailureSummary();
       const finalPageCount = totalPageCount ?? processedThroughPage ?? getSuccessfulPageCount();
       const finalMessage = finalStatus === '전체 Vision 분석 완료'
-        ? `전체 Vision 분석 완료 · 페이지: ${getSuccessfulPageCount()}/${finalPageCount} · 글자 수: ${combinedText.length.toLocaleString()}자`
+        ? `${qualityFallback ? VISION_FALLBACK_COMPLETED_MESSAGE : '전체 Vision 분석 완료'} · ${VISION_CHUNK_CREATION_MESSAGE} · 페이지: ${getSuccessfulPageCount()}/${finalPageCount} · 글자 수: ${combinedText.length.toLocaleString()}자`
         : finalStatus === 'Vision 일부 완료'
           ? `Vision 일부 완료 · 페이지: ${getSuccessfulPageCount()}/${finalPageCount} · ${failureSummary}`
           : `Vision 분석 실패 · ${failureSummary || '분석 가능한 페이지가 없습니다.'}`;
@@ -1310,16 +1318,16 @@ export default function Home() {
           .filter(Boolean)
           .join(' ') + qualityMessage;
         const document = extension === 'pdf'
-          ? createUploadedDocument(file, '텍스트 추출 실패', '', '빠른 Vision 분석 대기 중', {
+          ? createUploadedDocument(file, '텍스트 품질 낮음', '', [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · '), {
               visionStatus: 'quick_analyzing',
               visionUsed: true,
               visionPageCount: 0,
               visionTotalPageCount: DEFAULT_VISION_CHUNK_SIZE,
             })
           : createUploadedDocument(file, '추출 실패', data.text ?? '', message);
-        addUploadedDocument(document, extension === 'pdf' ? 'warning' : 'error', extension === 'pdf' ? '텍스트 추출 실패 · 빠른 Vision 분석을 시작합니다.' : message);
+        addUploadedDocument(document, extension === 'pdf' ? 'warning' : 'error', extension === 'pdf' ? [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · ') : message);
         if (extension === 'pdf') {
-          await runAutomaticVisionAnalysis(document.id, file, data.text ?? '');
+          await runAutomaticVisionAnalysis(document.id, file, '', true);
         }
         return;
       }
@@ -1330,16 +1338,16 @@ export default function Home() {
           .filter(Boolean)
           .join(' ');
         const document = extension === 'pdf'
-          ? createUploadedDocument(file, '텍스트 추출 실패', '', '빠른 Vision 분석 대기 중', {
+          ? createUploadedDocument(file, '텍스트 품질 낮음', '', [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · '), {
               visionStatus: 'quick_analyzing',
               visionUsed: true,
               visionPageCount: 0,
               visionTotalPageCount: DEFAULT_VISION_CHUNK_SIZE,
             })
           : createUploadedDocument(file, '추출 실패', validation.text, message);
-        addUploadedDocument(document, validation.reason === 'short' ? 'warning' : 'error', extension === 'pdf' ? '텍스트 품질 낮음 · 빠른 Vision 분석을 시작합니다.' : message);
+        addUploadedDocument(document, 'warning', extension === 'pdf' ? [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · ') : message);
         if (extension === 'pdf') {
-          await runAutomaticVisionAnalysis(document.id, file, validation.text);
+          await runAutomaticVisionAnalysis(document.id, file, '', true);
         }
         return;
       }

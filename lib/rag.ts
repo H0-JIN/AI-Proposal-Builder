@@ -1,3 +1,4 @@
+import { isUsableRagText, sanitizeCorruptedText } from './extractedTextValidation';
 import type { ProposalType } from './types';
 
 export const chunkCategories = [
@@ -217,29 +218,32 @@ export function createDocumentChunks(params: {
     : [{ text: params.text, pageNumber: params.pageNumber, visualSummary: params.visualSummary }];
 
   let chunkIndex = 0;
-  return sourcePages.flatMap((page) => splitTextIntoChunks(page.text).map((chunkText) => {
-    const category = inferChunkCategory(chunkText, documentType);
-    const metadata = documentType === 'finalProposal' ? extractFinalProposalMetadata(chunkText) : {};
-    const tags = Array.from(new Set([...tokenize(chunkText), category, documentType])).slice(0, 30);
-    const chunk: DocumentChunk = {
-      id: `${params.documentId}-chunk-${chunkIndex}`,
-      documentId: params.documentId,
-      documentName: params.documentName,
-      documentType,
-      pageNumber: page.pageNumber,
-      chunkIndex,
-      chunkText,
-      visualSummary: page.visualSummary,
-      sourceType: params.sourceType,
-      category,
-      tags,
-      importance: inferChunkImportance(category, chunkText),
-      createdAt,
-      ...metadata,
-    };
-    chunkIndex += 1;
-    return chunk;
-  }));
+  return sourcePages.flatMap((page) => splitTextIntoChunks(page.text)
+    .map((chunkText) => sanitizeCorruptedText(chunkText))
+    .filter((chunkText) => isUsableRagText(chunkText))
+    .map((chunkText) => {
+      const category = inferChunkCategory(chunkText, documentType);
+      const metadata = documentType === 'finalProposal' ? extractFinalProposalMetadata(chunkText) : {};
+      const tags = Array.from(new Set([...tokenize(chunkText), category, documentType])).slice(0, 30);
+      const chunk: DocumentChunk = {
+        id: `${params.documentId}-chunk-${chunkIndex}`,
+        documentId: params.documentId,
+        documentName: params.documentName,
+        documentType,
+        pageNumber: page.pageNumber,
+        chunkIndex,
+        chunkText,
+        visualSummary: page.visualSummary,
+        sourceType: params.sourceType,
+        category,
+        tags,
+        importance: inferChunkImportance(category, chunkText),
+        createdAt,
+        ...metadata,
+      };
+      chunkIndex += 1;
+      return chunk;
+    }));
 }
 
 const importanceScore: Record<ChunkImportance, number> = { high: 30, medium: 15, low: 5 };
@@ -272,19 +276,20 @@ export function retrieveRelevantChunks({ stage, proposalType, slideTitle, catego
 export function formatChunksForPrompt(chunks: DocumentChunk[], maxChars = 9000) {
   let output = '';
   for (const chunk of chunks) {
-    const block = `[${chunk.documentName}${chunk.pageNumber ? ` p.${chunk.pageNumber}` : ''} | ${chunk.documentType} | ${chunk.category} | ${chunk.importance}]
-${chunk.sectionTitle ? `sectionTitle: ${chunk.sectionTitle}\n` : ''}${chunk.slideTitle ? `slideTitle: ${chunk.slideTitle}\n` : ''}${chunk.keyMessage ? `keyMessage: ${chunk.keyMessage}\n` : ''}${chunk.chunkText}`;
+    const chunkText = sanitizeCorruptedText(chunk.chunkText);
+    if (!isUsableRagText(chunkText)) continue;
+
+    const block = `[${chunk.documentName}${chunk.pageNumber ? ` p.${chunk.pageNumber}` : ''} | ${chunk.documentType} | ${chunk.category} | ${chunk.importance}]\n${chunk.sectionTitle ? `sectionTitle: ${sanitizeCorruptedText(chunk.sectionTitle)}\n` : ''}${chunk.slideTitle ? `slideTitle: ${sanitizeCorruptedText(chunk.slideTitle)}\n` : ''}${chunk.keyMessage ? `keyMessage: ${sanitizeCorruptedText(chunk.keyMessage)}\n` : ''}${chunkText}`;
     if ((output + '\n\n' + block).length > maxChars) break;
     output = [output, block].filter(Boolean).join('\n\n');
   }
   return output;
 }
-
 export function buildEvidenceItems(chunks: DocumentChunk[], limit = 8) {
-  return chunks.slice(0, limit).map((chunk) => ({
+  return chunks.filter((chunk) => isUsableRagText(chunk.chunkText)).slice(0, limit).map((chunk) => ({
     sourceDocument: chunk.documentName,
     pageNumber: chunk.pageNumber,
     category: chunk.category,
-    shortExcerpt: chunk.chunkText.replace(/\s+/g, ' ').slice(0, 220),
+    shortExcerpt: sanitizeCorruptedText(chunk.chunkText).replace(/\s+/g, ' ').slice(0, 220),
   }));
 }
