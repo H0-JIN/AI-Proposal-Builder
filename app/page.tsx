@@ -385,53 +385,92 @@ function AnalysisSectionPanel({ title, section }: { title: string; section?: Ana
 }
 
 
+const INITIAL_EVIDENCE_VISIBLE_COUNT = 4;
+
 function RetrievalEvidencePanel({ evidence }: { evidence?: RetrievalEvidenceItem[] }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [showAll, setShowAll] = useState(false);
   if (!evidence?.length) return null;
 
-  const visibleEvidence = showAll ? evidence : evidence.slice(0, 6);
+  const visibleEvidence = showAll ? evidence : evidence.slice(0, INITIAL_EVIDENCE_VISIBLE_COUNT);
   const hiddenCount = Math.max(evidence.length - visibleEvidence.length, 0);
+  const highImportanceCount = evidence.filter((item) => item.importance === 'high').length;
+  const categorySummary = Array.from(
+    evidence.reduce((counts, item) => counts.set(item.category, (counts.get(item.category) ?? 0) + 1), new Map<string, number>()),
+  )
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([category]) => category)
+    .join(' / ');
 
   return (
     <div className="rounded-3xl border border-cyan-100 bg-cyan-50 p-5 text-cyan-950">
-      <p className="text-sm font-black uppercase tracking-[0.2em] text-cyan-700">검색에 사용된 근거 자료</p>
-      <h3 className="mt-2 text-xl font-black">RAG Retrieval Evidence</h3>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {visibleEvidence.map((item, index) => (
-          <div key={`${item.sourceDocument}-${item.pageNumber ?? 'na'}-${index}`} className="rounded-2xl bg-white/80 p-4 text-sm leading-6 shadow-sm">
-            <p className="font-black text-cyan-800">출처: {item.pageNumber ? `${item.pageNumber}p` : '페이지 미상'} / {item.category}</p>
-            <p className="mt-1 text-xs font-bold text-cyan-700">source document: {item.sourceDocument}</p>
-            <ul className="mt-3 list-disc space-y-1 pl-5 text-slate-800">
-              {(item.bulletSummary?.length ? item.bulletSummary : [item.shortExcerpt]).map((bullet, bulletIndex) => (
-                <li key={`${bullet}-${bulletIndex}`}>{bullet}</li>
-              ))}
-            </ul>
-            {item.shortExcerpt && (
-              <details className="mt-3 rounded-xl bg-cyan-50 px-3 py-2 text-xs text-slate-600">
-                <summary className="cursor-pointer font-bold text-cyan-700">short excerpt 보기</summary>
-                <p className="mt-2 leading-5">{item.shortExcerpt}</p>
-              </details>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-cyan-700">검색 근거 자료</p>
+          <h3 className="mt-2 text-xl font-black">RAG Retrieval Evidence</h3>
+          <p className="mt-2 text-sm font-bold text-cyan-800">
+            근거 {evidence.length}건 · High {highImportanceCount}건 · {categorySummary ? `${categorySummary} 중심` : 'category 미분류'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setIsExpanded((current) => !current);
+            setShowAll(false);
+          }}
+          className="w-full rounded-2xl border border-cyan-200 bg-white px-4 py-3 text-sm font-black text-cyan-700 transition hover:bg-cyan-100 md:w-auto"
+          aria-expanded={isExpanded}
+        >
+          {isExpanded ? '근거 자료 접기' : '근거 자료 보기'}
+        </button>
+      </div>
+
+      {isExpanded && (
+        <>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {visibleEvidence.map((item, index) => (
+              <div key={`${item.sourceDocument}-${item.pageNumber ?? 'na'}-${index}`} className="rounded-2xl bg-white/80 p-4 text-sm leading-6 shadow-sm">
+                <p className="font-black text-cyan-800">{item.sourceDocument}</p>
+                <p className="mt-1 text-xs font-bold text-cyan-700">
+                  {item.pageNumber ? `${item.pageNumber}p` : '페이지 미상'} · {item.category}
+                  {item.importance ? ` · ${item.importance}` : ''}
+                </p>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-slate-800">
+                  {(item.bulletSummary?.length ? item.bulletSummary : [item.shortExcerpt]).map((bullet, bulletIndex) => (
+                    <li key={`${bullet}-${bulletIndex}`}>{bullet}</li>
+                  ))}
+                </ul>
+                {item.shortExcerpt && (
+                  <details className="mt-3 rounded-xl bg-cyan-50 px-3 py-2 text-xs text-slate-600">
+                    <summary className="cursor-pointer font-bold text-cyan-700">원문 excerpt 보기</summary>
+                    <p className="mt-2 leading-5">{item.shortExcerpt}</p>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {hiddenCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="rounded-2xl border border-cyan-200 bg-white px-4 py-2 text-sm font-black text-cyan-700 transition hover:bg-cyan-100"
+              >
+                근거 {hiddenCount}개 더 보기
+              </button>
+            )}
+            {showAll && evidence.length > INITIAL_EVIDENCE_VISIBLE_COUNT && (
+              <button
+                type="button"
+                onClick={() => setShowAll(false)}
+                className="rounded-2xl border border-cyan-200 bg-white px-4 py-2 text-sm font-black text-cyan-700 transition hover:bg-cyan-100"
+              >
+                기본 근거만 보기
+              </button>
             )}
           </div>
-        ))}
-      </div>
-      {hiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowAll(true)}
-          className="mt-4 rounded-2xl border border-cyan-200 bg-white px-4 py-2 text-sm font-black text-cyan-700 transition hover:bg-cyan-100"
-        >
-          근거 {hiddenCount}개 더 보기
-        </button>
-      )}
-      {showAll && evidence.length > 6 && (
-        <button
-          type="button"
-          onClick={() => setShowAll(false)}
-          className="mt-4 ml-2 rounded-2xl border border-cyan-200 bg-white px-4 py-2 text-sm font-black text-cyan-700 transition hover:bg-cyan-100"
-        >
-          접기
-        </button>
+        </>
       )}
     </div>
   );
@@ -450,6 +489,32 @@ function CompactBulletSection({ title, items }: { title: string; items: string[]
         {items.slice(0, 8).map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
       </ul>
       {items.length > 8 && <p className="mt-2 text-xs font-bold text-slate-500">외 {items.length - 8}개 항목은 후속 생성 단계에서 근거로 유지됩니다.</p>}
+    </div>
+  );
+}
+
+function ConfirmationNeedsSummary({ data }: { data: AnalysisResult }) {
+  const confirmationNeeds = uniqueItems([...(data.confirmNeeded ?? []), ...(data.missingInfo ?? [])]);
+
+  return (
+    <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">추가 확인 필요 요약</p>
+          <h3 className="mt-2 text-xl font-black">{confirmationNeeds.length ? '확인 후 보완하면 제안 정확도가 높아집니다.' : '현재 추가 확인 필요 항목이 없습니다.'}</h3>
+        </div>
+        <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-bold text-amber-900 shadow-sm">
+          확인 필요 {confirmationNeeds.length}건
+        </div>
+      </div>
+      {confirmationNeeds.length > 0 && (
+        <ul className="mt-4 list-disc space-y-1 pl-5 text-sm leading-6">
+          {confirmationNeeds.slice(0, 6).map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
+        </ul>
+      )}
+      {confirmationNeeds.length > 6 && (
+        <p className="mt-2 text-xs font-bold text-amber-800">외 {confirmationNeeds.length - 6}건은 추가 정보 입력 영역에서 보완할 수 있습니다.</p>
+      )}
     </div>
   );
 }
@@ -502,7 +567,6 @@ function KeyValueList({ data }: { data: AnalysisResult }) {
         <CompactBulletSection title="필수 제안 항목" items={requiredProposalItems} />
         <CompactBulletSection title="주요 제약 / 참고 사항" items={constraintsAndNotes} />
         <CompactBulletSection title="일정 / 평가 기준" items={scheduleAndEvaluation} />
-        <CompactBulletSection title="추가 확인 필요" items={uniqueItems([...(data.confirmNeeded ?? []), ...(data.missingInfo ?? [])])} />
       </div>
     </div>
   );
@@ -1988,8 +2052,9 @@ export default function Home() {
                 </div>
               )}
               <InputQualityPanel quality={inputQuality} />
-              <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
+              <ConfirmationNeedsSummary data={state.analysis} />
               <KeyValueList data={state.analysis} />
+              <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
             </div>
             {hasConfirmationNeeds && (
               <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
