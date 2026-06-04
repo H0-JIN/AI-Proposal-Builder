@@ -6,6 +6,7 @@ import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { buildEvidenceItems, flattenCategoryEvidenceGroups, formatCategoryEvidenceGroupsForPrompt, retrieveCategoryEvidenceGroups } from '@/lib/rag';
 import { refineAnalysisConfirmationNeeds } from '@/lib/confirmationNeeds';
+import { buildProposalStructureGuard } from '@/lib/proposalStructureGuard';
 
 export async function POST(request: Request) {
   try {
@@ -62,6 +63,8 @@ export async function POST(request: Request) {
         'kpiObjectives에는 numericInfo.targetKPI로 명확히 분류된 목표 KPI만 넣어라. OCR/추출이 불확실하거나 확정되지 않은 수치는 confirmNeeded에 “확인 필요”로 넣고 targetKPI/kpiObjectives에는 넣지 말라. 기존 운영 결과, 기존 방문객, 타깃 비중, 참고 사례 수치, 레슨런드 수치는 kpiObjectives에 넣지 말고 numericInfo.pastPerformance/lessonLearned/referenceMetric/currentIssue로 분리하라. constraints에는 예산/공간/운영/법규/브랜드 가이드 등 제약을 넣어라. schedule에는 제출 일정, 보고 일정, 오픈 일정, 운영 일정을 분리해 넣어라. 최상위 confirmNeeded에는 실제 과업 범위와 참고 사례 구분이 모호하거나 추가 확인이 필요한 항목만 넣어라.',
         '“등” 앞에 나열된 명사는 기본적으로 taskSections.referenceMentions 및 referenceOnly 후보로 분류하라. 단, 같은 문장 또는 상위 과제 구조에서 명확히 제작, 개발, 구성, 제안, 필수 포함 대상으로 지정된 경우에만 requiredScope/taskSections.requiredDeliverables에 포함하라.',
         'FF7 모뉴먼트, S26 쇼케이스, 기존 슈퍼스테디, 뉴페이스셀피, 기존 게임사 팝업, 기존 러닝/야구 스튜디오처럼 “참고/기존/사례/예시/등” 맥락의 항목은 실제 제안 범위가 아니라 referenceOnly 및 doNotTreatAsScope로 분류하라.',
+        'proposalScopeTypes에는 RFP 범위에 맞는 복수 유형을 분류하라: contentDevelopment, boothExhibition, experienceMarketing, brandActivation, operationOnly, designBuild, publicTender. World Hydrogen EXPO처럼 “컨텐츠 개발 부문”, “전시 기획/운영 및 컨텐츠 개발/제작”, “Hero 컨텐츠 개발”, “주요 전시물 컨텐츠 개발 필수 포함” 근거가 있으면 contentDevelopment와 boothExhibition을 반드시 함께 포함하라.',
+        'proposalStructureGuard에는 감지한 proposalScopeTypes에 따른 구조 제한을 한 문장으로 작성하라. 콘텐츠 개발 중심이면 Hero Content, Sub Content, Zoning & Flow, Schedule, Credential을 우선하고, RFP에 명시되지 않은 Viral/Communication Strategy, KPI/Performance Goal, Operation Plan, Output & Share, Visitor Reward, SNS Sharing, Marketing Campaign을 별도 장표로 확장하지 않는다고 명시하라.',
         'targetInfo, spatialCondition, contentCondition, operationCondition은 각각 타깃, 공간, 콘텐츠, 운영 조건을 분리해 작성하라.',
         'kpiScheduleConstraints에는 numericInfo.targetKPI, 일정, 납품 조건, 정량 기준만 넣어라. pastPerformance, lessonLearned, referenceMetric에 해당하는 수치는 목표처럼 표현하지 말고 배경/문제/인사이트 맥락으로만 표현하라. RFP에 명시된 목표 KPI가 없으면 임의 수치를 만들지 말고 numericInfo.proposedMeasurement에 측정 항목 제안으로 정리하라. RFP에 없는 방문객 증가율, 만족도 상승률, 재방문율, 구매전환율 같은 수치를 절대 만들지 말라.',
         'missingInfo에는 실제 RFP에 없는 보완 정보만 넣어라. 우선순위는 예산 세부 배분, 제작/운영 포함·제외 범위, 최종 공간 도면/실측 자료, 사용 가능 집기 상세 리스트, 브랜드 톤앤매너/디자인 가이드, 보안 검수 및 설치 가능 범위, 콘텐츠 제작 범위/매체별 스펙, 현장 운영 인력 규모 순으로 판단하라. RFP에 일정, 평가 기준, KPI, 필수 제안 항목이 명시되어 있으면 missingInfo/confirmNeeded에 반복하지 말라.',
@@ -79,8 +82,21 @@ ${input.briefText}`,
     });
 
     const refinedResult = refineAnalysisConfirmationNeeds(result, documentChunks);
+    const structureGuard = buildProposalStructureGuard(input, refinedResult);
+    const guardedResult: AnalysisResult = {
+      ...refinedResult,
+      proposalScopeTypes: structureGuard.proposalScopeTypes,
+      proposalStructureGuard: [
+        refinedResult.proposalStructureGuard,
+        structureGuard.proposalScopeTypes.includes('contentDevelopment')
+          ? `콘텐츠 개발형 제안서는 기본 18~22장, 최대 ${structureGuard.maxSlideCount ?? 24}장 이내로 구성하고 Hero/Sub Content·시나리오·레퍼런스·일정·실적 중심으로 제한합니다.`
+          : '',
+        structureGuard.hasExplicitKpi ? 'RFP에 명시된 정량 KPI 또는 평가 지표 요구가 있어 KPI 장표를 허용합니다.' : '정량 KPI 또는 성과지표 평가 요구가 없으면 KPI는 별도 장표가 아니라 프로젝트 목표 문장에만 반영합니다.',
+        structureGuard.hasExplicitOperationPlan ? 'RFP에 운영 계획 요구가 있어 운영 장표를 허용합니다.' : '현장 운영·인력·안전·유지관리 요구가 없으면 운영 계획은 별도 장표가 아니라 일정 중심으로만 반영합니다.',
+      ].filter(Boolean).join(' '),
+    };
 
-    return NextResponse.json({ result: refinedResult, evidence });
+    return NextResponse.json({ result: guardedResult, evidence });
   } catch (error) {
     const message = error instanceof Error ? error.message : '분석 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });

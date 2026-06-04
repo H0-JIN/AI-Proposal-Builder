@@ -62,6 +62,7 @@ const numericInfoSchema = {
 } as const;
 
 const proposalTypeEnum = ['basic', 'cheil', 'innocean', 'hyundai', 'mice_event_operation', 'conference_forum'] as const;
+const proposalScopeTypeEnum = ['contentDevelopment', 'boothExhibition', 'experienceMarketing', 'brandActivation', 'operationOnly', 'designBuild', 'publicTender'] as const;
 
 const analysisSectionSchema = {
   type: 'object',
@@ -83,6 +84,8 @@ export const analysisJsonSchema = {
     taskSections: { type: 'array', items: taskSectionSchema },
     inferredProposalType: { type: 'string', enum: proposalTypeEnum },
     proposalTypeReasoning: { type: 'string' },
+    proposalScopeTypes: { type: 'array', items: { type: 'string', enum: proposalScopeTypeEnum } },
+    proposalStructureGuard: { type: 'string' },
     requiredDeliverables: stringArray,
     scopeOfWork: stringArray,
     evaluationCriteria: stringArray,
@@ -115,6 +118,8 @@ export const analysisJsonSchema = {
     'taskSections',
     'inferredProposalType',
     'proposalTypeReasoning',
+    'proposalScopeTypes',
+    'proposalStructureGuard',
     'requiredDeliverables',
     'scopeOfWork',
     'evaluationCriteria',
