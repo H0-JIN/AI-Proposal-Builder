@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { slideContentJsonSchema } from '@/lib/schemas';
 import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ProjectInput, SlideContent, SlideOutline } from '@/lib/types';
-import type { DocumentChunk } from '@/lib/rag';
+import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { assessInputQuality } from '@/lib/inputQuality';
@@ -143,6 +143,101 @@ const assetTypeGuide = [
   'Visitor Participation Content',
 ].join(', ');
 
+type SlideRetrievalMetadata = {
+  slideNumber: number;
+  slideTitle: string;
+  retrievalQuery: string;
+  matchedCategories: ChunkCategory[];
+  evidenceCount: number;
+};
+
+type OutlineWithEvidence = SlideOutline & {
+  retrievalQuery?: string;
+  matchedCategories?: ChunkCategory[];
+  evidenceCount?: number;
+  evidenceSnippets?: string;
+};
+
+const slideCategoryPriorities = [
+  {
+    pattern: /rfp|summary|overview|project understanding|objective|background|요약|개요|프로젝트|배경|이해/i,
+    categories: ['projectObjective', 'backgroundInsight', 'operationDirection'] as ChunkCategory[],
+  },
+  {
+    pattern: /required|requirement|scope|task|deliverable|과업|요구|범위|산출|필수|대응표/i,
+    categories: ['requiredDeliverables', 'constraints', 'existingAsset'] as ChunkCategory[],
+  },
+  {
+    pattern: /kpi|goal|performance|effect|성과|목표|지표|기대효과/i,
+    categories: ['kpi', 'performanceGoal'] as ChunkCategory[],
+  },
+  {
+    pattern: /schedule|timeline|evaluation|criteria|심사|평가|일정|마일스톤/i,
+    categories: ['schedule', 'evaluationCriteria'] as ChunkCategory[],
+  },
+  {
+    pattern: /spatial|space|zone|venue|moving line|placement|layout|공간|동선|배치|존|장소/i,
+    categories: ['venue', 'existingAsset', 'constraints', 'referenceOnly'] as ChunkCategory[],
+  },
+  {
+    pattern: /operation|execution|setup|conversion|staff|risk|registration|session|pavilion|catering|운영|실행|설치|전환|인력|리스크|등록|세션|케이터링/i,
+    categories: ['operationDirection', 'constraints', 'schedule', 'existingAsset'] as ChunkCategory[],
+  },
+  {
+    pattern: /concept|experience strategy|experience approach|content|interactive|media|journey|viral|콘셉트|경험|체험|콘텐츠|인터랙션|미디어|여정|공유/i,
+    categories: ['requiredDeliverables', 'productFeature', 'venue', 'referenceOnly', 'designDirection'] as ChunkCategory[],
+  },
+];
+
+function inferSlidePriorityCategories(slide: SlideOutline) {
+  const slideKey = [slide.slideType, slide.slideTitle, slide.slidePurpose, slide.keyMessage].join(' ');
+  const matched = slideCategoryPriorities.find((priority) => priority.pattern.test(slideKey))?.categories ?? [];
+  return Array.from(new Set<ChunkCategory>(matched.length ? matched : ['requiredDeliverables', 'projectObjective', 'constraints', 'performanceGoal']));
+}
+
+function buildSlideCategoryWeights(categories: ChunkCategory[]) {
+  return categories.reduce<Partial<Record<ChunkCategory, number>>>((weights, category, index) => {
+    weights[category] = Math.max(18, 52 - index * 7);
+    return weights;
+  }, {});
+}
+
+function buildSlideRetrievalQuery(input: ProjectInput, slide: SlideOutline) {
+  return [input.projectName, slide.slideType, slide.slideTitle, slide.slidePurpose].filter(Boolean).join(' / ');
+}
+
+function buildSlideEvidenceOutline(input: ProjectInput, outline: SlideOutline[], chunks: DocumentChunk[], proposalType: ProjectInput['proposalType']) {
+  const maxEvidenceCharsPerSlide = Math.max(700, Math.min(1400, Math.floor(28000 / Math.max(outline.length, 1))));
+  const metadata: SlideRetrievalMetadata[] = [];
+  const outlineWithEvidence: OutlineWithEvidence[] = outline.map((slide) => {
+    const categories = inferSlidePriorityCategories(slide);
+    const retrievalQuery = buildSlideRetrievalQuery(input, slide);
+    const evidenceChunks = retrieveRelevantChunks({
+      stage: 'slide',
+      proposalType,
+      slideTitle: slide.slideTitle,
+      query: retrievalQuery,
+      categories,
+      categoryWeights: buildSlideCategoryWeights(categories),
+      categoryMatchMode: 'filter',
+      limit: 4,
+      chunks,
+    });
+    const matchedCategories = Array.from(new Set(evidenceChunks.flatMap((chunk) => chunk.categories ?? [chunk.category]).filter((category) => categories.includes(category))));
+    metadata.push({ slideNumber: slide.slideNumber, slideTitle: slide.slideTitle, retrievalQuery, matchedCategories, evidenceCount: evidenceChunks.length });
+
+    return {
+      ...slide,
+      retrievalQuery,
+      matchedCategories,
+      evidenceCount: evidenceChunks.length,
+      evidenceSnippets: formatChunksForPrompt(evidenceChunks, maxEvidenceCharsPerSlide),
+    };
+  });
+
+  return { outlineWithEvidence, metadata };
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; outline: SlideOutline[]; conceptDevelopmentLogic?: ConceptDevelopmentLogic; documentChunks?: DocumentChunk[] };
@@ -162,14 +257,21 @@ export async function POST(request: Request) {
       body.analysis,
       body.documentChunks ?? [],
     );
-    const retrievedChunks = retrieveRelevantChunks({
+    const { outlineWithEvidence, metadata: slideRetrievalMetadata } = buildSlideEvidenceOutline(
+      body.input,
+      expandedOutline,
+      body.documentChunks ?? [],
+      effectiveProposalType,
+    );
+    const hasSlideEvidence = slideRetrievalMetadata.some((metadata) => metadata.evidenceCount > 0);
+    const fallbackRetrievedChunks = retrieveRelevantChunks({
       stage: 'slide',
       proposalType: effectiveProposalType,
       query: `${body.input.projectName} ${expandedOutline.map((slide) => slide.slideTitle).join(' ')}`,
       limit: 18,
       chunks: body.documentChunks ?? [],
     });
-    const retrievalContext = formatChunksForPrompt(retrievedChunks, 11000);
+    const fallbackRetrievalContext = hasSlideEvidence ? '' : formatChunksForPrompt(fallbackRetrievedChunks, 11000);
 
     const result = await createStructuredJson<{ slides: SlideContent[] }>({
       schemaName: 'proposal_slide_contents',
@@ -179,6 +281,9 @@ export async function POST(request: Request) {
         isEventOperationType ? '이 단계는 행사 운영형 제안 생성 단계다. 사용자가 수정한 슬라이드 아웃라인을 최종 기준으로 삼아 RFP 요약을 반복하지 말고 행사 목적, 브랜드 메시지, 프로그램, 등록/입장, 세션 시스템, 파트너 부스, 네트워킹/케이터링, 동선, 설치/전환, 인력, 리스크, 예산 문안을 실제 제안서 초안 수준으로 생성하라.' : '이 단계는 제안 생성 단계다. 사용자가 수정한 슬라이드 아웃라인을 최종 기준으로 삼아 RFP 요약을 반복하지 말고 경험 전략, 콘셉트, 핵심 체험 자산, 공간/콘텐츠 구성, 미디어/인터랙션, 방문객 여정, PPT 장표 문안을 실제 제안서 초안 수준으로 생성하라. 아웃라인의 slideTitle, slidePurpose, keyMessage, mainCopy 수정 내용은 반드시 반영하라.',
         `각 슬라이드는 slideNumber, slideType, slideTitle, slidePurpose, keyMessage, mainCopy, bodyBullets, visualDirection, visitorAction, contentMechanism, spatialPlacement, mediaOrObject, outputOrReward, imagePlaceholder, visualPrompt, diagramSuggestion, productExperienceDetails, keyExperienceAssets, experienceScenarioSteps, referenceInsights, speakerNote, confirmNeededNote를 모두 작성한다. 일반 슬라이드에서 해당 배열이 없으면 빈 배열을 넣는다. 제품/콘텐츠 상세 장표는 ${experienceDetailFields.join(', ')} 항목을 productExperienceDetails에 명확히 작성하라.`,
         '본문 문안에는 RFP Fact / AI Proposal / Confirm Needed 구분을 반영하라. 단, AI Proposal 영역은 RFP 반복이 아니라 새 제안 아이디어여야 하며 Confirm Needed는 confirmNeededNote에만 배치하라.',
+        '각 슬라이드 문안은 슬라이드 아웃라인에 포함된 retrievalQuery와 evidenceSnippets를 우선 근거로 사용하라. evidenceSnippets는 해당 slideTitle, slideType, slidePurpose로 검색된 슬라이드별 RFP/RAG 근거이며, 다른 슬라이드의 evidenceSnippets를 해당 슬라이드의 RFP 사실처럼 전용하지 말라.',
+        'evidenceSnippets에 있는 chunk category와 importance를 반영해 high 중요도 및 해당 슬라이드 matchedCategories 근거를 우선 사용하라. evidenceCount가 0이거나 관련 근거가 없으면 기존처럼 분석 결과, 콘셉트, 아웃라인을 사용하되 RFP 사실이라고 단정하지 말고 제안 가정/운영 가정으로 표현하라.',
+        'RFP에 명시되지 않은 필수 요구사항, KPI 수치, 일정, 평가 기준, 공간 제약은 만들지 말라. 근거가 부족한 내용은 “제안 가정상”, “운영 설계 기준으로”, “추후 발주처 확인 후”처럼 가정 또는 확인 필요 문장으로 작성하라.',
         isEventOperationType ? '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 콘셉트는 단순 시스템명이나 운영 플랫폼명이 아니라 행사 목적, 브랜드 메시지, 파트너십, 기술 공유, 비즈니스 기회를 압축한 행사 정체성으로 표현하라. Experience Structure, Main Experience Image, Key Experience Asset, Visitor Action, Interactive Flow, Content Mechanism, Output & Share, Viral Communication Strategy, Media Experience Overview, Key Media Scene, Photo / Viral Spot, Hands-on Demo 장표와 본문 표현은 생성하지 말라. Operation Framework 장표는 등록, 세션, 파트너 부스, 네트워킹, 동선, 인력, 리스크를 연결하는 운영 체계로 작성하라.' : '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 선택되지 않은 콘셉트, 후보 간 비교, 평가 점수, 보류 사유는 어떤 장표에서도 언급하지 말라. Concept Candidates, 콘셉트 후보 3안 비교, 3개 콘셉트 비교표, 선택되지 않은 콘셉트 설명, 내부 평가 점수표 장표는 절대 작성하지 말라. Experience Approach 장표는 내부 분석 항목명이 아니라 Challenge, Insight, Opportunity, Approach 네 항목의 제안서 문장으로 작성하고, “후보 중 선택”이 아니라 “이 과제를 해결하려면 이러한 경험 접근이 필요하고 따라서 이 핵심 콘셉트로 전개해야 한다”는 논리로 작성하라. Core Concept 장표는 단순 소개가 아니라 Concept Name, Concept Statement, Core Message, Experience Logic, Why This Concept 구성의 전시 주제 선언으로 작성하라. Why This Concept에는 핵심 과제와 타깃 인사이트를 해결하기 위해 왜 이 콘셉트가 필요한지 설명하라. Experience Structure 장표에는 Spatial Zone, Hands-on Demo / Interactive Experience, Media / Signage, Photo / Viral Spot, Output / Share 항목을 포함하되 각 항목은 1~2문장 이내로 핵심 콘셉트의 실행 확장 구조를 보여줘라. 최종 본문에는 내부 JSON 필드명 또는 camelCase 항목명을 노출하지 말라.',
         '제안 아이디어와 장표 문안은 analysis.requiredDeliverables, analysis.scopeOfWork, analysis.taskSections[].requiredDeliverables를 최우선 기준으로 삼고 analysis.requiredScope, analysis.productInfo, analysis.productFeatures 중심으로만 생성하라. proposalType별 템플릿보다 RFP 필수 항목과 과업 범위가 우선이다. analysis.referenceOnly, analysis.doNotTreatAsScope, analysis.existingAssets 항목은 독립 체험 모듈/제품 상세/신규 콘텐츠 단위로 생성하지 말고 참고 방향 또는 레퍼런스 인사이트로만 사용하라.',
         'RFP Requirement Response / 과업 대응표 장표는 RFP 요구사항, 대응 장표, 제안 방향, 비고 형식의 표처럼 읽히게 작성하라. requiredDeliverables와 scopeOfWork는 개별 단독 장표를 과도하게 만들지 말고 먼저 과업 대응표 row와 기존 본문 장표 bullet/note에 매핑하라. 그래도 불가능한 경우에만 유사 항목을 묶은 보완 장표에 요구사항명을 명시하라.',
@@ -205,8 +310,11 @@ RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}
 프로젝트명: ${body.input.projectName}
 클라이언트명: ${body.input.clientName}
 
-검색된 근거 chunk (evaluationCriteria는 chapter generation, referenceOnly는 concept/spatial strategy에 반영):
-${retrievalContext || '검색된 chunk 없음'}
+슬라이드별 검색 근거:
+${hasSlideEvidence ? '각 슬라이드 객체의 evidenceSnippets, retrievalQuery, matchedCategories, evidenceCount를 사용한다.' : '슬라이드별 검색 근거 없음. 아래 fallback 근거와 분석 결과를 사용하되 RFP 사실 단정은 피한다.'}
+
+Fallback 검색 근거 chunk:
+${fallbackRetrievalContext || '검색된 chunk 없음'}
 
 분석 결과:
 ${JSON.stringify(body.analysis, null, 2)}
@@ -217,8 +325,8 @@ ${JSON.stringify(body.conceptDevelopmentLogic ?? null, null, 2)}
 핵심 콘셉트:
 ${JSON.stringify(body.selectedConcept, null, 2)}
 
-슬라이드 아웃라인:
-${JSON.stringify(expandedOutline, null, 2)}
+슬라이드 아웃라인 + slideTitle 기반 evidence:
+${JSON.stringify(outlineWithEvidence, null, 2)}
 
 입력 품질 진단:
 - 점수: ${inputQuality.score}
@@ -227,7 +335,11 @@ ${JSON.stringify(expandedOutline, null, 2)}
 - 감지된 제품/콘텐츠 코드: ${productCodes.length ? productCodes.join(' / ') : '없음'}`,
     });
 
-    return NextResponse.json(sanitizeGeneratedSlides(removeInternalConceptComparisonSlides(sanitizeKpiSlides(enhanceConceptFlowSlides(result.slides, body.conceptDevelopmentLogic, body.selectedConcept), body.analysis)), productCodes));
+    const sanitizedSlides = sanitizeGeneratedSlides(removeInternalConceptComparisonSlides(sanitizeKpiSlides(enhanceConceptFlowSlides(result.slides, body.conceptDevelopmentLogic, body.selectedConcept), body.analysis)), productCodes);
+    return NextResponse.json(sanitizedSlides.map((slide) => ({
+      ...slide,
+      retrievalMetadata: slideRetrievalMetadata.find((metadata) => metadata.slideNumber === slide.slideNumber || metadata.slideTitle === slide.slideTitle),
+    })));
   } catch (error) {
     const message = error instanceof Error ? error.message : '장표 문안 생성 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });

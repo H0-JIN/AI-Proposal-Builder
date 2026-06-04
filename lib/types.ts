@@ -1,4 +1,4 @@
-import type { DocumentChunk, DocumentType } from './rag';
+import type { ChunkCategory, DocumentChunk, DocumentType } from './rag';
 
 export type ProposalType = 'basic' | 'cheil' | 'innocean' | 'hyundai' | 'mice_event_operation' | 'conference_forum';
 
@@ -325,6 +325,13 @@ export interface SlideContent {
   referenceInsights: ReferenceInsight[];
   speakerNote: string;
   confirmNeededNote: string;
+  retrievalMetadata?: {
+    slideNumber: number;
+    slideTitle: string;
+    retrievalQuery: string;
+    matchedCategories: ChunkCategory[];
+    evidenceCount: number;
+  };
 }
 
 export interface ProposalState {
