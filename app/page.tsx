@@ -223,8 +223,10 @@ function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<t
 
 
 function getVisionAnalysisLabel(document: UploadedDocument) {
-  if (document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중') return '분석 중';
-  if (document.visionStatus === 'completed' || document.extractionStatus === 'Vision 분석 완료') return '완료';
+  if (document.visionStatus === 'quick_analyzing' || document.extractionStatus === '빠른 Vision 분석 중') return '빠른 분석 중';
+  if (document.visionStatus === 'quick_completed' || document.extractionStatus === '빠른 Vision 분석 완료') return '빠른 분석 완료';
+  if (document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '전체 Vision 분석 중') return '전체 분석 중';
+  if (document.visionStatus === 'completed' || document.extractionStatus === 'Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 완료') return '전체 완료';
   if (document.visionStatus === 'partial' || document.extractionStatus === 'Vision 일부 완료') return '일부 완료';
   if (document.visionStatus === 'failed' || document.extractionStatus === 'Vision 분석 실패') return '실패';
   if (document.visionStatus === 'queued') return '대기';
@@ -232,7 +234,7 @@ function getVisionAnalysisLabel(document: UploadedDocument) {
 }
 
 function getVisionPageLabel(document: UploadedDocument) {
-  if (document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중') {
+  if (document.visionStatus === 'quick_analyzing' || document.visionStatus === 'quick_completed' || document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 중') {
     return `${document.visionPageCount ?? 0}/${document.totalPageCount ?? document.visionTotalPageCount ?? DEFAULT_VISION_CHUNK_SIZE}`;
   }
 
@@ -264,6 +266,10 @@ function UploadedDocumentsList({
     'OCR 일부 추출': 'bg-amber-50 text-amber-800 ring-amber-200',
     'OCR 추출 실패': 'bg-red-50 text-red-700 ring-red-200',
     '이미지 중심 PDF로 판단': 'bg-purple-50 text-purple-700 ring-purple-200',
+    '빠른 Vision 분석 중': 'bg-blue-50 text-blue-700 ring-blue-200',
+    '빠른 Vision 분석 완료': 'bg-sky-50 text-sky-700 ring-sky-200',
+    '전체 Vision 분석 중': 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+    '전체 Vision 분석 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     'Vision 분석 중': 'bg-blue-50 text-blue-700 ring-blue-200',
     'Vision 분석 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     'Vision 일부 완료': 'bg-amber-50 text-amber-800 ring-amber-200',
@@ -567,6 +573,9 @@ function getSuccessfulUploadedDocuments(documents: UploadedDocument[] = []) {
       document.extractionStatus === '일부 텍스트만 추출' ||
       document.extractionStatus === 'OCR 추출 완료' ||
       document.extractionStatus === 'OCR 일부 추출' ||
+      document.extractionStatus === '빠른 Vision 분석 완료' ||
+      document.extractionStatus === '전체 Vision 분석 중' ||
+      document.extractionStatus === '전체 Vision 분석 완료' ||
       document.extractionStatus === 'Vision 분석 완료' ||
       document.extractionStatus === 'Vision 일부 완료') &&
     document.extractedText.trim(),
@@ -590,6 +599,7 @@ function appendUploadedDocument(document: UploadedDocument) {
     ...current,
     uploadedDocuments: [...(current.uploadedDocuments ?? []), document],
     analysis: undefined,
+    analysisBasis: undefined,
     conceptDevelopmentLogic: undefined,
     conceptCandidates: undefined,
     conceptRecommendation: undefined,
@@ -742,9 +752,21 @@ export default function Home() {
   const supplementalInfo = state.supplementalInfo ?? initialSupplementalInfo;
   const uploadedDocuments = state.uploadedDocuments ?? [];
   const analysisInput = useMemo(() => ({ ...state.input, briefText: buildAnalysisBriefText(state.input, uploadedDocuments) }), [state.input, uploadedDocuments]);
-  const hasVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중');
-  const canAnalyze = useMemo(() => Boolean(state.input.projectName && state.input.clientName && analysisInput.briefText) && !hasVisionAnalysisInProgress, [state.input.clientName, state.input.projectName, analysisInput.briefText, hasVisionAnalysisInProgress]);
-  const activeVisionDocument = uploadedDocuments.find((document) => document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중');
+  const hasFastVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'quick_analyzing' || document.extractionStatus === '빠른 Vision 분석 중');
+  const hasFullVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'analyzing' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === 'Vision 분석 중');
+  const hasVisionAnalysisInProgress = hasFastVisionAnalysisInProgress || hasFullVisionAnalysisInProgress;
+  const hasPartialVisionAnalysisInput = uploadedDocuments.some((document) =>
+    (document.visionStatus === 'quick_completed' || document.visionStatus === 'analyzing' || document.extractionStatus === '빠른 Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 중') &&
+    Boolean((document.documentAnalysisText || document.extractedText).trim()) &&
+    !(document.visionStatus === 'completed' || document.extractionStatus === '전체 Vision 분석 완료' || document.extractionStatus === 'Vision 분석 완료'),
+  );
+  const partialVisionAnalysisDocument = uploadedDocuments.find((document) =>
+    (document.visionStatus === 'quick_completed' || document.visionStatus === 'analyzing' || document.extractionStatus === '빠른 Vision 분석 완료' || document.extractionStatus === '전체 Vision 분석 중') &&
+    Boolean((document.documentAnalysisText || document.extractedText).trim()) &&
+    !(document.visionStatus === 'completed' || document.extractionStatus === '전체 Vision 분석 완료' || document.extractionStatus === 'Vision 분석 완료'),
+  );
+  const canAnalyze = useMemo(() => Boolean(state.input.projectName && state.input.clientName && analysisInput.briefText) && !hasFastVisionAnalysisInProgress, [state.input.clientName, state.input.projectName, analysisInput.briefText, hasFastVisionAnalysisInProgress]);
+  const activeVisionDocument = uploadedDocuments.find((document) => document.visionStatus === 'quick_analyzing' || document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 중' || document.extractionStatus === '전체 Vision 분석 중');
   const currentUploadNotice = activeVisionDocument?.warningMessage
     ? { type: 'warning' as const, message: activeVisionDocument.warningMessage }
     : uploadNotice;
@@ -753,7 +775,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -773,13 +795,6 @@ export default function Home() {
     setState((current) => ({
       ...current,
       uploadedDocuments: (current.uploadedDocuments ?? []).map((item) => (item.id === documentId ? { ...item, ...patch } : item)),
-      analysis: undefined,
-      conceptDevelopmentLogic: undefined,
-      conceptCandidates: undefined,
-      conceptRecommendation: undefined,
-      selectedConcept: undefined,
-      outline: undefined,
-      slides: undefined,
     }));
   };
 
@@ -813,14 +828,14 @@ export default function Home() {
   });
 
   const runAutomaticVisionAnalysis = async (documentId: string, file: File, textPrefix = '') => {
-    const processingMessage = getVisionProcessingMessage(0);
+    const processingMessage = '빠른 Vision 분석 중 · 앞 3페이지를 먼저 분석합니다.'
 
     updateUploadedDocument(documentId, {
-      extractionStatus: 'Vision 분석 중',
+      extractionStatus: '빠른 Vision 분석 중',
       extractedText: '',
       documentAnalysisText: undefined,
       extractedCharCount: 0,
-      visionStatus: 'analyzing',
+      visionStatus: 'quick_analyzing',
       visionUsed: true,
       visionPageCount: 0,
       visionTotalPageCount: DEFAULT_VISION_CHUNK_SIZE,
@@ -834,7 +849,7 @@ export default function Home() {
       errorMessage: undefined,
     });
     setUploadNotice({ type: 'warning', message: processingMessage });
-    setLoading('PDF Vision 분석 중...');
+    setLoading('PDF 빠른 Vision 분석 중...');
     console.info('vision chunked analysis started', { documentId, fileName: file.name, chunkSize: DEFAULT_VISION_CHUNK_SIZE });
 
     const accumulatedTexts: string[] = [];
@@ -845,6 +860,7 @@ export default function Home() {
     let totalPageCount: number | undefined;
     let processedThroughPage = 0;
     let pageStart = 1;
+    let fastAnalysisReady = false;
 
     const getSuccessfulPageCount = () => successfulPageNumbers.size;
 
@@ -899,11 +915,14 @@ export default function Home() {
         const pageEnd = totalPageCount
           ? Math.min(pageStart + DEFAULT_VISION_CHUNK_SIZE - 1, totalPageCount)
           : pageStart + DEFAULT_VISION_CHUNK_SIZE - 1;
-        const chunkMessage = getVisionProcessingMessage(getSuccessfulPageCount(), totalPageCount);
+        const isFastAnalysisChunk = !fastAnalysisReady && pageStart === 1;
+        const chunkMessage = isFastAnalysisChunk
+          ? '빠른 Vision 분석 중 · 앞 3페이지를 먼저 분석합니다.'
+          : `전체 Vision 분석 중 · ${pageStart}~${pageEnd}p 분석 중`;
 
         updateUploadedDocument(documentId, {
-          extractionStatus: 'Vision 분석 중',
-          visionStatus: 'analyzing',
+          extractionStatus: isFastAnalysisChunk ? '빠른 Vision 분석 중' : '전체 Vision 분석 중',
+          visionStatus: isFastAnalysisChunk ? 'quick_analyzing' : 'analyzing',
           visionPageCount: getSuccessfulPageCount(),
           visionTotalPageCount: totalPageCount ?? pageEnd,
           totalPageCount,
@@ -930,11 +949,11 @@ export default function Home() {
 
             const retryMessage = `${failedChunk.pageStart}~${failedChunk.pageEnd}p chunk 실패, 1페이지 단위 재시도 중`;
             updateUploadedDocument(documentId, {
-              extractionStatus: 'Vision 분석 중',
+              extractionStatus: isFastAnalysisChunk ? '빠른 Vision 분석 중' : '전체 Vision 분석 중',
               extractedText: [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n'),
               documentAnalysisText: [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n') || undefined,
               extractedCharCount: [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n').length,
-              visionStatus: 'analyzing',
+              visionStatus: isFastAnalysisChunk ? 'quick_analyzing' : 'analyzing',
               visionUsed: true,
               visionPageCount: getSuccessfulPageCount(),
               visionTotalPageCount: totalPageCount,
@@ -972,11 +991,11 @@ export default function Home() {
                 ? `Vision 분석 중: ${getSuccessfulPageCount()}/${totalPageCount ?? normalizedPageEnd} · 재시도 후 실패 페이지: ${formatFailedPages(failedPages)}`
                 : `Vision 분석 중: ${getSuccessfulPageCount()}/${totalPageCount ?? normalizedPageEnd}`;
               updateUploadedDocument(documentId, {
-                extractionStatus: 'Vision 분석 중',
+                extractionStatus: isFastAnalysisChunk ? '빠른 Vision 분석 중' : '전체 Vision 분석 중',
                 extractedText: retryCombinedText,
                 documentAnalysisText: retryCombinedText || undefined,
                 extractedCharCount: retryCombinedText.length,
-                visionStatus: 'analyzing',
+                visionStatus: isFastAnalysisChunk ? 'quick_analyzing' : 'analyzing',
                 visionUsed: true,
                 visionPageCount: getSuccessfulPageCount(),
                 visionTotalPageCount: totalPageCount ?? normalizedPageEnd,
@@ -1003,8 +1022,8 @@ export default function Home() {
 
           const retryMessage = `${failedChunk.pageStart}~${failedChunk.pageEnd}p chunk 실패, 1페이지 단위 재시도 중`;
           updateUploadedDocument(documentId, {
-            extractionStatus: 'Vision 분석 중',
-            visionStatus: 'analyzing',
+            extractionStatus: isFastAnalysisChunk ? '빠른 Vision 분석 중' : '전체 Vision 분석 중',
+            visionStatus: isFastAnalysisChunk ? 'quick_analyzing' : 'analyzing',
             visionPageCount: getSuccessfulPageCount(),
             visionTotalPageCount: totalPageCount,
             totalPageCount,
@@ -1038,11 +1057,11 @@ export default function Home() {
               ? `Vision 분석 중: ${getSuccessfulPageCount()}/${totalPageCount ?? normalizedPageEnd} · 재시도 후 실패 페이지: ${formatFailedPages(failedPages)}`
               : `Vision 분석 중: ${getSuccessfulPageCount()}/${totalPageCount ?? normalizedPageEnd}`;
             updateUploadedDocument(documentId, {
-              extractionStatus: 'Vision 분석 중',
+              extractionStatus: isFastAnalysisChunk ? '빠른 Vision 분석 중' : '전체 Vision 분석 중',
               extractedText: retryCombinedText,
               documentAnalysisText: retryCombinedText || undefined,
               extractedCharCount: retryCombinedText.length,
-              visionStatus: 'analyzing',
+              visionStatus: isFastAnalysisChunk ? 'quick_analyzing' : 'analyzing',
               visionUsed: true,
               visionPageCount: getSuccessfulPageCount(),
               visionTotalPageCount: totalPageCount ?? normalizedPageEnd,
@@ -1061,14 +1080,19 @@ export default function Home() {
 
         const combinedText = [textPrefix.trim(), ...accumulatedTexts].filter(Boolean).join('\n\n');
         const progressMessage = failedPages.length
-          ? `Vision 분석 중: ${getSuccessfulPageCount()}/${totalPageCount ?? processedThroughPage} · 재시도 후 실패 페이지: ${formatFailedPages(failedPages)}`
-          : getVisionProcessingMessage(getSuccessfulPageCount(), totalPageCount);
+          ? `${isFastAnalysisChunk ? '빠른 Vision 분석 완료' : '전체 Vision 분석 중'} · 페이지: ${getSuccessfulPageCount()}/${totalPageCount ?? processedThroughPage} · 재시도 후 실패 페이지: ${formatFailedPages(failedPages)}`
+          : isFastAnalysisChunk
+            ? `빠른 분석 완료 · 페이지: ${getSuccessfulPageCount()}/${totalPageCount ?? processedThroughPage} · AI 분석 가능 · 전체 문서 분석은 계속 진행 중`
+            : getVisionProcessingMessage(getSuccessfulPageCount(), totalPageCount);
+        const nextCombinedText = combinedText;
+        const nextStatus = isFastAnalysisChunk ? '빠른 Vision 분석 완료' : '전체 Vision 분석 중';
+        const nextVisionStatus = isFastAnalysisChunk ? 'quick_completed' : 'analyzing';
         updateUploadedDocument(documentId, {
-          extractionStatus: 'Vision 분석 중',
-          extractedText: combinedText,
-          documentAnalysisText: combinedText || undefined,
-          extractedCharCount: combinedText.length,
-          visionStatus: 'analyzing',
+          extractionStatus: nextStatus,
+          extractedText: nextCombinedText,
+          documentAnalysisText: nextCombinedText || undefined,
+          extractedCharCount: nextCombinedText.length,
+          visionStatus: nextVisionStatus,
           visionUsed: true,
           visionPageCount: getSuccessfulPageCount(),
           visionTotalPageCount: totalPageCount,
@@ -1082,6 +1106,10 @@ export default function Home() {
           errorMessage: failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
         });
         setUploadNotice({ type: 'warning', message: progressMessage });
+        if (isFastAnalysisChunk) {
+          fastAnalysisReady = true;
+          setLoading('');
+        }
 
         pageStart = normalizedPageEnd + 1;
       }
@@ -1090,16 +1118,16 @@ export default function Home() {
       const hasSuccessfulPages = Boolean(combinedText.trim()) && getSuccessfulPageCount() > 0;
       const finalStatus: ExtractionStatus = failedPages.length
         ? (hasSuccessfulPages ? 'Vision 일부 완료' : 'Vision 분석 실패')
-        : 'Vision 분석 완료';
-      const finalVisionStatus: UploadedDocument['visionStatus'] = finalStatus === 'Vision 분석 완료'
+        : '전체 Vision 분석 완료';
+      const finalVisionStatus: UploadedDocument['visionStatus'] = finalStatus === '전체 Vision 분석 완료'
         ? 'completed'
         : finalStatus === 'Vision 일부 완료'
           ? 'partial'
           : 'failed';
       const failureSummary = buildFailureSummary();
       const finalPageCount = totalPageCount ?? processedThroughPage ?? getSuccessfulPageCount();
-      const finalMessage = finalStatus === 'Vision 분석 완료'
-        ? `Vision 분석 완료 · 페이지: ${getSuccessfulPageCount()}/${finalPageCount}`
+      const finalMessage = finalStatus === '전체 Vision 분석 완료'
+        ? `전체 Vision 분석 완료 · 페이지: ${getSuccessfulPageCount()}/${finalPageCount} · 글자 수: ${combinedText.length.toLocaleString()}자`
         : finalStatus === 'Vision 일부 완료'
           ? `Vision 일부 완료 · 페이지: ${getSuccessfulPageCount()}/${finalPageCount} · ${failureSummary}`
           : `Vision 분석 실패 · ${failureSummary || '분석 가능한 페이지가 없습니다.'}`;
@@ -1123,7 +1151,7 @@ export default function Home() {
         errorMessage: finalStatus === 'Vision 분석 실패' ? finalMessage : failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
       });
       console.info('vision chunked analysis finished', { documentId, fileName: file.name, successfulPages: getSuccessfulPageCount(), processedThroughPage, totalPageCount, failedChunks: failedChunks.length, failedPages: failedPages.length, finalStatus });
-      setUploadNotice({ type: finalStatus === 'Vision 분석 완료' ? 'success' : finalStatus === 'Vision 일부 완료' ? 'warning' : 'error', message: finalMessage });
+      setUploadNotice({ type: finalStatus === '전체 Vision 분석 완료' ? 'success' : finalStatus === 'Vision 일부 완료' ? 'warning' : 'error', message: finalMessage });
       if (finalStatus === 'Vision 분석 실패') setError(finalMessage);
     } catch (err) {
       const message = err instanceof Error ? `Vision API 호출 실패: ${err.message}` : 'Vision API 호출 실패';
@@ -1209,14 +1237,14 @@ export default function Home() {
           .filter(Boolean)
           .join(' ') + qualityMessage;
         const document = extension === 'pdf'
-          ? createUploadedDocument(file, '이미지 중심 PDF로 판단', '', getVisionProcessingMessage(), {
-              visionStatus: 'analyzing',
+          ? createUploadedDocument(file, '텍스트 추출 실패', '', '빠른 Vision 분석 대기 중', {
+              visionStatus: 'quick_analyzing',
               visionUsed: true,
               visionPageCount: 0,
               visionTotalPageCount: DEFAULT_VISION_CHUNK_SIZE,
             })
           : createUploadedDocument(file, '추출 실패', data.text ?? '', message);
-        addUploadedDocument(document, extension === 'pdf' ? 'warning' : 'error', extension === 'pdf' ? getVisionProcessingMessage() : message);
+        addUploadedDocument(document, extension === 'pdf' ? 'warning' : 'error', extension === 'pdf' ? '텍스트 추출 실패 · 빠른 Vision 분석을 시작합니다.' : message);
         if (extension === 'pdf') {
           await runAutomaticVisionAnalysis(document.id, file, data.text ?? '');
         }
@@ -1229,14 +1257,14 @@ export default function Home() {
           .filter(Boolean)
           .join(' ');
         const document = extension === 'pdf'
-          ? createUploadedDocument(file, '이미지 중심 PDF로 판단', '', getVisionProcessingMessage(), {
-              visionStatus: 'analyzing',
+          ? createUploadedDocument(file, '텍스트 추출 실패', '', '빠른 Vision 분석 대기 중', {
+              visionStatus: 'quick_analyzing',
               visionUsed: true,
               visionPageCount: 0,
               visionTotalPageCount: DEFAULT_VISION_CHUNK_SIZE,
             })
           : createUploadedDocument(file, '추출 실패', validation.text, message);
-        addUploadedDocument(document, validation.reason === 'short' ? 'warning' : 'error', extension === 'pdf' ? getVisionProcessingMessage() : message);
+        addUploadedDocument(document, validation.reason === 'short' ? 'warning' : 'error', extension === 'pdf' ? '텍스트 품질 낮음 · 빠른 Vision 분석을 시작합니다.' : message);
         if (extension === 'pdf') {
           await runAutomaticVisionAnalysis(document.id, file, validation.text);
         }
@@ -1254,13 +1282,13 @@ export default function Home() {
     } catch (err) {
       const extractionErrorMessage = err instanceof Error ? `${TEXT_EXTRACTION_FAILED_MESSAGE} ${err.message}` : TEXT_EXTRACTION_FAILED_MESSAGE;
       if (extension === 'pdf') {
-        const document = createUploadedDocument(file, '이미지 중심 PDF로 판단', '', getVisionProcessingMessage(), {
-          visionStatus: 'analyzing',
+        const document = createUploadedDocument(file, '텍스트 추출 실패', '', '빠른 Vision 분석 대기 중', {
+          visionStatus: 'quick_analyzing',
           visionUsed: true,
           visionPageCount: 0,
           visionTotalPageCount: DEFAULT_VISION_CHUNK_SIZE,
         });
-        addUploadedDocument(document, 'warning', getVisionProcessingMessage());
+        addUploadedDocument(document, 'warning', '텍스트 추출 실패 · 빠른 Vision 분석을 시작합니다.');
         await runAutomaticVisionAnalysis(document.id, file);
         return;
       }
@@ -1271,12 +1299,32 @@ export default function Home() {
     }
   };
 
+  const getCurrentAnalysisBasis = (): ProposalState['analysisBasis'] => {
+    if (!hasPartialVisionAnalysisInput || !partialVisionAnalysisDocument) return { type: 'full', label: '전체 입력 기준' };
+
+    const completedPageCount = partialVisionAnalysisDocument.visionPageCount ?? 0;
+    const totalPageCount = partialVisionAnalysisDocument.totalPageCount ?? partialVisionAnalysisDocument.visionTotalPageCount;
+    return {
+      type: 'partial',
+      label: `빠른 분석 ${completedPageCount}/${totalPageCount ?? '?'}p`,
+      completedPageCount,
+      totalPageCount,
+    };
+  };
+
   const runAnalyze = async () => {
     setError('');
+    if (hasPartialVisionAnalysisInput) {
+      setUploadNotice({
+        type: 'warning',
+        message: '현재 앞 3페이지 기준 빠른 분석 결과로 진행합니다. 전체 페이지 분석이 완료되면 더 정밀한 결과를 생성할 수 있습니다.',
+      });
+    }
     setLoading('RFP/브리프 분석 중...');
     try {
+      const analysisBasis = getCurrentAnalysisBasis();
       const analysis = await postJson<AnalysisResult>('/api/analyze', analysisInput);
-      setState((current) => ({ ...current, analysis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
@@ -1291,8 +1339,9 @@ export default function Home() {
     setError('');
     setLoading('추가 정보를 반영해 RFP/브리프 재분석 중...');
     try {
+      const analysisBasis = getCurrentAnalysisBasis();
       const analysis = await postJson<AnalysisResult>('/api/analyze', mergedInput);
-      setState((current) => ({ ...current, analysis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
@@ -1507,8 +1556,13 @@ export default function Home() {
             <div className="mt-5">
               <InputQualityPanel quality={inputQuality} compact />
             </div>
+            {hasPartialVisionAnalysisInput && (
+              <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-900">
+                현재 앞 3페이지 기준 빠른 분석 결과로 진행합니다. 전체 페이지 분석이 완료되면 더 정밀한 결과를 생성할 수 있습니다.
+              </div>
+            )}
             <div className="mt-6 flex flex-wrap gap-3">
-              <PrimaryButton onClick={runAnalyze} disabled={!canAnalyze || Boolean(loading) || hasVisionAnalysisInProgress}>업로드 자료와 메모로 AI 분석하기</PrimaryButton>
+              <PrimaryButton onClick={runAnalyze} disabled={!canAnalyze || Boolean(loading)}>업로드 자료와 메모로 AI 분석하기</PrimaryButton>
               <SecondaryButton onClick={() => updateInput('briefText', sampleBrief)}>샘플 메모 채우기</SecondaryButton>
             </div>
           </SectionCard>
@@ -1517,6 +1571,13 @@ export default function Home() {
         {step === 'analysis' && state.analysis && (
           <SectionCard title="AI 분석 결과">
             <div className="space-y-5">
+              {state.analysisBasis?.type === 'partial' && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-950">
+                  <p className="font-black">부분 분석 기반</p>
+                  <p>분석 기준: {state.analysisBasis.label}</p>
+                  <p>추가 분석 완료 후 재분석 권장</p>
+                </div>
+              )}
               <InputQualityPanel quality={inputQuality} />
               <KeyValueList data={state.analysis} />
             </div>
@@ -1554,6 +1615,9 @@ export default function Home() {
             )}
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('create')}>입력 수정</SecondaryButton>
+              {state.analysisBasis?.type === 'partial' && !hasFullVisionAnalysisInProgress && (
+                <PrimaryButton onClick={runAnalyze} disabled={Boolean(loading)}>전체 분석 결과로 다시 AI 분석하기</PrimaryButton>
+              )}
               {hasConfirmationNeeds ? (
                 <>
                   <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
