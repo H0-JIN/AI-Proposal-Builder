@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalState, ProposalType, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -17,6 +17,7 @@ import {
   validateExtractedText,
 } from '@/lib/extractedTextValidation';
 import { DEFAULT_VISION_CHUNK_SIZE, DEFAULT_VISION_MODE } from '@/lib/visionConfig';
+import { createDocumentChunks, inferDocumentType } from '@/lib/rag';
 
 type Step = 'home' | 'create' | 'analysis' | 'concepts' | 'outline' | 'slides';
 
@@ -34,6 +35,8 @@ type ExtractTextResponse = {
   ocrNotice?: string;
   qualityReasons?: string[];
 };
+
+type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[] };
 
 type VisionPdfResponse = {
   ok?: boolean;
@@ -290,19 +293,21 @@ function UploadedDocumentsList({
   return (
     <div className="mt-4 overflow-hidden rounded-2xl border border-blue-100 bg-white">
       <div className="grid grid-cols-12 gap-3 border-b border-blue-100 bg-blue-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-blue-700">
-        <span className="col-span-3">파일명</span>
-        <span className="col-span-1">형식</span>
-        <span className="col-span-3">추출 상태</span>
-        <span className="col-span-2 text-center">Vision 분석</span>
-        <span className="col-span-1 text-center">페이지</span>
-        <span className="col-span-2 text-right">글자 수</span>
+        <span className="col-span-3">문서명</span>
+        <span className="col-span-1">문서 유형</span>
+        <span className="col-span-2">추출 상태</span>
+        <span className="col-span-2">주요 category</span>
+        <span className="col-span-1 text-center">chunk</span>
+        <span className="col-span-1 text-center">high</span>
+        <span className="col-span-1 text-center">Vision</span>
+        <span className="col-span-1 text-right">글자</span>
       </div>
       <div className="divide-y divide-slate-100">
         {documents.map((document, index) => (
           <div key={document.id || `${document.fileName}-${index}`} className="grid grid-cols-12 gap-3 px-4 py-4 text-sm text-slate-700">
             <div className="col-span-12 font-bold text-slate-950 md:col-span-3">{document.fileName}</div>
-            <div className="col-span-3 md:col-span-1">{document.fileType}</div>
-            <div className="col-span-9 md:col-span-3">
+            <div className="col-span-3 text-xs font-bold md:col-span-1">{document.documentType ?? inferDocumentType(document.fileName)}</div>
+            <div className="col-span-9 md:col-span-2">
               <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusTone[document.extractionStatus]}`}>
                 {document.extractionStatus}
               </span>
@@ -311,13 +316,13 @@ function UploadedDocumentsList({
               {document.failedPages?.length ? <p className="mt-2 text-xs font-semibold leading-5 text-red-600">재시도 후 실패 페이지: {formatFailedPages(document.failedPages)}</p> : null}
               {document.errorMessage && document.errorMessage !== document.warningMessage && <p className="mt-2 text-xs font-semibold leading-5 text-red-600">{document.errorMessage}</p>}
             </div>
-            <div className="col-span-4 text-center text-xs font-bold md:col-span-2">
-              {getVisionAnalysisLabel(document)}
+            <div className="col-span-6 text-xs leading-5 text-slate-600 md:col-span-2">{getTopCategories(document)}</div>
+            <div className="col-span-2 text-center text-xs font-bold tabular-nums md:col-span-1">{(document.chunks ?? []).length}</div>
+            <div className="col-span-2 text-center text-xs font-bold tabular-nums text-red-600 md:col-span-1">{getHighImportanceChunkCount(document)}</div>
+            <div className="col-span-2 text-center text-xs font-bold md:col-span-1">
+              {getVisionAnalysisLabel(document)} · {getVisionPageLabel(document)}
             </div>
-            <div className="col-span-4 text-center text-xs font-bold tabular-nums md:col-span-1">
-              {getVisionPageLabel(document)}
-            </div>
-            <div className="col-span-4 text-right font-semibold tabular-nums md:col-span-2">
+            <div className="col-span-12 text-right font-semibold tabular-nums md:col-span-1">
               {document.extractedCharCount.toLocaleString()}자
             </div>
           </div>
@@ -345,6 +350,27 @@ function AnalysisSectionPanel({ title, section }: { title: string; section?: Ana
             <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5">
               {items.length ? items.map((item, index) => <li key={`${label}-${item}-${index}`}>{item}</li>) : <li>해당 없음</li>}
             </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+function RetrievalEvidencePanel({ evidence }: { evidence?: RetrievalEvidenceItem[] }) {
+  if (!evidence?.length) return null;
+
+  return (
+    <div className="rounded-3xl border border-cyan-100 bg-cyan-50 p-5 text-cyan-950">
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-cyan-700">검색에 사용된 근거 자료</p>
+      <h3 className="mt-2 text-xl font-black">RAG Retrieval Evidence</h3>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {evidence.map((item, index) => (
+          <div key={`${item.sourceDocument}-${item.pageNumber ?? 'na'}-${index}`} className="rounded-2xl bg-white/80 p-4 text-sm leading-6 shadow-sm">
+            <p className="font-black text-cyan-800">{item.sourceDocument}{item.pageNumber ? ` · p.${item.pageNumber}` : ''}</p>
+            <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-cyan-600">{item.category}</p>
+            <p className="mt-2 text-slate-700">{item.shortExcerpt}</p>
           </div>
         ))}
       </div>
@@ -559,6 +585,51 @@ function getVisionProcessingMessage(processedPageCount?: number, totalPageCount?
   return [VISION_PROCESSING_GUIDANCE, progress, VISION_PROCESSING_PAGE_LIMIT_MESSAGE].filter(Boolean).join(' ');
 }
 
+function enrichDocumentWithChunks(document: UploadedDocument): UploadedDocument {
+  const text = (document.documentAnalysisText || document.extractedText || '').trim();
+  const documentType = document.documentType ?? inferDocumentType(document.fileName);
+  const sourceType = document.visionUsed ? 'visionAnalysis' : 'textExtraction';
+  const chunks = text
+    ? createDocumentChunks({
+        documentId: document.id,
+        documentName: document.fileName,
+        documentType,
+        text,
+        sourceType,
+        visionPages: document.visionAnalysis?.map((page) => ({
+          pageNumber: page.pageNumber,
+          extractedText: page.extractedText,
+          visualSummary: page.visualSummary,
+        })),
+      })
+    : [];
+
+  return { ...document, documentType, chunks };
+}
+
+function getAllDocumentChunks(documents: UploadedDocument[] = []) {
+  return documents.flatMap((document) => document.chunks ?? []);
+}
+
+function parseAnalysisApiResponse(response: AnalysisApiResponse) {
+  if ('result' in response) return response;
+  return { result: response, evidence: [] };
+}
+
+function getTopCategories(document: UploadedDocument) {
+  const counts = new Map<string, number>();
+  (document.chunks ?? []).forEach((chunk) => counts.set(chunk.category, (counts.get(chunk.category) ?? 0) + 1));
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([category, count]) => `${category} ${count}`)
+    .join(', ') || '-';
+}
+
+function getHighImportanceChunkCount(document: UploadedDocument) {
+  return (document.chunks ?? []).filter((chunk) => chunk.importance === 'high').length;
+}
+
 function formatFailedChunks(failedChunks: NonNullable<UploadedDocument['failedChunks']>) {
   return failedChunks.map((chunk) => `${chunk.pageStart}~${chunk.pageEnd}p`).join(', ');
 }
@@ -771,6 +842,7 @@ export default function Home() {
     ? { type: 'warning' as const, message: activeVisionDocument.warningMessage }
     : uploadNotice;
   const inputQuality = useMemo(() => assessInputQuality(analysisInput, step === 'analysis' ? state.analysis : undefined), [analysisInput, state.analysis, step]);
+  const documentChunks = useMemo(() => getAllDocumentChunks(uploadedDocuments.map(enrichDocumentWithChunks)), [uploadedDocuments]);
   const hasConfirmationNeeds = useMemo(() => hasAnalysisConfirmationNeeds(state.analysis), [state.analysis]);
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
@@ -794,7 +866,7 @@ export default function Home() {
   const updateUploadedDocument = (documentId: string, patch: Partial<UploadedDocument>) => {
     setState((current) => ({
       ...current,
-      uploadedDocuments: (current.uploadedDocuments ?? []).map((item) => (item.id === documentId ? { ...item, ...patch } : item)),
+      uploadedDocuments: (current.uploadedDocuments ?? []).map((item) => (item.id === documentId ? enrichDocumentWithChunks({ ...item, ...patch }) : item)),
     }));
   };
 
@@ -804,10 +876,11 @@ export default function Home() {
     extractedText = '',
     warningMessage?: string,
     options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'failedChunks' | 'failedPages' | 'needsReview' | 'errorMessage'> = {},
-  ): UploadedDocument => ({
+  ): UploadedDocument => enrichDocumentWithChunks({
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     fileName: file.name,
     fileType: getFileTypeLabel(file.name),
+    documentType: inferDocumentType(file.name),
     extractionStatus,
     extractedText,
     documentAnalysisText: options.documentAnalysisText,
@@ -1323,8 +1396,9 @@ export default function Home() {
     setLoading('RFP/브리프 분석 중...');
     try {
       const analysisBasis = getCurrentAnalysisBasis();
-      const analysis = await postJson<AnalysisResult>('/api/analyze', analysisInput);
-      setState((current) => ({ ...current, analysis, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: state.input, documentChunks });
+      const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
@@ -1340,8 +1414,9 @@ export default function Home() {
     setLoading('추가 정보를 반영해 RFP/브리프 재분석 중...');
     try {
       const analysisBasis = getCurrentAnalysisBasis();
-      const analysis = await postJson<AnalysisResult>('/api/analyze', mergedInput);
-      setState((current) => ({ ...current, analysis, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
+      const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
@@ -1355,7 +1430,7 @@ export default function Home() {
     setError('');
     setLoading('콘셉트 후보 3안 생성 중...');
     try {
-      const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', { input: analysisInput, analysis: state.analysis });
+      const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', { input: state.input, analysis: state.analysis, documentChunks });
       setState((current) => ({
         ...current,
         conceptDevelopmentLogic: conceptResult.conceptDevelopmentLogic,
@@ -1429,7 +1504,7 @@ export default function Home() {
     setError('');
     setLoading('제안서 구조 생성 중...');
     try {
-      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, conceptDevelopmentLogic: state.conceptDevelopmentLogic });
+      const outline = await postJson<SlideOutline[]>('/api/outline', { input: state.input, analysis: state.analysis, selectedConcept: state.selectedConcept, conceptDevelopmentLogic: state.conceptDevelopmentLogic, documentChunks });
       setState((current) => ({ ...current, outline, slides: undefined }));
       setStep('outline');
     } catch (err) {
@@ -1445,7 +1520,7 @@ export default function Home() {
     setLoading('장표별 문안 생성 중...');
     try {
       const editableOutline = state.outline.map((slide) => ({ ...slide, mainCopy: slide.mainCopy ?? slide.keyMessage }));
-      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: removeInternalConceptComparisonSlides(editableOutline), conceptDevelopmentLogic: state.conceptDevelopmentLogic });
+      const slides = await postJson<SlideContent[]>('/api/slides', { input: state.input, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: removeInternalConceptComparisonSlides(editableOutline), conceptDevelopmentLogic: state.conceptDevelopmentLogic, documentChunks });
       setState((current) => ({ ...current, slides }));
       setStep('slides');
     } catch (err) {
@@ -1579,6 +1654,7 @@ export default function Home() {
                 </div>
               )}
               <InputQualityPanel quality={inputQuality} />
+              <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
               <KeyValueList data={state.analysis} />
             </div>
             {hasConfirmationNeeds && (

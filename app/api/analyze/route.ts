@@ -1,14 +1,28 @@
 import { NextResponse } from 'next/server';
 import { analysisJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ProjectInput } from '@/lib/types';
+import type { AnalysisResult, ProjectInput, RetrievalEvidenceItem } from '@/lib/types';
+import type { DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
+import { buildEvidenceItems, formatChunksForPrompt, retrieveRelevantChunks } from '@/lib/rag';
 
 export async function POST(request: Request) {
   try {
-    const input = (await request.json()) as ProjectInput;
+    const payload = (await request.json()) as ProjectInput | { input: ProjectInput; documentChunks?: DocumentChunk[] };
+    const input = 'input' in payload ? payload.input : payload;
+    const documentChunks = 'input' in payload ? payload.documentChunks ?? [] : [];
+    const retrievedChunks = retrieveRelevantChunks({
+      projectId: input.projectName,
+      stage: 'analysis',
+      proposalType: input.proposalType,
+      query: `${input.projectName} ${input.clientName} ${input.briefText}`,
+      limit: 12,
+      chunks: documentChunks,
+    });
+    const retrievalContext = formatChunksForPrompt(retrievedChunks);
+    const evidence = buildEvidenceItems(retrievedChunks) as RetrievalEvidenceItem[];
 
-    if (!input.projectName || !input.clientName || !input.briefText) {
+    if (!input.projectName || !input.clientName || (!input.briefText && !retrievalContext)) {
       return NextResponse.json({ error: '프로젝트명, 클라이언트명, 업로드 자료 또는 추가 메모를 모두 입력하세요.' }, { status: 400 });
     }
 
@@ -39,10 +53,18 @@ export async function POST(request: Request) {
         'missingInfo에는 프로젝트 목적, 공간 위치/규모, 타깃, 필수 체험 요소, 제품/브랜드 핵심 메시지, 일정, 예산/제작 범위, 디자인 톤앤매너, 제외 사항 중 확인되지 않은 항목을 넣어라.',
         '문장은 실무 제안서에 바로 연결될 수 있도록 간결하고 구체적인 한국어로 작성하라.',
       ].join('\n'),
-      user: `제안서 유형: ${proposalTypeLabels[input.proposalType]}\n프로젝트명: ${input.projectName}\n클라이언트명: ${input.clientName}\n\n업로드 자료 및 사용자 추가 메모:\n${input.briefText}`,
+      user: `제안서 유형: ${proposalTypeLabels[input.proposalType]}
+프로젝트명: ${input.projectName}
+클라이언트명: ${input.clientName}
+
+검색된 근거 chunk:
+${retrievalContext || '검색된 chunk 없음 - 사용자 추가 메모만 사용'}
+
+사용자 추가 메모:
+${input.briefText}`,
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({ result, evidence });
   } catch (error) {
     const message = error instanceof Error ? error.message : '분석 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });

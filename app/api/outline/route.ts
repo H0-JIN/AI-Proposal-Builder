@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { outlineJsonSchema } from '@/lib/schemas';
 import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ProjectInput, SlideOutline } from '@/lib/types';
+import type { DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { expandExperiencePlanOutline, extractProductCodes } from '@/lib/experiencePlan';
 import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import { ensureRfpRequirementCoverage } from '@/lib/rfpRequirements';
+import { formatChunksForPrompt, retrieveRelevantChunks } from '@/lib/rag';
 
 const styleGuides = {
   basic: '프로젝트 이해, 과제 정의, 경험 전략, 콘셉트, 공간/콘텐츠 구성, 운영 및 기대 효과가 이어지는 기본형 구조.',
@@ -19,7 +21,7 @@ const styleGuides = {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; conceptDevelopmentLogic?: ConceptDevelopmentLogic };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; conceptDevelopmentLogic?: ConceptDevelopmentLogic; documentChunks?: DocumentChunk[] };
 
     if (!body.input || !body.analysis || !body.selectedConcept) {
       return NextResponse.json({ error: '프로젝트 입력값, 분석 결과, 선택된 콘셉트가 필요합니다.' }, { status: 400 });
@@ -31,6 +33,8 @@ export async function POST(request: Request) {
     const productCodes = extractProductCodes({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
     const effectiveProposalType = body.analysis.inferredProposalType ?? body.input.proposalType;
     const isEventOperationType = effectiveProposalType === 'mice_event_operation' || effectiveProposalType === 'conference_forum';
+    const retrievedChunks = retrieveRelevantChunks({ stage: 'outline', proposalType: effectiveProposalType, query: `${body.input.projectName} ${body.selectedConcept.conceptNameKR} ${body.selectedConcept.conceptNameEN}`, limit: 14, chunks: body.documentChunks ?? [] });
+    const retrievalContext = formatChunksForPrompt(retrievedChunks);
 
     const result = await createStructuredJson<{ slides: SlideOutline[] }>({
       schemaName: 'proposal_outline',
@@ -64,6 +68,9 @@ RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}
 프로젝트명: ${body.input.projectName}
 클라이언트명: ${body.input.clientName}
 
+검색된 근거 chunk:
+${retrievalContext || '검색된 chunk 없음'}
+
 분석 결과 JSON:
 ${JSON.stringify(body.analysis, null, 2)}
 
@@ -81,7 +88,7 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
     });
 
     const expandedSlides = expandExperiencePlanOutline(result.slides, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
-    const coverageCheckedSlides = ensureRfpRequirementCoverage(removeInternalConceptComparisonSlides(expandedSlides), body.analysis);
+    const coverageCheckedSlides = ensureRfpRequirementCoverage(removeInternalConceptComparisonSlides(expandedSlides), body.analysis, body.documentChunks ?? []);
 
     return NextResponse.json(coverageCheckedSlides);
   } catch (error) {

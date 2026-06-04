@@ -1,4 +1,5 @@
 import type { AnalysisResult, RfpRequirementCoverage, SlideOutline } from './types';
+import type { DocumentChunk } from './rag';
 
 type RequirementSourceCategory = RfpRequirementCoverage['sourceCategory'];
 
@@ -27,7 +28,20 @@ function unique(values: string[]) {
     });
 }
 
-function extractRequirements(analysis: AnalysisResult) {
+function extractRequirements(analysis: AnalysisResult, chunks: DocumentChunk[] = []) {
+  const chunkRequirements = chunks
+    .filter((chunk) => ['requiredDeliverables', 'scopeOfWork', 'evaluationCriteria'].includes(chunk.category))
+    .map((chunk) => ({
+      requirement: chunk.chunkText.replace(/\s+/g, ' ').slice(0, 260),
+      sourceCategory: chunk.category as RequirementSourceCategory,
+    }));
+
+  if (chunkRequirements.length) return unique(chunkRequirements.map((item) => `${item.sourceCategory}::${item.requirement}`)).map((value) => {
+    const [sourceCategory, requirement] = value.split('::');
+    return { requirement, sourceCategory: sourceCategory as RequirementSourceCategory };
+  });
+
+
   return [
     ...unique([
       ...(analysis.requiredDeliverables ?? []),
@@ -67,8 +81,8 @@ function mapRequirementToSlide(requirement: string, slides: SlideOutline[]) {
   return best?.slide;
 }
 
-export function buildRequirementCoverageCheck(analysis: AnalysisResult, slides: SlideOutline[]): RfpRequirementCoverage[] {
-  return extractRequirements(analysis).map(({ requirement, sourceCategory }) => {
+export function buildRequirementCoverageCheck(analysis: AnalysisResult, slides: SlideOutline[], chunks: DocumentChunk[] = []): RfpRequirementCoverage[] {
+  return extractRequirements(analysis, chunks).map(({ requirement, sourceCategory }) => {
     const mappedSlide = mapRequirementToSlide(requirement, slides);
     return {
       requirement,
@@ -186,9 +200,9 @@ function renumber(slides: SlideOutline[]) {
   return slides.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
 }
 
-export function ensureRfpRequirementCoverage(outline: SlideOutline[], analysis: AnalysisResult) {
+export function ensureRfpRequirementCoverage(outline: SlideOutline[], analysis: AnalysisResult, chunks: DocumentChunk[] = []) {
   let slides = renumber(outline);
-  let coverage = buildRequirementCoverageCheck(analysis, slides);
+  let coverage = buildRequirementCoverageCheck(analysis, slides, chunks);
   const priorityItems = coverage.filter((item) => item.sourceCategory === 'requiredDeliverables' || item.sourceCategory === 'scopeOfWork');
 
   if (priorityItems.length && !hasMatrixSlide(slides)) {
@@ -197,7 +211,7 @@ export function ensureRfpRequirementCoverage(outline: SlideOutline[], analysis: 
     slides = renumber([slides[0], ...matrixSlides, ...slides.slice(1)]);
   }
 
-  coverage = buildRequirementCoverageCheck(analysis, slides);
+  coverage = buildRequirementCoverageCheck(analysis, slides, chunks);
   const missingPriorityItems = coverage.filter(
     (item) => (item.sourceCategory === 'requiredDeliverables' || item.sourceCategory === 'scopeOfWork') && item.coverageStatus === 'missing',
   );

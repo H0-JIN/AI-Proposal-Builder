@@ -1,3 +1,5 @@
+import type { DocumentChunk, DocumentType } from './rag';
+
 export type ProposalType = 'basic' | 'cheil' | 'innocean' | 'hyundai' | 'mice_event_operation' | 'conference_forum';
 
 export interface ProjectInput {
@@ -64,6 +66,7 @@ export interface UploadedDocument {
   id: string;
   fileName: string;
   fileType: string;
+  documentType?: DocumentType;
   extractionStatus: ExtractionStatus;
   extractedText: string;
   documentAnalysisText?: string;
@@ -81,6 +84,7 @@ export interface UploadedDocument {
   ocrAvailable?: boolean;
   warningMessage?: string;
   errorMessage?: string;
+  chunks?: DocumentChunk[];
 }
 
 export interface SupplementalInfo {
@@ -314,12 +318,20 @@ export interface ProposalState {
   selectedConcept?: ConceptCandidate;
   outline?: SlideOutline[];
   slides?: SlideContent[];
+  retrievalEvidence?: RetrievalEvidenceItem[];
   analysisBasis?: {
     type: 'full' | 'partial';
     label: string;
     completedPageCount?: number;
     totalPageCount?: number;
   };
+}
+
+export interface RetrievalEvidenceItem {
+  sourceDocument: string;
+  pageNumber?: number;
+  category: string;
+  shortExcerpt: string;
 }
 
 export const proposalTypeLabels: Record<ProposalType, string> = {

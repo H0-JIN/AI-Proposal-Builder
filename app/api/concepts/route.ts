@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 import { conceptCandidatesJsonSchema } from '@/lib/schemas';
 import type { AnalysisResult, ConceptCandidatesResult, ProjectInput } from '@/lib/types';
+import type { DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { assessInputQuality } from '@/lib/inputQuality';
+import { formatChunksForPrompt, retrieveRelevantChunks } from '@/lib/rag';
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; documentChunks?: DocumentChunk[] };
 
     if (!body.input || !body.analysis) {
       return NextResponse.json({ error: '프로젝트 입력값과 분석 결과가 필요합니다.' }, { status: 400 });
@@ -17,6 +19,8 @@ export async function POST(request: Request) {
     const effectiveProposalType = body.analysis.inferredProposalType ?? body.input.proposalType;
     const isEventOperationType = effectiveProposalType === 'mice_event_operation' || effectiveProposalType === 'conference_forum';
     const missingInfoSummary = inputQuality.missingItems.map((item) => `${item.label}: ${item.description}`);
+    const retrievedChunks = retrieveRelevantChunks({ stage: 'concept', proposalType: effectiveProposalType, query: `${body.input.projectName} ${body.input.clientName}`, limit: 10, chunks: body.documentChunks ?? [] });
+    const retrievalContext = formatChunksForPrompt(retrievedChunks);
 
     const result = await createStructuredJson<ConceptCandidatesResult>({
       schemaName: 'proposal_concept_candidates',
@@ -38,7 +42,7 @@ export async function POST(request: Request) {
         '사용자가 선택할 핵심 콘셉트가 이후 제안서 구조, 장표 문안, PPTX의 기준이 되므로 실무 제안서에 바로 사용할 수 있게 구체적으로 작성하라.',
       ].join('\n'),
       user: `사용자 선택 제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
-RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}\n프로젝트명: ${body.input.projectName}\n클라이언트명: ${body.input.clientName}\n\n분석 결과 JSON:\n${JSON.stringify(body.analysis, null, 2)}\n\n입력 품질 진단:\n- 점수: ${inputQuality.score}\n- 부족 항목: ${missingInfoSummary.length ? missingInfoSummary.join(' / ') : '없음'}\n- AI missingInfo: ${body.analysis.missingInfo.length ? body.analysis.missingInfo.join(' / ') : '없음'}`,
+RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}\n프로젝트명: ${body.input.projectName}\n클라이언트명: ${body.input.clientName}\n\n검색된 근거 chunk:\n${retrievalContext || '검색된 chunk 없음'}\n\n분석 결과 JSON:\n${JSON.stringify(body.analysis, null, 2)}\n\n입력 품질 진단:\n- 점수: ${inputQuality.score}\n- 부족 항목: ${missingInfoSummary.length ? missingInfoSummary.join(' / ') : '없음'}\n- AI missingInfo: ${body.analysis.missingInfo.length ? body.analysis.missingInfo.join(' / ') : '없음'}`,
     });
 
     return NextResponse.json(result);
