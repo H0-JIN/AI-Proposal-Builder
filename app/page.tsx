@@ -726,6 +726,10 @@ function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLog
   if (!logic) return null;
 
   const rows = [
+    ['Client Intent', logic.clientIntent],
+    ['Audience Takeaway', logic.audienceTakeaway],
+    ['Strategic Tension', logic.strategicTension],
+    ['Concept Seed', logic.conceptSeed],
     ['핵심 과제', logic.coreChallenge],
     ['타깃 인사이트', logic.targetInsight],
     ['브랜드/제품 가치', logic.brandOrProductValue],
@@ -737,8 +741,8 @@ function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLog
 
   return (
     <div className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50 p-5 text-indigo-950">
-      <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Experience Approach</p>
-      <h3 className="mt-2 text-xl font-black">경험 설계 접근</h3>
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Strategy + Experience Approach</p>
+      <h3 className="mt-2 text-xl font-black">전략 메시지 추출 및 경험 설계 접근</h3>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         {rows.map(([label, value]) => (
           <div key={label} className="rounded-2xl bg-white/80 p-3 text-sm leading-6">

@@ -153,6 +153,10 @@ const conceptDevelopmentLogicSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    clientIntent: { type: 'string' },
+    audienceTakeaway: { type: 'string' },
+    strategicTension: { type: 'string' },
+    conceptSeed: { type: 'string' },
     coreChallenge: { type: 'string' },
     targetInsight: { type: 'string' },
     brandOrProductValue: { type: 'string' },
@@ -162,6 +166,10 @@ const conceptDevelopmentLogicSchema = {
     selectedConceptReason: { type: 'string' },
   },
   required: [
+    'clientIntent',
+    'audienceTakeaway',
+    'strategicTension',
+    'conceptSeed',
     'coreChallenge',
     'targetInsight',
     'brandOrProductValue',

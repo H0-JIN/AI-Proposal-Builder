@@ -12,6 +12,7 @@ import { sanitizeGeneratedSlides } from '@/lib/slideSanitizer';
 import { ensureRfpRequirementCoverage } from '@/lib/rfpRequirements';
 import { formatChunksForPrompt, retrieveRelevantChunks } from '@/lib/rag';
 import { applyProposalStructureGuardToOutline, applyProposalStructureGuardToSlides, buildProposalStructureGuard, proposalScopeTypeLabels } from '@/lib/proposalStructureGuard';
+import { applyReferenceGuardToSlides, buildReferenceGuardInstruction, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 
 
 function normalizeSentence(value?: string) {
@@ -50,6 +51,26 @@ function outputShareSentence(value?: string) {
 
 function buildExperienceApproachBullets(logic?: ConceptDevelopmentLogic) {
   return [
+    sectionLine(
+      'Client Intent',
+      logic?.clientIntent,
+      '클라이언트가 해결하려는 목적과 기대 효과를 하나의 전략 의도로 정리합니다.',
+    ),
+    sectionLine(
+      'Audience Takeaway',
+      logic?.audienceTakeaway,
+      '방문객이 경험 후 가져가야 할 인식, 감정, 행동 변화를 명확히 정의합니다.',
+    ),
+    sectionLine(
+      'Strategic Tension',
+      logic?.strategicTension,
+      '현재 과제와 목표 사이의 간극을 콘셉트가 풀어야 할 긴장으로 정리합니다.',
+    ),
+    sectionLine(
+      'Concept Seed',
+      logic?.conceptSeed,
+      '핵심 콘셉트가 출발하는 한 줄 전략 씨앗을 제안합니다.',
+    ),
     sectionLine(
       'Challenge',
       logic?.coreChallenge,
@@ -267,6 +288,8 @@ export async function POST(request: Request) {
       effectiveProposalType,
     );
     const hasSlideEvidence = slideRetrievalMetadata.some((metadata) => metadata.evidenceCount > 0);
+    const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis);
+    const strategicMessageSummary = strategicMessageFieldsFromLogic(body.conceptDevelopmentLogic);
     const fallbackRetrievedChunks = retrieveRelevantChunks({
       stage: 'slide',
       proposalType: effectiveProposalType,
@@ -286,6 +309,7 @@ export async function POST(request: Request) {
         '본문 문안에는 RFP Fact / AI Proposal / Confirm Needed 구분을 반영하라. 단, AI Proposal 영역은 RFP 반복이 아니라 새 제안 아이디어여야 하며 Confirm Needed는 confirmNeededNote에만 배치하라.',
         '각 슬라이드 문안은 슬라이드 아웃라인에 포함된 retrievalQuery와 evidenceSnippets를 우선 근거로 사용하라. evidenceSnippets는 해당 slideTitle, slideType, slidePurpose로 검색된 슬라이드별 RFP/RAG 근거이며, 다른 슬라이드의 evidenceSnippets를 해당 슬라이드의 RFP 사실처럼 전용하지 말라.',
         'evidenceSnippets에 있는 chunk category와 importance를 반영해 high 중요도 및 해당 슬라이드 matchedCategories 근거를 우선 사용하라. evidenceCount가 0이거나 관련 근거가 없으면 기존처럼 분석 결과, 콘셉트, 아웃라인을 사용하되 RFP 사실이라고 단정하지 말고 제안 가정/운영 가정으로 표현하라.',
+        referenceGuardInstruction,
         'RFP에 명시되지 않은 필수 요구사항, KPI 수치, 일정, 평가 기준, 공간 제약은 만들지 말라. 근거가 부족한 내용은 “제안 가정상”, “운영 설계 기준으로”, “추후 발주처 확인 후”처럼 가정 또는 확인 필요 문장으로 작성하라.',
         'proposalScopeTypes와 proposalStructureGuard를 준수하라. contentDevelopment + boothExhibition에서는 Hero Content, Sub Content, Zoning & Flow, Content Scenario, Reference, Schedule, Credential 문안에 집중하고, RFP에 명시되지 않은 Viral/Communication Strategy, KPI/Performance Goal, Operation Plan, Output & Share, Visitor Reward, SNS Sharing, Marketing Campaign 내용으로 확장하지 말라.',
         'KPI는 정량 targetKPI 또는 평가 기준의 performance metrics 요구가 있을 때만 별도 장표 본문으로 작성한다. “이해도 제고”, “브랜드 인지도 상승”은 프로젝트 목표/전략 문장으로만 처리한다. Operation Plan은 부스 운영 계획, staffing, onsite operation, visitor flow operation, maintenance, safety operation이 명시된 경우에만 작성하고 그렇지 않으면 Schedule로 제한한다.',
@@ -324,6 +348,9 @@ ${fallbackRetrievalContext || '검색된 chunk 없음'}
 분석 결과:
 ${JSON.stringify(body.analysis, null, 2)}
 
+전략 메시지 추출 요약:
+${strategicMessageSummary || '전략 메시지 추출 필드 없음'}
+
 경험 접근 로직:
 ${JSON.stringify(body.conceptDevelopmentLogic ?? null, null, 2)}
 
@@ -344,9 +371,12 @@ ${JSON.stringify(outlineWithEvidence, null, 2)}
 - Operation Plan 장표 허용: ${structureGuard.hasExplicitOperationPlan ? '예' : '아니오'}`,
     });
 
-    const sanitizedSlides = applyProposalStructureGuardToSlides(
-      sanitizeGeneratedSlides(removeInternalConceptComparisonSlides(sanitizeKpiSlides(enhanceConceptFlowSlides(result.slides, body.conceptDevelopmentLogic, body.selectedConcept), body.analysis)), productCodes),
-      body.input,
+    const sanitizedSlides = applyReferenceGuardToSlides(
+      applyProposalStructureGuardToSlides(
+        sanitizeGeneratedSlides(removeInternalConceptComparisonSlides(sanitizeKpiSlides(enhanceConceptFlowSlides(result.slides, body.conceptDevelopmentLogic, body.selectedConcept), body.analysis)), productCodes),
+        body.input,
+        body.analysis,
+      ),
       body.analysis,
     );
     return NextResponse.json(sanitizedSlides.map((slide) => ({
