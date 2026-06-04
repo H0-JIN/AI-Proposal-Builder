@@ -19,6 +19,10 @@ export type ExtractionStatus =
   | 'OCR 일부 추출'
   | 'OCR 추출 실패'
   | '이미지 중심 PDF로 판단'
+  | '빠른 Vision 분석 중'
+  | '빠른 Vision 분석 완료'
+  | '전체 Vision 분석 중'
+  | '전체 Vision 분석 완료'
   | 'Vision 분석 중'
   | 'Vision 분석 완료'
   | 'Vision 일부 완료'
@@ -43,7 +47,7 @@ export interface VisionPageAnalysis {
   needsReview: boolean;
 }
 
-export type VisionStatus = 'unused' | 'queued' | 'analyzing' | 'completed' | 'partial' | 'failed';
+export type VisionStatus = 'unused' | 'queued' | 'quick_analyzing' | 'quick_completed' | 'analyzing' | 'completed' | 'partial' | 'failed';
 
 export interface VisionFailedChunk {
   pageStart: number;
@@ -310,6 +314,12 @@ export interface ProposalState {
   selectedConcept?: ConceptCandidate;
   outline?: SlideOutline[];
   slides?: SlideContent[];
+  analysisBasis?: {
+    type: 'full' | 'partial';
+    label: string;
+    completedPageCount?: number;
+    totalPageCount?: number;
+  };
 }
 
 export const proposalTypeLabels: Record<ProposalType, string> = {
