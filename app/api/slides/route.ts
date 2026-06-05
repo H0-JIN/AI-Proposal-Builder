@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { slideContentJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ProjectInput, SlideContent, SlideOutline } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ProjectInput, SlideContent, SlideOutline } from '@/lib/types';
 import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -13,6 +13,7 @@ import { ensureRfpRequirementCoverage } from '@/lib/rfpRequirements';
 import { formatChunksForPrompt, retrieveRelevantChunks } from '@/lib/rag';
 import { applyProposalStructureGuardToOutline, applyProposalStructureGuardToSlides, buildProposalStructureGuard, proposalScopeTypeLabels } from '@/lib/proposalStructureGuard';
 import { applyReferenceGuardToSlides, buildReferenceGuardInstruction, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
+import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 
 
 function normalizeSentence(value?: string) {
@@ -262,7 +263,7 @@ function buildSlideEvidenceOutline(input: ProjectInput, outline: SlideOutline[],
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; outline: SlideOutline[]; conceptDevelopmentLogic?: ConceptDevelopmentLogic; documentChunks?: DocumentChunk[] };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; outline: SlideOutline[]; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptGenerationResult?: ConceptCandidatesResult; documentChunks?: DocumentChunk[] };
 
     if (!body.input || !body.analysis || !body.selectedConcept || !body.outline?.length) {
       return NextResponse.json({ error: '프로젝트 입력값, 분석 결과, 선택된 콘셉트, 아웃라인이 필요합니다.' }, { status: 400 });
@@ -289,6 +290,7 @@ export async function POST(request: Request) {
     );
     const hasSlideEvidence = slideRetrievalMetadata.some((metadata) => metadata.evidenceCount > 0);
     const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis);
+    const strategyLayerMetadata = buildStrategyLayerMetadata({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic, conceptGenerationResult: body.conceptGenerationResult });
     const strategicMessageSummary = strategicMessageFieldsFromLogic(body.conceptDevelopmentLogic);
     const fallbackRetrievedChunks = retrieveRelevantChunks({
       stage: 'slide',
@@ -308,6 +310,7 @@ export async function POST(request: Request) {
         `각 슬라이드는 slideNumber, slideType, slideTitle, slidePurpose, keyMessage, mainCopy, bodyBullets, visualDirection, visitorAction, contentMechanism, spatialPlacement, mediaOrObject, outputOrReward, imagePlaceholder, visualPrompt, diagramSuggestion, productExperienceDetails, keyExperienceAssets, experienceScenarioSteps, referenceInsights, speakerNote, confirmNeededNote를 모두 작성한다. 일반 슬라이드에서 해당 배열이 없으면 빈 배열을 넣는다. 제품/콘텐츠 상세 장표는 ${experienceDetailFields.join(', ')} 항목을 productExperienceDetails에 명확히 작성하라.`,
         '본문 문안에는 RFP Fact / AI Proposal / Confirm Needed 구분을 반영하라. 단, AI Proposal 영역은 RFP 반복이 아니라 새 제안 아이디어여야 하며 Confirm Needed는 confirmNeededNote에만 배치하라.',
         '각 슬라이드 문안은 슬라이드 아웃라인에 포함된 retrievalQuery와 evidenceSnippets를 우선 근거로 사용하라. evidenceSnippets는 해당 slideTitle, slideType, slidePurpose로 검색된 슬라이드별 RFP/RAG 근거이며, 다른 슬라이드의 evidenceSnippets를 해당 슬라이드의 RFP 사실처럼 전용하지 말라.',
+        'winningStrategyBrief / proposalThesis / experienceLogic은 Winning Strategy Layer 메타데이터다. 제공된 값이 있으면 보존해 제안서 문안의 전략 축에 반영하고, 없으면 서버 fallback 값을 사용하라. 이 메타데이터가 없다는 이유로 장표 문안 생성을 중단하지 말라.',
         'evidenceSnippets에 있는 chunk category와 importance를 반영해 high 중요도 및 해당 슬라이드 matchedCategories 근거를 우선 사용하라. evidenceCount가 0이거나 관련 근거가 없으면 기존처럼 분석 결과, 콘셉트, 아웃라인을 사용하되 RFP 사실이라고 단정하지 말고 제안 가정/운영 가정으로 표현하라.',
         referenceGuardInstruction,
         'RFP에 명시되지 않은 필수 요구사항, KPI 수치, 일정, 평가 기준, 공간 제약은 만들지 말라. 근거가 부족한 내용은 “제안 가정상”, “운영 설계 기준으로”, “추후 발주처 확인 후”처럼 가정 또는 확인 필요 문장으로 작성하라.',
@@ -350,6 +353,9 @@ ${JSON.stringify(body.analysis, null, 2)}
 
 전략 메시지 추출 요약:
 ${strategicMessageSummary || '전략 메시지 추출 필드 없음'}
+
+Winning Strategy Layer 메타데이터(제공값 우선, 누락 시 서버 fallback):
+${JSON.stringify(strategyLayerMetadata, null, 2)}
 
 경험 접근 로직:
 ${JSON.stringify(body.conceptDevelopmentLogic ?? null, null, 2)}

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { outlineJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ProjectInput, SlideOutline } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ProjectInput, SlideOutline } from '@/lib/types';
 import type { DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -11,6 +11,7 @@ import { ensureRfpRequirementCoverage } from '@/lib/rfpRequirements';
 import { formatCategoryEvidenceGroupsForPrompt, retrieveCategoryEvidenceGroups } from '@/lib/rag';
 import { applyProposalStructureGuardToOutline, buildProposalStructureGuard, proposalScopeTypeLabels } from '@/lib/proposalStructureGuard';
 import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
+import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 
 const styleGuides = {
   basic: '프로젝트 이해, 과제 정의, 경험 전략, 콘셉트, 공간/콘텐츠 구성, 운영 및 기대 효과가 이어지는 기본형 구조.',
@@ -23,7 +24,7 @@ const styleGuides = {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; conceptDevelopmentLogic?: ConceptDevelopmentLogic; documentChunks?: DocumentChunk[] };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptGenerationResult?: ConceptCandidatesResult; documentChunks?: DocumentChunk[] };
 
     if (!body.input || !body.analysis || !body.selectedConcept) {
       return NextResponse.json({ error: '프로젝트 입력값, 분석 결과, 선택된 콘셉트가 필요합니다.' }, { status: 400 });
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
     });
     const retrievalContext = formatCategoryEvidenceGroupsForPrompt(outlineEvidenceGroups, 11000);
     const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis);
+    const strategyLayerMetadata = buildStrategyLayerMetadata({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic, conceptGenerationResult: body.conceptGenerationResult });
     const strategicMessageSummary = strategicMessageFieldsFromLogic(body.conceptDevelopmentLogic);
 
     const result = await createStructuredJson<{ slides: SlideOutline[] }>({
@@ -87,6 +89,7 @@ export async function POST(request: Request) {
         isEventOperationType ? '행사 운영형의 성과 장표는 운영 품질 관리 지표와 측정 체계를 중심으로 구성하고 체험 산출/공유 장표로 대체하지 말라.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '콘텐츠 개발형에서는 Media / Interactive Plan을 5장으로 강제 확장하지 말고 hero/sub content의 media mechanism과 scenario를 설명하는 범위로 제한하라. Output & Share는 RFP가 명시할 때만 생성하라.' : 'Media / Interactive Plan은 절대 1장으로 요약하지 말고 최소 5장(Media Experience Overview, Key Media Scene, Interactive Flow, Content Mechanism, Output & Share)으로 구성하라. Content Mechanism과 콘텐츠 작동 원리 및 메커니즘처럼 같은 의미의 장표를 중복 생성하지 말라. 미디어/인터랙션 요소가 많으면 핵심 체험 자산별 상세 장표를 추가하라.',
         '공간 구성과 콘텐츠 구성을 한 장에 뭉뚱그리지 말고 핵심 체험 단위별로 분리하라.',
         'RFP나 분석 결과의 taskSections.requiredDeliverables/requiredScope/productInfo에 제품/서비스 단위가 있으면 그 단위별 Product Experience Detail 장표를 포함하되, “제작”, “개발”, “운영”, “구성”, “기획”, “제안” 같은 과업/업무 범위 표현은 체험 콘텐츠명으로 사용하지 말라. 체험 상세 장표는 방문객 행동, 시스템 반응, 결과물이 명확한 콘텐츠만 생성한다. referenceOnly/doNotTreatAsScope/existingAssets에서만 감지된 참고 사례, 기존 캠페인, 레슨런드 항목은 제품별 체험 상세 장표로 만들지 말라. 포괄적인 “폴더블 갤럭시 체험존” 대신 대화면 멀티태스킹 체험, 미디어 최적화 폼팩터 체험, 전면 디스플레이 셀피 체험처럼 방문객 행동 중심의 구체 제목을 사용하라.',
+        'winningStrategyBrief / proposalThesis / experienceLogic은 Winning Strategy Layer 메타데이터다. 제공된 값이 있으면 보존해 제안서 구조의 전략 흐름에 반영하고, 없으면 서버에서 생성된 fallback 값을 사용하라. 이 메타데이터가 없다는 이유로 아웃라인 생성을 중단하거나 빈 장표를 만들지 말라.',
         'slideNumber는 1부터 순서대로 부여하라. 각 슬라이드에는 사용자가 수정할 수 있는 mainCopy를 포함하고, mainCopy에는 해당 장표의 본문 방향 또는 대표 제안서 문장을 1~2문장으로 작성하라.',
       ].join('\n'),
       user: `사용자 선택 제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
@@ -103,6 +106,9 @@ ${JSON.stringify(body.analysis, null, 2)}
 
 전략 메시지 추출 요약:
 ${strategicMessageSummary || '전략 메시지 추출 필드 없음'}
+
+Winning Strategy Layer 메타데이터(제공값 우선, 누락 시 서버 fallback):
+${JSON.stringify(strategyLayerMetadata, null, 2)}
 
 경험 접근 로직 JSON:
 ${JSON.stringify(body.conceptDevelopmentLogic ?? null, null, 2)}

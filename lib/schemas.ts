@@ -153,6 +153,9 @@ const conceptDevelopmentLogicSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    winningStrategyBrief: { type: 'string' },
+    proposalThesis: { type: 'string' },
+    experienceLogic: { type: 'string' },
     clientIntent: { type: 'string' },
     audienceTakeaway: { type: 'string' },
     strategicTension: { type: 'string' },
@@ -166,6 +169,9 @@ const conceptDevelopmentLogicSchema = {
     selectedConceptReason: { type: 'string' },
   },
   required: [
+    'winningStrategyBrief',
+    'proposalThesis',
+    'experienceLogic',
     'clientIntent',
     'audienceTakeaway',
     'strategicTension',
