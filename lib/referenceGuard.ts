@@ -96,6 +96,9 @@ export function applyReferenceGuardToSlides(slides: SlideContent[], analysis: An
 
 export function strategicMessageFieldsFromLogic(logic?: ConceptDevelopmentLogic) {
   return [
+    logic?.winningStrategyBrief ? `Winning Strategy Brief: ${logic.winningStrategyBrief}` : '',
+    logic?.proposalThesis ? `Proposal Thesis: ${logic.proposalThesis}` : '',
+    logic?.experienceLogic ? `Experience Logic: ${logic.experienceLogic}` : '',
     logic?.clientIntent ? `Client Intent: ${logic.clientIntent}` : '',
     logic?.audienceTakeaway ? `Audience Takeaway: ${logic.audienceTakeaway}` : '',
     logic?.strategicTension ? `Strategic Tension: ${logic.strategicTension}` : '',

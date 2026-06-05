@@ -205,6 +205,9 @@ export interface AnalysisResult {
 }
 
 export interface ConceptDevelopmentLogic {
+  winningStrategyBrief?: string;
+  proposalThesis?: string;
+  experienceLogic?: string;
   clientIntent: string;
   audienceTakeaway: string;
   strategicTension: string;
@@ -357,6 +360,7 @@ export interface ProposalState {
   conceptDevelopmentLogic?: ConceptDevelopmentLogic;
   conceptCandidates?: ConceptCandidate[];
   conceptRecommendation?: ConceptRecommendation;
+  conceptGenerationResult?: ConceptCandidatesResult;
   selectedConcept?: ConceptCandidate;
   outline?: SlideOutline[];
   slides?: SlideContent[];

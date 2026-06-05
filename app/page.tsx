@@ -726,6 +726,9 @@ function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLog
   if (!logic) return null;
 
   const rows = [
+    ['Winning Strategy Brief', logic.winningStrategyBrief],
+    ['Proposal Thesis', logic.proposalThesis],
+    ['Experience Logic', logic.experienceLogic],
     ['Client Intent', logic.clientIntent],
     ['Audience Takeaway', logic.audienceTakeaway],
     ['Strategic Tension', logic.strategicTension],
@@ -744,7 +747,7 @@ function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLog
       <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Strategy + Experience Approach</p>
       <h3 className="mt-2 text-xl font-black">전략 메시지 추출 및 경험 설계 접근</h3>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {rows.map(([label, value]) => (
+        {rows.filter(([, value]) => Boolean(value?.trim())).map(([label, value]) => (
           <div key={label} className="rounded-2xl bg-white/80 p-3 text-sm leading-6">
             <p className="font-black text-indigo-800">{label}</p>
             <p>{value}</p>
@@ -998,6 +1001,7 @@ function appendUploadedDocument(document: UploadedDocument) {
     conceptDevelopmentLogic: undefined,
     conceptCandidates: undefined,
     conceptRecommendation: undefined,
+    conceptGenerationResult: undefined,
     selectedConcept: undefined,
     outline: undefined,
     slides: undefined,
@@ -1160,7 +1164,9 @@ export default function Home() {
     Boolean((document.documentAnalysisText || document.extractedText).trim()) &&
     !(document.visionStatus === 'completed' || document.extractionStatus === '전체 Vision 분석 완료' || document.extractionStatus === '하이브리드 PDF 분석 완료' || document.extractionStatus === 'Vision 분석 완료'),
   );
+  const hasUploadedDocumentOrRfp = useMemo(() => Boolean(analysisInput.briefText.trim()), [analysisInput.briefText]);
   const canAnalyze = useMemo(() => Boolean(state.input.projectName && state.input.clientName && analysisInput.briefText) && !hasFastVisionAnalysisInProgress, [state.input.clientName, state.input.projectName, analysisInput.briefText, hasFastVisionAnalysisInProgress]);
+  const canGenerateProposalStructure = Boolean(state.selectedConcept && state.analysis && hasUploadedDocumentOrRfp);
   const activeVisionDocument = uploadedDocuments.find((document) => document.visionStatus === 'quick_analyzing' || document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 중' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === '하이브리드 PDF 분석 중');
   const currentUploadNotice = activeVisionDocument?.warningMessage
     ? { type: 'warning' as const, message: activeVisionDocument.warningMessage }
@@ -1172,7 +1178,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -1938,9 +1944,9 @@ export default function Home() {
     setLoading('RFP/브리프 분석 중...');
     try {
       const analysisBasis = getCurrentAnalysisBasis();
-      const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: state.input, documentChunks });
+      const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: analysisInput, documentChunks });
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
@@ -1958,7 +1964,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
@@ -1972,12 +1978,13 @@ export default function Home() {
     setError('');
     setLoading('콘셉트 후보 3안 생성 중...');
     try {
-      const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', { input: state.input, analysis: state.analysis, documentChunks });
+      const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', { input: analysisInput, analysis: state.analysis, documentChunks });
       setState((current) => ({
         ...current,
         conceptDevelopmentLogic: conceptResult.conceptDevelopmentLogic,
         conceptCandidates: conceptResult.concepts,
         conceptRecommendation: conceptResult.recommendation,
+        conceptGenerationResult: conceptResult,
         selectedConcept: undefined,
         outline: undefined,
         slides: undefined,
@@ -2042,11 +2049,11 @@ export default function Home() {
   };
 
   const runOutline = async () => {
-    if (!state.analysis || !state.selectedConcept) return;
+    if (!canGenerateProposalStructure || !state.analysis || !state.selectedConcept) return;
     setError('');
     setLoading('제안서 구조 생성 중...');
     try {
-      const outline = await postJson<SlideOutline[]>('/api/outline', { input: state.input, analysis: state.analysis, selectedConcept: state.selectedConcept, conceptDevelopmentLogic: state.conceptDevelopmentLogic, documentChunks });
+      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, documentChunks });
       setState((current) => ({ ...current, outline, slides: undefined }));
       setStep('outline');
     } catch (err) {
@@ -2062,7 +2069,7 @@ export default function Home() {
     setLoading('장표별 문안 생성 중...');
     try {
       const editableOutline = state.outline.map((slide) => ({ ...slide, mainCopy: slide.mainCopy ?? slide.keyMessage }));
-      const slides = await postJson<SlideContent[]>('/api/slides', { input: state.input, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: removeInternalConceptComparisonSlides(editableOutline), conceptDevelopmentLogic: state.conceptDevelopmentLogic, documentChunks });
+      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: removeInternalConceptComparisonSlides(editableOutline), conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, documentChunks });
       setState((current) => ({ ...current, slides }));
       setStep('slides');
     } catch (err) {
@@ -2251,7 +2258,7 @@ export default function Home() {
           </SectionCard>
         )}
 
-        {step === 'concepts' && state.analysis && state.conceptCandidates && (
+        {step === 'concepts' && state.analysis && (state.conceptCandidates?.length || state.selectedConcept) && (
           <SectionCard title="콘셉트 후보 선택">
             <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 text-blue-950">
               <p className="text-sm font-black uppercase tracking-[0.2em] text-blue-700">Required Step</p>
@@ -2268,7 +2275,7 @@ export default function Home() {
             <ConceptDevelopmentLogicPanel logic={state.conceptDevelopmentLogic} />
             <ConceptRecommendationPanel recommendation={state.conceptRecommendation} />
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
-              {state.conceptCandidates.map((concept) => {
+              {(state.conceptCandidates ?? []).map((concept) => {
                 const selected = state.selectedConcept?.conceptId === concept.conceptId;
                 return (
                   <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
@@ -2297,7 +2304,7 @@ export default function Home() {
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('analysis')}>분석 결과 보기</SecondaryButton>
               <SecondaryButton onClick={runConcepts} disabled={Boolean(loading)}>콘셉트 다시 생성</SecondaryButton>
-              <PrimaryButton onClick={runOutline} disabled={Boolean(loading) || !state.selectedConcept}>제안서 구조 생성</PrimaryButton>
+              <PrimaryButton onClick={runOutline} disabled={Boolean(loading) || !canGenerateProposalStructure}>제안서 구조 생성</PrimaryButton>
             </div>
           </SectionCard>
         )}
