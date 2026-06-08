@@ -23,6 +23,7 @@ const spatialAllowedSectionPattern = /spatial\s*strategy|zoning|zone|sightline|f
 const earlyStrategicPurposePattern = /Problem|Insight|Strategy|Concept/i;
 const strategicSectionPattern = /proposal\s*thesis|concept\s*name|concept\s*tagline|concept\s*rationale|core\s*message|core\s*concept|market\s*context|project\s*context|core\s*problem|challenge|audience\s*insight|strategic\s*opportunity|strategic\s*direction|제안\s*명제|콘셉트|컨셉|핵심\s*메시지|시장\s*맥락|프로젝트\s*맥락|핵심\s*문제|과제|관람객|타깃\s*인사이트|전략\s*기회|전략\s*방향/i;
 const coreConceptPattern = /core\s*concept|핵심\s*(콘셉트|컨셉)/i;
+const caseInsightPattern = /case\s*insight|benchmark\s*insight|experience\s*case\s*insight|유사\s*사례\s*인사이트|컨셉\s*도출을\s*위한\s*사례\s*인사이트|콘셉트\s*도출을\s*위한\s*사례\s*인사이트|사례\s*인사이트/i;
 const executionBeforeConceptPattern = /media|interactive|content\s*mechanism|spatial\s*(overview|plan)|zoning|zone|layout|visitor\s*journey|experience\s*(overview|structure)|미디어|인터랙티브|콘텐츠\s*메커니즘|공간\s*(개요|구성|전략)|조닝|존|레이아웃|동선|저니|체험\s*(구조|개요)/i;
 
 
@@ -135,12 +136,13 @@ function isConstraintDominatedStrategicSlide(slide: SlideOutline | SlideContent,
 }
 
 
-type FoundationRole = 'projectMarketContext' | 'coreProblem' | 'audienceInsight' | 'strategicOpportunity' | 'conceptRationale';
+type FoundationRole = 'projectMarketContext' | 'coreProblem' | 'audienceInsight' | 'caseInsight' | 'strategicOpportunity' | 'conceptRationale';
 
 const foundationRoles: Array<{ role: FoundationRole; slideType: string; slideTitle: string; slidePurpose: string; pattern: RegExp }> = [
   { role: 'projectMarketContext', slideType: 'Project / Market Context', slideTitle: 'Project / Market Context', slidePurpose: 'Problem', pattern: /project\s*\/\s*market\s*context|market\s*context|project\s*context|project\s*understanding|시장\s*맥락|프로젝트\s*맥락|프로젝트\s*이해/i },
   { role: 'coreProblem', slideType: 'Core Problem', slideTitle: 'Core Problem', slidePurpose: 'Problem', pattern: /core\s*problem|core\s*challenge|challenge|problem|핵심\s*(문제|과제)|문제\s*정의|과제\s*정의/i },
   { role: 'audienceInsight', slideType: 'Audience Insight', slideTitle: 'Audience Insight', slidePurpose: 'Insight', pattern: /audience\s*insight|target\s*insight|visitor\s*insight|관람객\s*인사이트|타깃\s*인사이트|오디언스\s*인사이트/i },
+  { role: 'caseInsight', slideType: 'Case Insight', slideTitle: 'Case Insight', slidePurpose: 'Insight', pattern: caseInsightPattern },
   { role: 'strategicOpportunity', slideType: 'Strategic Opportunity', slideTitle: 'Strategic Opportunity', slidePurpose: 'Strategy', pattern: /strategic\s*(opportunity|direction)|strategy\s*opportunity|전략\s*(기회|방향)/i },
   { role: 'conceptRationale', slideType: 'Concept Rationale', slideTitle: 'Concept Rationale', slidePurpose: 'Concept', pattern: /concept\s*rationale|why\s*this\s*concept|콘셉트\s*(도출|필연|근거)|컨셉\s*(도출|필연|근거)/i },
 ];
@@ -184,7 +186,10 @@ function enforcePreConceptOrdering(slides: SlideOutline[], context?: StrategicGu
   if (coreIndex < 0) return slides;
 
   const beforeCore = slides.slice(0, coreIndex);
-  const coreAndAfter = slides.slice(coreIndex);
+  const coreSlide = slides[coreIndex];
+  const afterCore = slides.slice(coreIndex + 1);
+  const afterCoreCaseInsight = afterCore.find((slide) => caseInsightPattern.test(foundationSlideText(slide)));
+  const remainingAfterCore = afterCore.filter((slide) => !caseInsightPattern.test(foundationSlideText(slide)));
   const selectedFoundation: Partial<Record<FoundationRole, SlideOutline>> = {};
   const selectedIndexes = new Set<number>();
   const deferredExecution: SlideOutline[] = [];
@@ -204,8 +209,11 @@ function enforcePreConceptOrdering(slides: SlideOutline[], context?: StrategicGu
   });
 
   const remainingBeforeCore = beforeCore.filter((_, index) => !selectedIndexes.has(index));
-  const orderedFoundation = foundationRoles.map((role) => selectedFoundation[role.role] ?? createFoundationSlide(role, context));
-  return [...remainingBeforeCore, ...orderedFoundation, ...coreAndAfter, ...deferredExecution];
+  const foundationWithLateCaseInsight = { ...selectedFoundation, caseInsight: selectedFoundation.caseInsight ?? afterCoreCaseInsight };
+  const orderedFoundation = foundationRoles
+    .filter((role) => role.role !== 'caseInsight' || foundationWithLateCaseInsight.caseInsight)
+    .map((role) => foundationWithLateCaseInsight[role.role] ?? createFoundationSlide(role, context));
+  return [...remainingBeforeCore, ...orderedFoundation, coreSlide, ...remainingAfterCore, ...deferredExecution];
 }
 
 function rewriteConstraintDominatedSlide<T extends SlideOutline | SlideContent>(slide: T, context?: StrategicGuardContext): T {
