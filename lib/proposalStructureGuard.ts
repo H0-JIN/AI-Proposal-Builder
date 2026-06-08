@@ -85,11 +85,13 @@ function slideText(slide: Pick<SlideOutline | SlideContent, 'slideType' | 'slide
   return [slide.slideType, slide.slideTitle, slide.slidePurpose, slide.keyMessage].join(' ');
 }
 
-function isBlockedContentBoothSlide(slide: Pick<SlideOutline | SlideContent, 'slideType' | 'slideTitle' | 'slidePurpose' | 'keyMessage'>, guard: ReturnType<typeof buildProposalStructureGuard>) {
+function isSuppressedGenericSlide(slide: Pick<SlideOutline | SlideContent, 'slideType' | 'slideTitle' | 'slidePurpose' | 'keyMessage'>, guard: ReturnType<typeof buildProposalStructureGuard>) {
   const text = slideText(slide);
-  if (/viral|communication|sns|sharing|share|reward|marketing\s*campaign|visitor\s*reward|output\s*&\s*share|바이럴|확산|SNS|공유|리워드|방문객\s*보상|마케팅\s*캠페인/i.test(text)) return true;
+  const thesisConnected = /thesis|proposal\s*thesis|명제|핵심\s*주장|전략\s*기회|증명|차별화|impact|임팩트/i.test(text);
+  if (/viral|communication|sns|sharing|share|reward|marketing\s*campaign|visitor\s*reward|output\s*&\s*share|바이럴|확산|SNS|공유|리워드|방문객\s*보상|마케팅\s*캠페인/i.test(text) && !thesisConnected) return true;
   if (!guard.hasExplicitKpi && /KPI|performance\s*goal|expected\s*effect|성과\s*지표|성과\s*목표|기대\s*효과/i.test(text)) return true;
   if (!guard.hasExplicitOperationPlan && /operation\s*plan|staffing|onsite|maintenance|safety|운영\s*계획|스태핑|현장\s*운영|유지\s*관리|안전\s*운영/i.test(text)) return true;
+  if (!thesisConnected && /budget|company\s*introduction|schedule|rfp\s*requirement\s*table|media\s*experience\s*overview|content\s*mechanism|예산|회사\s*소개|일정|과업\s*대응표|요구사항\s*대응표|미디어\s*경험\s*개요|콘텐츠\s*작동\s*원리/i.test(text)) return true;
   return false;
 }
 
@@ -100,15 +102,13 @@ function renumber<T extends SlideOutline | SlideContent>(slides: T[]) {
 export function applyProposalStructureGuardToOutline(slides: SlideOutline[], input: ProjectInput, analysis: AnalysisResult) {
   const guard = buildProposalStructureGuard(input, analysis);
   const isContentDevelopment = guard.proposalScopeTypes.includes('contentDevelopment');
-  const isContentBooth = isContentDevelopment && guard.proposalScopeTypes.includes('boothExhibition');
-  const filtered = isContentBooth ? slides.filter((slide) => !isBlockedContentBoothSlide(slide, guard)) : slides;
+  const filtered = slides.filter((slide) => !isSuppressedGenericSlide(slide, guard));
   return renumber(filtered.slice(0, isContentDevelopment ? guard.maxSlideCount ?? filtered.length : filtered.length));
 }
 
 export function applyProposalStructureGuardToSlides(slides: SlideContent[], input: ProjectInput, analysis: AnalysisResult) {
   const guard = buildProposalStructureGuard(input, analysis);
   const isContentDevelopment = guard.proposalScopeTypes.includes('contentDevelopment');
-  const isContentBooth = isContentDevelopment && guard.proposalScopeTypes.includes('boothExhibition');
-  const filtered = isContentBooth ? slides.filter((slide) => !isBlockedContentBoothSlide(slide, guard)) : slides;
+  const filtered = slides.filter((slide) => !isSuppressedGenericSlide(slide, guard));
   return renumber(filtered.slice(0, isContentDevelopment ? guard.maxSlideCount ?? filtered.length : filtered.length));
 }

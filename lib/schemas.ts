@@ -1,6 +1,35 @@
 const stringArray = { type: 'array', items: { type: 'string' } } as const;
 
 
+const slidePurposeEnum = ['Problem', 'Insight', 'Strategy', 'Concept', 'Experience', 'Content', 'Proof', 'Impact'] as const;
+
+const narrativeFlowStageSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    stage: { type: 'string' },
+    purpose: { type: 'string' },
+  },
+  required: ['stage', 'purpose'],
+} as const;
+
+export const proposalNarrativeJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    marketContext: { type: 'string' },
+    coreProblem: { type: 'string' },
+    strategicOpportunity: { type: 'string' },
+    proposalThesis: { type: 'string' },
+    whyNow: { type: 'string' },
+    whyUs: { type: 'string' },
+    whyThisConcept: { type: 'string' },
+    narrativeFlow: { type: 'array', minItems: 5, items: narrativeFlowStageSchema },
+  },
+  required: ['marketContext', 'coreProblem', 'strategicOpportunity', 'proposalThesis', 'whyNow', 'whyUs', 'whyThisConcept', 'narrativeFlow'],
+} as const;
+
+
 const taskSectionSchema = {
   type: 'object',
   additionalProperties: false,
@@ -221,10 +250,18 @@ export const conceptCandidatesJsonSchema = {
         additionalProperties: false,
         properties: {
           conceptId: { type: 'string' },
+          conceptTitle: { type: 'string' },
+          subtitle: { type: 'string' },
           conceptNameKR: { type: 'string' },
           conceptNameEN: { type: 'string' },
           oneLineDefinition: { type: 'string' },
           coreMessage: { type: 'string' },
+          thesisProof: { type: 'string' },
+          experienceStructure: { type: 'string' },
+          expectedAssets: stringArray,
+          strengths: stringArray,
+          risks: stringArray,
+          evaluationSummary: { type: 'string' },
           experienceLogic: { type: 'string' },
           keyExperienceAssetDirection: { type: 'string' },
           targetRelevance: { type: 'string' },
@@ -238,10 +275,18 @@ export const conceptCandidatesJsonSchema = {
         },
         required: [
           'conceptId',
+          'conceptTitle',
+          'subtitle',
           'conceptNameKR',
           'conceptNameEN',
           'oneLineDefinition',
           'coreMessage',
+          'thesisProof',
+          'experienceStructure',
+          'expectedAssets',
+          'strengths',
+          'risks',
+          'evaluationSummary',
           'experienceLogic',
           'keyExperienceAssetDirection',
           'targetRelevance',
@@ -284,12 +329,15 @@ export const outlineJsonSchema = {
           slideNumber: { type: 'number' },
           slideType: { type: 'string' },
           slideTitle: { type: 'string' },
-          slidePurpose: { type: 'string' },
+          slidePurpose: { type: 'string', enum: slidePurposeEnum },
+          slideRole: { type: 'string' },
+          relationToThesis: { type: 'string' },
+          whyThisSlideExists: { type: 'string' },
           keyMessage: { type: 'string' },
           mainCopy: { type: 'string' },
           confirmNeededNote: { type: 'string' },
         },
-        required: ['slideNumber', 'slideType', 'slideTitle', 'slidePurpose', 'keyMessage', 'mainCopy', 'confirmNeededNote'],
+        required: ['slideNumber', 'slideType', 'slideTitle', 'slidePurpose', 'slideRole', 'relationToThesis', 'whyThisSlideExists', 'keyMessage', 'mainCopy', 'confirmNeededNote'],
       },
     },
   },
@@ -408,7 +456,10 @@ export const slideContentJsonSchema = {
           slideNumber: { type: 'number' },
           slideType: { type: 'string' },
           slideTitle: { type: 'string' },
-          slidePurpose: { type: 'string' },
+          slidePurpose: { type: 'string', enum: slidePurposeEnum },
+          slideRole: { type: 'string' },
+          relationToThesis: { type: 'string' },
+          whyThisSlideExists: { type: 'string' },
           keyMessage: { type: 'string' },
           mainCopy: { type: 'string' },
           bodyBullets: { type: 'array', minItems: 3, maxItems: 7, items: { type: 'string' } },
@@ -433,6 +484,9 @@ export const slideContentJsonSchema = {
           'slideType',
           'slideTitle',
           'slidePurpose',
+          'slideRole',
+          'relationToThesis',
+          'whyThisSlideExists',
           'keyMessage',
           'mainCopy',
           'bodyBullets',
