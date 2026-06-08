@@ -259,6 +259,9 @@ export interface ConceptEvaluationScores {
 
 export interface ConceptCandidate {
   conceptId: string;
+  conceptName: string;
+  conceptTagline: string;
+  conceptDefinition: string;
   conceptTitle: string;
   subtitle: string;
   conceptNameKR: string;

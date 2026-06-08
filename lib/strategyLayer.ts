@@ -1,4 +1,5 @@
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ProjectInput } from './types';
+import { getPresentationConceptName } from './conceptNamingGuard';
 
 export type StrategyLayerMetadata = {
   winningStrategyBrief: string;
@@ -34,7 +35,7 @@ export function buildStrategyLayerMetadata({
     (concept) => concept.conceptId === conceptGenerationResult.recommendation.recommendedConceptId,
   );
 
-  const selectedConceptLabel = joinNonEmpty([selectedConcept.conceptNameEN, selectedConcept.conceptNameKR], ' / ') || '핵심 콘셉트';
+  const selectedConceptLabel = getPresentationConceptName(selectedConcept) || joinNonEmpty([selectedConcept.conceptNameEN, selectedConcept.conceptNameKR], ' / ') || '핵심 콘셉트';
   const projectContext = joinNonEmpty([input.projectName, input.clientName], ' / ') || analysis.projectOverview;
   const requiredFocus = joinNonEmpty([
     analysis.clientChallenge,
@@ -62,6 +63,7 @@ export function buildStrategyLayerMetadata({
     proposalThesis: firstText(
       logic?.proposalThesis,
       selectedConcept.coreMessage,
+      selectedConcept.conceptDefinition,
       selectedConcept.oneLineDefinition,
       recommendedConcept?.coreMessage,
       logic?.conceptSeed,

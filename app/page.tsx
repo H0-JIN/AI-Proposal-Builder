@@ -23,6 +23,7 @@ import {
   validateExtractedText,
 } from '@/lib/extractedTextValidation';
 import { DEFAULT_VISION_CHUNK_SIZE, DEFAULT_VISION_MODE } from '@/lib/visionConfig';
+import { getConceptDefinition, getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
 import { createDocumentChunks, inferDocumentType } from '@/lib/rag';
 
 type Step = 'home' | 'create' | 'analysis' | 'concepts' | 'outline' | 'slides';
@@ -1125,7 +1126,7 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[], selecte
     const shouldShowConcept = selectedConcept && !isInternalConceptComparisonSlide(slideData) && /selected concept rationale|core concept|key experience asset|spatial \/ content|media \/ interactive|콘셉트|핵심 체험|공간|콘텐츠|미디어|인터랙/i.test(`${slideData.slideType} ${slideData.slideTitle}`);
     if (shouldShowConcept) {
       slide.addShape(pptx.ShapeType.roundRect, { x: 0.72, y: 6.25, w: 11.95, h: 0.48, rectRadius: 0.08, fill: { color: 'EEF2FF' }, line: { color: 'C7D2FE' } });
-      slide.addText(sanitizeFinalPptxText(`Core Concept: ${selectedConcept.conceptNameEN} / ${selectedConcept.conceptNameKR} · ${selectedConcept.coreMessage}`), { x: 0.95, y: 6.36, w: 11.45, h: 0.18, fontSize: 8, color: '3730A3', bold: true, fit: 'shrink' });
+      slide.addText(sanitizeFinalPptxText(`Core Concept: ${getPresentationConceptName(selectedConcept)} · ${selectedConcept.coreMessage}`), { x: 0.95, y: 6.36, w: 11.45, h: 0.18, fontSize: 8, color: '3730A3', bold: true, fit: 'shrink' });
     }
     slide.addShape(pptx.ShapeType.rect, { x: 6.75, y: 0.72, w: 5.9, h: 3.6, fill: { color: 'E5E7EB' }, line: { color: 'CBD5E1', transparency: 20 } });
     slide.addText(getImagePlaceholder(slideData), { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'middle', fontSize: 14, color: '64748B', bold: true });
@@ -2313,7 +2314,7 @@ export default function Home() {
               </p>
               {state.selectedConcept && (
                 <p className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm font-black text-blue-800">
-                  선택된 콘셉트: {state.selectedConcept.conceptNameEN} / {state.selectedConcept.conceptNameKR}
+                  선택된 콘셉트: {getPresentationConceptName(state.selectedConcept)}
                 </p>
               )}
             </div>
@@ -2326,9 +2327,9 @@ export default function Home() {
                 return (
                   <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
-                    <h3 className="mt-2 text-2xl font-black text-slate-950">{concept.conceptTitle || concept.conceptNameEN}</h3>
-                    <p className="text-lg font-bold text-blue-700">{concept.subtitle || concept.conceptNameKR}</p>
-                    <p className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm font-semibold leading-6 text-slate-700">{concept.oneLineDefinition}</p>
+                    <h3 className="mt-2 text-2xl font-black text-slate-950">{getPresentationConceptName(concept)}</h3>
+                    <p className="text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
+                    <p className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm font-semibold leading-6 text-slate-700">{getConceptDefinition(concept)}</p>
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
                       <div><dt className="font-black text-slate-950">핵심 메시지</dt><dd>{concept.coreMessage}</dd></div>
                       <div><dt className="font-black text-slate-950">명제 증명</dt><dd>{concept.thesisProof || concept.whyThisWorks}</dd></div>
@@ -2360,7 +2361,7 @@ export default function Home() {
           <SectionCard title="제안서 구조 생성 결과">
             {state.selectedConcept && (
               <div className="mb-5 rounded-3xl border border-blue-100 bg-blue-50 p-4 text-sm font-black text-blue-800">
-                선택된 콘셉트: {state.selectedConcept.conceptNameEN} / {state.selectedConcept.conceptNameKR}
+                선택된 콘셉트: {getPresentationConceptName(state.selectedConcept)}
               </div>
             )}
             <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-semibold leading-6 text-emerald-900">
@@ -2428,7 +2429,7 @@ export default function Home() {
           <SectionCard title="장표별 문안 생성 결과">
             {state.selectedConcept && (
               <div className="mb-5 rounded-3xl border border-blue-100 bg-blue-50 p-4 text-sm font-black text-blue-800">
-                선택된 콘셉트: {state.selectedConcept.conceptNameEN} / {state.selectedConcept.conceptNameKR}
+                선택된 콘셉트: {getPresentationConceptName(state.selectedConcept)}
               </div>
             )}
             <div className="grid gap-4 md:grid-cols-2">

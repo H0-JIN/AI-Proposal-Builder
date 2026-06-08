@@ -13,6 +13,7 @@ import { applyProposalStructureGuardToOutline, buildProposalStructureGuard, prop
 import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
+import { getPresentationConceptName } from '@/lib/conceptNamingGuard';
 
 const styleGuides = {
   basic: '프로젝트 이해, 과제 정의, 경험 전략, 콘셉트, 공간/콘텐츠 구성, 운영 및 기대 효과가 이어지는 기본형 구조.',
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
     const outlineEvidenceGroups = retrieveCategoryEvidenceGroups({
       stage: 'outline',
       proposalType: effectiveProposalType,
-      query: `${body.input.projectName} ${body.selectedConcept.conceptNameKR} ${body.selectedConcept.conceptNameEN}`,
+      query: `${body.input.projectName} ${getPresentationConceptName(body.selectedConcept) || `${body.selectedConcept.conceptNameKR} ${body.selectedConcept.conceptNameEN}`}`,
       chunks: body.documentChunks ?? [],
       groups: [
         { label: '필수 목차 (35)', categories: ['requiredDeliverables'], description: 'proposal structure weighted retrieval 35: requiredDeliverables를 필수 목차/요구 대응 장표로 매핑', limit: 5 },
