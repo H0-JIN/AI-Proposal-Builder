@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { getSupabaseConfigState } from './supabase';
-import type { ChunkImportance, ChunkRecord, DocumentRecord, DocumentRole, JsonValue, ProjectRecord } from './dbTypes';
+import type { ChunkImportance, ChunkRecord, DocumentRecord, DocumentRole, JsonValue, ProjectRecord, SlideVisualPatternInput, SlideVisualPatternRecord } from './dbTypes';
 
 export interface CreateProjectInput {
   name: string;
@@ -41,6 +41,10 @@ export interface SaveChunksInput {
   projectId: string;
   documentId: string;
   chunks: SaveChunkInput[];
+}
+
+export interface SaveSlideVisualPatternsInput {
+  patterns: SlideVisualPatternInput[];
 }
 
 function logRagStorageError(operation: string, error: unknown) {
@@ -154,6 +158,102 @@ export async function saveChunks(input: SaveChunksInput): Promise<ChunkRecord[]>
     return data ?? [];
   } catch (error) {
     logRagStorageError('saveChunks', error);
+    return [];
+  }
+}
+
+export async function saveSlideVisualPatterns(input: SaveSlideVisualPatternsInput): Promise<SlideVisualPatternRecord[]> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client || input.patterns.length === 0) {
+    return [];
+  }
+
+  try {
+    const rows = input.patterns.map((pattern) => ({
+      project_id: pattern.project_id,
+      document_id: pattern.document_id,
+      chunk_id: pattern.chunk_id ?? null,
+      slide_number: pattern.slide_number ?? null,
+      slide_title: pattern.slide_title ?? null,
+      slide_role: pattern.slide_role ?? null,
+      layout_type: pattern.layout_type ?? null,
+      visual_text_ratio: pattern.visual_text_ratio ?? null,
+      hero_element: pattern.hero_element ?? null,
+      visual_direction: pattern.visual_direction ?? null,
+      diagram_type: pattern.diagram_type ?? null,
+      tone_and_manner: pattern.tone_and_manner ?? null,
+      image_prompt: pattern.image_prompt ?? null,
+      source_type: pattern.source_type ?? 'text_extracted',
+      confidence: pattern.confidence ?? 'medium',
+      metadata: pattern.metadata ?? {},
+    }));
+
+    const { data, error } = await client.from('slide_visual_patterns').insert(rows).select('*');
+
+    if (error) {
+      logRagStorageError('saveSlideVisualPatterns', error);
+      return [];
+    }
+
+    return data ?? [];
+  } catch (error) {
+    logRagStorageError('saveSlideVisualPatterns', error);
+    return [];
+  }
+}
+
+export async function getSlideVisualPatternsByDocument(documentId: string): Promise<SlideVisualPatternRecord[]> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await client
+      .from('slide_visual_patterns')
+      .select('*')
+      .eq('document_id', documentId)
+      .order('slide_number', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      logRagStorageError('getSlideVisualPatternsByDocument', error);
+      return [];
+    }
+
+    return data ?? [];
+  } catch (error) {
+    logRagStorageError('getSlideVisualPatternsByDocument', error);
+    return [];
+  }
+}
+
+export async function getSlideVisualPatternsByProject(projectId: string): Promise<SlideVisualPatternRecord[]> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await client
+      .from('slide_visual_patterns')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('document_id', { ascending: true, nullsFirst: false })
+      .order('slide_number', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      logRagStorageError('getSlideVisualPatternsByProject', error);
+      return [];
+    }
+
+    return data ?? [];
+  } catch (error) {
+    logRagStorageError('getSlideVisualPatternsByProject', error);
     return [];
   }
 }

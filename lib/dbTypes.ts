@@ -64,6 +64,31 @@ export interface ChunkRecord {
   created_at: string;
 }
 
+export interface SlideVisualPatternRecord {
+  [key: string]: unknown;
+  id: string;
+  project_id: string | null;
+  document_id: string | null;
+  chunk_id: string | null;
+  slide_number: number | null;
+  slide_title: string | null;
+  slide_role: string | null;
+  layout_type: string | null;
+  visual_text_ratio: string | null;
+  hero_element: string | null;
+  visual_direction: string | null;
+  diagram_type: string | null;
+  tone_and_manner: string | null;
+  image_prompt: string | null;
+  source_type: string | null;
+  confidence: string | null;
+  metadata: JsonValue | null;
+  created_at: string;
+}
+
+export type SlideVisualPatternInput = Partial<Pick<SlideVisualPatternRecord, 'id' | 'chunk_id' | 'slide_number' | 'slide_title' | 'slide_role' | 'layout_type' | 'visual_text_ratio' | 'hero_element' | 'visual_direction' | 'diagram_type' | 'tone_and_manner' | 'image_prompt' | 'source_type' | 'confidence' | 'metadata' | 'created_at'>> &
+  Pick<SlideVisualPatternRecord, 'project_id' | 'document_id'>;
+
 export interface Database {
   public: {
     Tables: {
@@ -107,6 +132,34 @@ export interface Database {
             columns: ['document_id'];
             isOneToOne: false;
             referencedRelation: 'documents';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      slide_visual_patterns: {
+        Row: SlideVisualPatternRecord;
+        Insert: SlideVisualPatternInput;
+        Update: Partial<Omit<SlideVisualPatternRecord, 'id' | 'created_at'>>;
+        Relationships: [
+          {
+            foreignKeyName: 'slide_visual_patterns_project_id_fkey';
+            columns: ['project_id'];
+            isOneToOne: false;
+            referencedRelation: 'projects';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'slide_visual_patterns_document_id_fkey';
+            columns: ['document_id'];
+            isOneToOne: false;
+            referencedRelation: 'documents';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'slide_visual_patterns_chunk_id_fkey';
+            columns: ['chunk_id'];
+            isOneToOne: false;
+            referencedRelation: 'chunks';
             referencedColumns: ['id'];
           },
         ];
