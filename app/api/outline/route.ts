@@ -9,7 +9,7 @@ import { expandExperiencePlanOutline, extractProductCodes } from '@/lib/experien
 import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import { ensureRfpRequirementCoverage } from '@/lib/rfpRequirements';
 import { formatCategoryEvidenceGroupsForPrompt, retrieveCategoryEvidenceGroups } from '@/lib/rag';
-import { applyProposalStructureGuardToOutline, buildProposalStructureGuard, proposalScopeTypeLabels } from '@/lib/proposalStructureGuard';
+import { applyProposalStructureGuardToOutline, buildConstraintPriorityGuardInstruction, buildProposalStructureGuard, buildSelectedConceptDominanceInstruction, proposalScopeTypeLabels } from '@/lib/proposalStructureGuard';
 import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
@@ -52,11 +52,11 @@ export async function POST(request: Request) {
         { label: '실행 제약 (15)', categories: ['constraints'], description: 'proposal structure weighted retrieval 15: 제약 조건을 실행 가능성/운영 계획에 반영', limit: 3 },
         { label: '공간 전략 (10)', categories: ['venue'], description: 'proposal structure weighted retrieval 10: 공간 구성, 동선, 장소별 적용 장표에 사용', limit: 3 },
         { label: '제품 특징', categories: ['productFeature'], description: 'Q8/H8/B8 제품별 핵심 기능/가치 제안을 제품별 장표 구조에 반영', limit: 4 },
-        { label: '참고 레퍼런스', categories: ['referenceOnly', 'designDirection'], description: 'FF7, S26 Showcase, MDW Art Wall, Foldable Monument를 spatial strategy/reference insight 장표에 참고 방향으로 반영', limit: 4 },
+        { label: '현재 프로젝트 참고 레퍼런스', categories: ['referenceOnly', 'designDirection'], description: '현재 업로드된 RFP/제안 자료에 명시된 레퍼런스만 reference insight로 반영하고, 근거 없는 프로젝트명은 제외', limit: 4 },
       ],
     });
     const retrievalContext = formatCategoryEvidenceGroupsForPrompt(outlineEvidenceGroups, 11000);
-    const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis);
+    const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis, body.documentChunks ?? []);
     const strategyLayerMetadata = buildStrategyLayerMetadata({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic, conceptGenerationResult: body.conceptGenerationResult });
     const strategicMessageSummary = strategicMessageFieldsFromLogic(body.conceptDevelopmentLogic);
     const proposalNarrative = ensureProposalNarrative(body.proposalNarrative, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, documentText: body.input.briefText });
@@ -69,9 +69,10 @@ export async function POST(request: Request) {
         structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '이 단계는 콘텐츠 개발형 제안 생성 단계의 아웃라인 설계다. 기본 18~22장, 하드캡 24장 이내로 실제 제안 내용을 담는 슬라이드 구조를 만든다.' : '이 단계는 제안 생성 단계의 아웃라인 설계다. RFP 요약이나 확인 필요 장표가 아니라 실제 제안 내용을 담을 20~40장 슬라이드 구조를 만든다.',
         isEventOperationType ? 'MICE/컨퍼런스 운영형 기본 흐름은 Cover, Project Understanding, Strategic Approach, Event Identity, Program Overview, Operation Framework, Registration & Entry Plan, Session System Operation, Partner Pavilion Plan, Networking / Catering Plan, Moving Line Plan, Setup / Conversion Plan, Staffing Plan, Risk Management, Schedule, Budget Summary, Portfolio / Organization, Closing이다.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') && structureGuard.proposalScopeTypes.includes('boothExhibition') ? '콘텐츠 개발 + 부스/전시형 기본 흐름은 Cover/Intro, Project Understanding, Approach, Main Theme, Strategy & Goals, Hero Content, Sub Content, Zoning & Flow, Content Scenario, Reference Direction, Schedule, Credential, Closing이다. 필요 시 과업 대응표를 1장 포함하되 일반 체험 마케팅 슬라이드로 확장하지 말라.' : '기본 흐름은 Cover, Project / Market Context, Core Problem or Challenge, Audience Insight, Strategic Opportunity / Strategic Direction, Concept Rationale, Core Concept, Key Experience Asset Concept, Visitor Journey, Spatial / Content Plan 복수 장표, Media / Interactive Plan 복수 장표, Viral / Communication Mechanism, Operation Plan, Expected Effect, Closing이다.',
         '아웃라인은 Proposal Narrative의 5단계 구조를 최우선으로 따른다: Phase 1 Problem Definition(시장/산업 맥락, 프로젝트 배경, 클라이언트 과제, audience insight) → Phase 2 Strategic Declaration(전략 기회, proposal thesis, concept rationale, core concept) → Phase 3 Experience Strategy(경험 원칙, visitor journey, spatial strategy) → Phase 4 Content Proposal(hero experience, main experience, media/interactive content, key proof points) → Phase 5 Proof & Impact(expected impact, differentiation, feasibility, 필요한 경우에만 operation/RFP response table).',
-        'Core Concept 이전에는 반드시 1) Project / Market Context 2) Core Problem or Challenge 3) Audience Insight 4) Strategic Opportunity / Strategic Direction 5) Concept Rationale 순서가 먼저 설명되어야 한다. Core Concept 장표는 왜 이 콘셉트가 필요한지 설명한 뒤에만 배치하고, Concept Rationale 장표 없이 Core Concept를 앞당기지 말라.',
+        'Core Concept 이전에는 반드시 1) Project / Market Context 2) Core Problem or Challenge 3) Audience Insight 4) Strategic Opportunity / Strategic Direction 5) Concept Rationale 순서가 먼저 설명되어야 한다. Core Concept 장표는 왜 이 콘셉트가 필요한지 설명한 뒤에만 배치하고, Audience Insight 또는 Strategic Direction보다 앞에 두지 말라.',
+        'Concept Rationale은 공간 제약에서 시작하지 말고 1) 관람객이 이해하기 어려운 것 2) 클라이언트가 관람객에게 믿게 해야 하는 것 3) 프로젝트의 전략적 기회 4) 간극을 해결하는 경험 원칙 5) 선택 콘셉트가 그 원칙을 가장 잘 표현하는 이유 순서로 작성하라. Hydrogen/HTWO 프로젝트는 수소가 보이지 않고 시스템 기반이라 어렵다는 점, 생산·저장·운송·사용으로 이어지는 value chain, Hyundai Motor Group의 통합 미래 에너지 시스템, HTWO의 hydrogen transition 리더십 신뢰, 연결된 시스템을 보이는 경험화에 집중하라.',
         '각 outline slide는 slidePurpose를 Problem, Insight, Strategy, Concept, Experience, Content, Proof, Impact 중 하나로만 지정하고 slideRole, relationToThesis, whyThisSlideExists를 반드시 작성하라.',
-        'KPI, Operation, Budget, Company Introduction, Schedule, RFP Requirement Table, Media Experience Overview, Content Mechanism은 RFP가 명시적으로 요구하거나 proposalThesis 증명에 직접 연결될 때만 포함한다. 포함 시 relationToThesis와 whyThisSlideExists에 thesis 지원 논리를 명확히 작성하라.',
+        'Company capability/company introduction, KPI/performance goal, Operation plan, VIP support plan, Schedule, Confirmation needs/additional request, RFP requirement table은 현재 RFP가 명시적으로 요구하거나 proposalThesis 증명에 강하게 연결될 때만 포함한다. 포함 시 relationToThesis와 whyThisSlideExists에 thesis 지원 논리를 명확히 작성하라.',
         'RFP 성격에 맞게 슬라이드 제목은 자동 조정하라. 예: 폴더블 제품별 체험 저니, 기업 홍보관 비전 전달 공간, 팝업 포토/바이럴 구조, 미디어 전시 몰입형 시나리오, 의전시설 VIP 동선.',
         '아웃라인 retrieval은 proposal structure 가중치 requiredDeliverables 35, evaluationCriteria 20, performanceGoal 20, constraints 15, venue 10 순서와 category별 목적에 맞춰 사용하라. requiredDeliverables는 필수 목차와 RFP Requirement Response, evaluationCriteria는 평가 항목별 챕터 순서·차별화 장표·심사 대응 메시지, performanceGoal은 KPI 대응 및 성과 측정, constraints는 실행 전략과 운영/제작 가능성, venue는 공간 전략과 동선/장소 적용 장표에만 우선 사용한다.',
         'evaluationCriteria category 근거가 있으면 proposal structure의 주요 챕터와 chapter generation용 장표 목적에 반드시 반영하라. 필수 category 근거가 있는 경우 해당 장표를 반드시 구조에 반영하되, referenceOnly나 backgroundInsight에서만 나온 항목을 requiredDeliverables, KPI, 평가 기준, 필수 공간 장표로 승격하지 말라.',
@@ -81,9 +82,11 @@ export async function POST(request: Request) {
         'analysis.requiredDeliverables와 requiredDeliverables category 근거는 우선 필수 목차로 반영하고 RFP Requirement Response / 과업 대응표 1~2장 및 관련 본문 섹션에 매핑하라. 각 항목을 Required Deliverable Response 또는 Scope Response 단독 장표로 무조건 생성하지 말고, 중요도가 높은 항목만 본문 장표로 확장하며 나머지는 과업 대응표 row로 처리하라.',
         'analysis.scopeOfWork의 주요 과업 범위도 반드시 반영하라. 단순 요약으로 끝내지 말고 운영 계획, 제작 범위, 공간 구성, 시스템 계획, 일정, 예산, 인력 운영 중 적절한 장표에서 실행 계획 또는 대응 방향으로 변환하라. 과업 범위가 많으면 Scope Response Matrix 또는 RFP Requirement Response / 과업 대응표 장표를 포함하라.',
         'requiredDeliverables 또는 scopeOfWork에 누락이 있으면 먼저 기존 장표의 mainCopy 또는 confirmNeededNote에 매핑하고, 불가능한 경우에만 Portfolio / Organization, Budget & Scope, System / Equipment, Setup / Dismantling, Content Production, Hospitality / Reception, Compliance / Exclusions 등 유사 항목 보완 섹션으로 묶어 생성하라.',
-        'referenceOnly가 있으면 FF7, S26 Showcase, MDW Art Wall, Foldable Monument를 우선 검토해 Reference Insight 또는 Design Reference Direction 장표를 선택적으로 포함해 referenceName, referenceType, whatToLearn, howToApply, caution 관점으로 정리하라. 단, 이 장표는 참고 사례를 과업으로 오해하지 않도록 “참고 방향/레퍼런스 인사이트”로 표현하라.',
+        'referenceOnly가 현재 프로젝트 evidence에 명시되어 있을 때만 Reference Insight 또는 Design Reference Direction 장표를 선택적으로 포함해 referenceName, referenceType, whatToLearn, howToApply, caution, sourceEvidence, referenceAllowed 관점으로 정리하라. sourceEvidence가 없으면 Reference 장표를 만들지 말라.',
         referenceGuardInstruction,
-        'FF7 모뉴먼트, S26 쇼케이스, 기존 슈퍼스테디, 뉴페이스셀피, 기존 게임사 팝업, 기존 러닝/야구 스튜디오 같은 referenceOnly/doNotTreatAsScope 항목을 FF7 체험 상세, S26 체험 상세, C2 체험 상세 같은 장표로 생성하지 말라.',
+        buildConstraintPriorityGuardInstruction(),
+        buildSelectedConceptDominanceInstruction(),
+        'referenceOnly/doNotTreatAsScope 항목은 현재 RFP에 명시된 경우에도 신규 체험 상세나 제품 상세 장표로 생성하지 말고 참고 방향으로만 다루라. FF7/MDW/SFF/SAFE/Samsung Foundry/Galaxy/teamLab/Delight 등 현재 evidence에 없는 프로젝트명은 사용하지 말라.',
         'Key Experience Asset은 프로젝트를 대표하는 1~3개 핵심 체험 자산만 압축해 보여주는 장표로 설계하라. 일반 assetType 후보 목록을 나열하지 말고, 각 자산의 이름/역할/방문객 행동/작동 방식/공간 배치/결과물을 중심으로 구성하라.',
         '모뉴먼트가 RFP에 명시되지 않았다면 Monument를 핵심 자산으로 고정하지 말라.',
         '확인 필요 사항은 confirmNeededNote에만 작게 넣고 slideTitle, slidePurpose, keyMessage의 중심은 실제 제안 내용으로 구성하라.',
@@ -139,7 +142,7 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
 
     const expandedSlides = expandExperiencePlanOutline(result.slides, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
     const coverageCheckedSlides = ensureRfpRequirementCoverage(removeInternalConceptComparisonSlides(expandedSlides), body.analysis, body.documentChunks ?? []);
-    const guardedSlides = applyReferenceGuardToOutline(applyProposalStructureGuardToOutline(coverageCheckedSlides, body.input, body.analysis), body.analysis);
+    const guardedSlides = applyReferenceGuardToOutline(applyProposalStructureGuardToOutline(coverageCheckedSlides, body.input, body.analysis, { selectedConcept: body.selectedConcept, proposalNarrative, conceptDevelopmentLogic: body.conceptDevelopmentLogic }), body.analysis, body.documentChunks ?? []);
 
     return NextResponse.json(guardedSlides);
   } catch (error) {

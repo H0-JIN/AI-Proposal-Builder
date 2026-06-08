@@ -354,6 +354,8 @@ export const outlineJsonSchema = {
           slideRole: { type: 'string' },
           relationToThesis: { type: 'string' },
           whyThisSlideExists: { type: 'string' },
+          sourceEvidence: { type: 'string' },
+          referenceAllowed: { type: 'boolean' },
           keyMessage: { type: 'string' },
           mainCopy: { type: 'string' },
           confirmNeededNote: { type: 'string' },
@@ -458,8 +460,10 @@ const referenceInsightSchema = {
     whatToLearn: { type: 'string' },
     howToApply: { type: 'string' },
     caution: { type: 'string' },
+    sourceEvidence: { type: 'string' },
+    referenceAllowed: { type: 'boolean' },
   },
-  required: ['referenceName', 'referenceType', 'whatToLearn', 'howToApply', 'caution'],
+  required: ['referenceName', 'referenceType', 'whatToLearn', 'howToApply', 'caution', 'sourceEvidence', 'referenceAllowed'],
 } as const;
 
 export const slideContentJsonSchema = {
@@ -481,6 +485,8 @@ export const slideContentJsonSchema = {
           slideRole: { type: 'string' },
           relationToThesis: { type: 'string' },
           whyThisSlideExists: { type: 'string' },
+          sourceEvidence: { type: 'string' },
+          referenceAllowed: { type: 'boolean' },
           keyMessage: { type: 'string' },
           mainCopy: { type: 'string' },
           bodyBullets: { type: 'array', minItems: 3, maxItems: 7, items: { type: 'string' } },

@@ -11,7 +11,7 @@ import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import { sanitizeGeneratedSlides } from '@/lib/slideSanitizer';
 import { ensureRfpRequirementCoverage } from '@/lib/rfpRequirements';
 import { formatChunksForPrompt, retrieveRelevantChunks } from '@/lib/rag';
-import { applyProposalStructureGuardToOutline, applyProposalStructureGuardToSlides, buildProposalStructureGuard, proposalScopeTypeLabels } from '@/lib/proposalStructureGuard';
+import { applyProposalStructureGuardToOutline, applyProposalStructureGuardToSlides, buildConstraintPriorityGuardInstruction, buildProposalStructureGuard, buildSelectedConceptDominanceInstruction, proposalScopeTypeLabels } from '@/lib/proposalStructureGuard';
 import { applyReferenceGuardToSlides, buildReferenceGuardInstruction, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
@@ -101,11 +101,11 @@ function buildConceptRationaleBullets(concept?: ConceptCandidate) {
   if (!rationale) return [];
 
   return [
-    conciseSectionLine('문제 인식', rationale.problemInsight, ''),
-    conciseSectionLine('발주처 니즈', rationale.clientNeed, ''),
-    conciseSectionLine('관람객 장벽', rationale.audienceBarrier, ''),
-    conciseSectionLine('전략적 전환', rationale.strategicShift, ''),
-    conciseSectionLine('컨셉 도출 이유', rationale.whyThisConcept, ''),
+    conciseSectionLine('1. Audience Barrier', rationale.audienceBarrier || rationale.problemInsight, ''),
+    conciseSectionLine('2. Belief to Build', rationale.clientNeed, ''),
+    conciseSectionLine('3. Strategic Opportunity', rationale.strategicShift, ''),
+    conciseSectionLine('4. Experience Principle', rationale.problemInsight, ''),
+    conciseSectionLine('5. Why This Concept', rationale.whyThisConcept, ''),
   ].filter((line) => !line.endsWith(': '));
 }
 
@@ -302,11 +302,12 @@ export async function POST(request: Request) {
     const structureGuard = buildProposalStructureGuard(body.input, body.analysis);
     const scopeLabelText = structureGuard.proposalScopeTypes.map((scope) => proposalScopeTypeLabels[scope]).join(' + ') || '감지된 세부 범위 없음';
     const productCodes = isEventOperationType ? [] : extractProductCodes({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
+    const proposalNarrative = ensureProposalNarrative(body.proposalNarrative, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, documentText: body.input.briefText });
     const expandedOutline = applyProposalStructureGuardToOutline(ensureRfpRequirementCoverage(
       removeInternalConceptComparisonSlides(expandExperiencePlanOutline(body.outline, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic })),
       body.analysis,
       body.documentChunks ?? [],
-    ), body.input, body.analysis);
+    ), body.input, body.analysis, { selectedConcept: body.selectedConcept, proposalNarrative, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
     const { outlineWithEvidence, metadata: slideRetrievalMetadata } = buildSlideEvidenceOutline(
       body.input,
       expandedOutline,
@@ -314,10 +315,9 @@ export async function POST(request: Request) {
       effectiveProposalType,
     );
     const hasSlideEvidence = slideRetrievalMetadata.some((metadata) => metadata.evidenceCount > 0);
-    const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis);
+    const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis, body.documentChunks ?? []);
     const strategyLayerMetadata = buildStrategyLayerMetadata({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic, conceptGenerationResult: body.conceptGenerationResult });
     const strategicMessageSummary = strategicMessageFieldsFromLogic(body.conceptDevelopmentLogic);
-    const proposalNarrative = ensureProposalNarrative(body.proposalNarrative, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, documentText: body.input.briefText });
     const fallbackRetrievedChunks = retrieveRelevantChunks({
       stage: 'slide',
       proposalType: effectiveProposalType,
@@ -336,20 +336,22 @@ export async function POST(request: Request) {
         '각 슬라이드는 Proposal Narrative와 outline metadata를 보존한다. slidePurpose는 Problem, Insight, Strategy, Concept, Experience, Content, Proof, Impact 중 하나만 사용하고 slideRole, relationToThesis, whyThisSlideExists를 반드시 작성하라.',
         `각 슬라이드는 slideNumber, slideType, slideTitle, slidePurpose, slideRole, relationToThesis, whyThisSlideExists, keyMessage, mainCopy, bodyBullets, visualDirection, visitorAction, contentMechanism, spatialPlacement, mediaOrObject, outputOrReward, imagePlaceholder, visualPrompt, diagramSuggestion, productExperienceDetails, keyExperienceAssets, experienceScenarioSteps, referenceInsights, speakerNote, confirmNeededNote를 모두 작성한다. 일반 슬라이드에서 해당 배열이 없으면 빈 배열을 넣는다. 제품/콘텐츠 상세 장표는 ${experienceDetailFields.join(', ')} 항목을 productExperienceDetails에 명확히 작성하라.`,
         '모든 content/detail slide의 mainCopy와 bodyBullets는 Why → What → How → Proof 흐름으로 작성하라. RFP object를 raw list로 제시하지 말고 RFP object → experience role → visitor meaning → proof of client capability로 변환하라.',
-        'KPI, Operation, Budget, Company Introduction, Schedule, RFP Requirement Table, Media Experience Overview, Content Mechanism 장표는 RFP가 명시하거나 proposalThesis에 직접 연결될 때만 작성하고, relationToThesis와 whyThisSlideExists에서 그 이유를 설명하라.',
+        'Company capability/company introduction, KPI/performance goal, Operation plan, VIP support plan, Schedule, Confirmation needs/additional request, RFP requirement table, Media Experience Overview, Content Mechanism 장표는 RFP가 명시하거나 proposalThesis에 직접 연결될 때만 작성하고, relationToThesis와 whyThisSlideExists에서 그 이유를 설명하라.',
         '본문 문안에는 RFP Fact / AI Proposal / Confirm Needed 구분을 반영하라. 단, AI Proposal 영역은 RFP 반복이 아니라 새 제안 아이디어여야 하며 Confirm Needed는 confirmNeededNote에만 배치하라.',
         '각 슬라이드 문안은 슬라이드 아웃라인에 포함된 retrievalQuery와 evidenceSnippets를 우선 근거로 사용하라. evidenceSnippets는 해당 slideTitle, slideType, slidePurpose로 검색된 슬라이드별 RFP/RAG 근거이며, 다른 슬라이드의 evidenceSnippets를 해당 슬라이드의 RFP 사실처럼 전용하지 말라.',
         'winningStrategyBrief / proposalThesis / experienceLogic은 Winning Strategy Layer 메타데이터다. 제공된 값이 있으면 보존해 제안서 문안의 전략 축에 반영하고, 없으면 서버 fallback 값을 사용하라. 이 메타데이터가 없다는 이유로 장표 문안 생성을 중단하지 말라.',
         'evidenceSnippets에 있는 chunk category와 importance를 반영해 high 중요도 및 해당 슬라이드 matchedCategories 근거를 우선 사용하라. evidenceCount가 0이거나 관련 근거가 없으면 기존처럼 분석 결과, 콘셉트, 아웃라인을 사용하되 RFP 사실이라고 단정하지 말고 제안 가정/운영 가정으로 표현하라.',
         referenceGuardInstruction,
+        buildConstraintPriorityGuardInstruction(),
+        buildSelectedConceptDominanceInstruction(),
         'RFP에 명시되지 않은 필수 요구사항, KPI 수치, 일정, 평가 기준, 공간 제약은 만들지 말라. 근거가 부족한 내용은 “제안 가정상”, “운영 설계 기준으로”, “추후 발주처 확인 후”처럼 가정 또는 확인 필요 문장으로 작성하라.',
         'proposalScopeTypes와 proposalStructureGuard를 준수하라. contentDevelopment + boothExhibition에서는 Hero Content, Sub Content, Zoning & Flow, Content Scenario, Reference, Schedule, Credential 문안에 집중하고, RFP에 명시되지 않은 Viral/Communication Strategy, KPI/Performance Goal, Operation Plan, Output & Share, Visitor Reward, SNS Sharing, Marketing Campaign 내용으로 확장하지 말라.',
         'KPI는 정량 targetKPI 또는 평가 기준의 performance metrics 요구가 있을 때만 별도 장표 본문으로 작성한다. “이해도 제고”, “브랜드 인지도 상승”은 프로젝트 목표/전략 문장으로만 처리한다. Operation Plan은 부스 운영 계획, staffing, onsite operation, visitor flow operation, maintenance, safety operation이 명시된 경우에만 작성하고 그렇지 않으면 Schedule로 제한한다.',
-        isEventOperationType ? '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 콘셉트는 단순 시스템명이나 운영 플랫폼명이 아니라 행사 목적, 브랜드 메시지, 파트너십, 기술 공유, 비즈니스 기회를 압축한 행사 정체성으로 표현하라. Experience Structure, Main Experience Image, Key Experience Asset, Visitor Action, Interactive Flow, Content Mechanism, Output & Share, Viral Communication Strategy, Media Experience Overview, Key Media Scene, Photo / Viral Spot, Hands-on Demo 장표와 본문 표현은 생성하지 말라. Operation Framework 장표는 등록, 세션, 파트너 부스, 네트워킹, 동선, 인력, 리스크를 연결하는 운영 체계로 작성하라.' : '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 선택되지 않은 콘셉트, 후보 간 비교, 평가 점수, 보류 사유는 어떤 장표에서도 언급하지 말라. Concept Candidates, 콘셉트 후보 3안 비교, 3개 콘셉트 비교표, 선택되지 않은 콘셉트 설명, 내부 평가 점수표 장표는 절대 작성하지 말라. Experience Approach 장표는 내부 분석 항목명이 아니라 Challenge, Insight, Opportunity, Approach 네 항목의 제안서 문장으로 작성하고, “후보 중 선택”이 아니라 “이 과제를 해결하려면 이러한 경험 접근이 필요하고 따라서 이 핵심 콘셉트로 전개해야 한다”는 논리로 작성하라. Concept Rationale 장표는 Core Concept보다 먼저 두고 문제 인식, 발주처 니즈, 관람객 장벽, 전략적 전환, 컨셉 도출 이유를 간결히 설명하라. Core Concept 장표는 단순 소개가 아니라 Concept Name, Concept Statement, Core Message, Experience Logic, Why This Concept 구성의 전시 주제 선언으로 작성하라. Why This Concept에는 핵심 과제와 타깃 인사이트를 해결하기 위해 왜 이 콘셉트가 필요한지 설명하라. Experience Structure 장표에는 Spatial Zone, Hands-on Demo / Interactive Experience, Media / Signage, Photo / Viral Spot, Output / Share 항목을 포함하되 각 항목은 1~2문장 이내로 핵심 콘셉트의 실행 확장 구조를 보여줘라. 최종 본문에는 내부 JSON 필드명 또는 camelCase 항목명을 노출하지 말라.',
+        isEventOperationType ? '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 콘셉트는 단순 시스템명이나 운영 플랫폼명이 아니라 행사 목적, 브랜드 메시지, 파트너십, 기술 공유, 비즈니스 기회를 압축한 행사 정체성으로 표현하라. Experience Structure, Main Experience Image, Key Experience Asset, Visitor Action, Interactive Flow, Content Mechanism, Output & Share, Viral Communication Strategy, Media Experience Overview, Key Media Scene, Photo / Viral Spot, Hands-on Demo 장표와 본문 표현은 생성하지 말라. Operation Framework 장표는 등록, 세션, 파트너 부스, 네트워킹, 동선, 인력, 리스크를 연결하는 운영 체계로 작성하라.' : '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 선택되지 않은 콘셉트, 후보 간 비교, 평가 점수, 보류 사유는 어떤 장표에서도 언급하지 말라. Concept Candidates, 콘셉트 후보 3안 비교, 3개 콘셉트 비교표, 선택되지 않은 콘셉트 설명, 내부 평가 점수표 장표는 절대 작성하지 말라. Experience Approach 장표는 내부 분석 항목명이 아니라 Challenge, Insight, Opportunity, Approach 네 항목의 제안서 문장으로 작성하고, “후보 중 선택”이 아니라 “이 과제를 해결하려면 이러한 경험 접근이 필요하고 따라서 이 핵심 콘셉트로 전개해야 한다”는 논리로 작성하라. Concept Rationale 장표는 Core Concept보다 먼저 두고 1) 관람객이 이해하기 어려운 것 2) 클라이언트가 믿게 해야 하는 것 3) 전략적 기회 4) 간극을 해결하는 경험 원칙 5) 왜 이 콘셉트가 그 원칙을 가장 잘 표현하는지 순서로 설명하라. Hydrogen/HTWO 프로젝트는 invisible/system-based hydrogen, production-storage-transport-use value chain, Hyundai Motor Group integrated future energy system, HTWO hydrogen transition leadership, connected system의 visible/experiential 전환을 중심 논리로 삼고 columns/booth/layout을 출발점으로 삼지 말라. Core Concept 장표는 단순 소개가 아니라 Concept Name, Concept Statement, Core Message, Experience Logic, Why This Concept 구성의 전시 주제 선언으로 작성하라. Why This Concept에는 핵심 과제와 타깃 인사이트를 해결하기 위해 왜 이 콘셉트가 필요한지 설명하라. Experience Structure 장표에는 Spatial Zone, Hands-on Demo / Interactive Experience, Media / Signage, Photo / Viral Spot, Output / Share 항목을 포함하되 각 항목은 1~2문장 이내로 핵심 콘셉트의 실행 확장 구조를 보여줘라. 최종 본문에는 내부 JSON 필드명 또는 camelCase 항목명을 노출하지 말라.',
         '제안 아이디어와 장표 문안은 analysis.requiredDeliverables, analysis.scopeOfWork, analysis.taskSections[].requiredDeliverables를 최우선 기준으로 삼고 analysis.requiredScope, analysis.productInfo, analysis.productFeatures 중심으로만 생성하라. proposalType별 템플릿보다 RFP 필수 항목과 과업 범위가 우선이다. analysis.referenceOnly, analysis.doNotTreatAsScope, analysis.existingAssets 항목은 독립 체험 모듈/제품 상세/신규 콘텐츠 단위로 생성하지 말고 참고 방향 또는 레퍼런스 인사이트로만 사용하라.',
         'RFP Requirement Response / 과업 대응표 장표는 RFP 요구사항, 대응 장표, 제안 방향, 비고 형식의 표처럼 읽히게 작성하라. requiredDeliverables와 scopeOfWork는 개별 단독 장표를 과도하게 만들지 말고 먼저 과업 대응표 row와 기존 본문 장표 bullet/note에 매핑하라. 그래도 불가능한 경우에만 유사 항목을 묶은 보완 장표에 요구사항명을 명시하라.',
-        'Evaluation Criteria 관련 장표와 각 chapter 문안은 analysis.evaluationCriteria 및 evaluationCriteria retrieval chunk를 근거로 심사 기준에 어떻게 대응하는지 드러나게 작성하라. Reference Insight 또는 Design Reference Direction 장표가 있으면 FF7, S26 Showcase, MDW Art Wall, Foldable Monument를 우선 참고해 referenceInsights 배열에 referenceName, referenceType, whatToLearn, howToApply, caution을 채워라. caution에는 “실제 제안 범위가 아닌 참고 사례”라는 의미가 분명히 드러나야 한다.',
-        '참고 사례를 다룰 때는 “임팩트 있는 전시 요소 참고 방향”, “기존 캠페인에서 확인된 성공 요소”, “참고 사례 기반 설계 원칙”, “레퍼런스 인사이트”처럼 표현하라. FF7 체험 상세, S26 체험 상세, C2 체험 상세, 기존 캠페인명 체험 상세 같은 신규 모듈 장표 또는 productExperienceDetails를 만들지 말라.',
+        'Evaluation Criteria 관련 장표와 각 chapter 문안은 analysis.evaluationCriteria 및 evaluationCriteria retrieval chunk를 근거로 심사 기준에 어떻게 대응하는지 드러나게 작성하라. Reference Insight 또는 Design Reference Direction 장표가 있으면 현재 프로젝트 evidence에 명시된 reference만 referenceInsights 배열에 작성하고 referenceName, referenceType, whatToLearn, howToApply, caution, sourceEvidence, referenceAllowed를 채워라. sourceEvidence가 없거나 referenceAllowed=false이면 해당 reference와 장표를 제거하라. caution에는 “실제 제안 범위가 아닌 참고 사례”라는 의미가 분명히 드러나야 한다.',
+        '참고 사례를 다룰 때는 현재 프로젝트 evidence에 명시된 이름만 “임팩트 있는 전시 요소 참고 방향”, “기존 캠페인에서 확인된 성공 요소”, “참고 사례 기반 설계 원칙”, “레퍼런스 인사이트”처럼 표현하라. 근거 없는 프로젝트명이나 기존 캠페인명을 신규 모듈 장표 또는 productExperienceDetails로 만들지 말라.',
         `Key Experience Asset Concept 슬라이드에는 selectedConcept.keyExperienceAssetDirection을 기준으로 프로젝트 핵심 체험 자산을 반드시 1~3개로 압축해 keyExperienceAssets 배열에 작성하라. 각 asset은 ${keyExperienceAssetFields.join(', ')} 항목을 포함한다. 일반 assetType 후보 목록은 bodyBullets에 나열하지 말라. 참고 가능한 assetType 범위는 ${assetTypeGuide}이지만 PPT에는 선택된 1~3개만 보이게 작성하라.`,
         'assetType을 무조건 Monument로 고정하지 말라. RFP에서 모뉴먼트를 요구한 경우에만 Monument를 선택할 수 있다. 공간 구성 중심이면 Spatial Zone, 체험 콘텐츠 중심이면 Interactive Experience, 영상/LED/미디어 중심이면 Media Content 또는 Digital Signage, 촬영/공유 중심이면 Photo / Viral Spot, 제품 비교/시연 중심이면 Product Trial Kit 또는 Hands-on Demo를 우선 검토하라.',
         '제품 또는 주요 콘텐츠 단위는 analysis.productFeatures의 product/keyFeature/valueProposition을 우선 반영하고 analysis.requiredDeliverables, analysis.scopeOfWork, analysis.taskSections.requiredDeliverables, analysis.requiredScope, analysis.productInfo 또는 analysis.productFeatures에 명시된 제품/서비스 단위만 기준으로 삼아 각 단위별 Product Experience Detail 장표를 반드시 생성하라. Q8/H8/B8처럼 제품 코드가 복수로 감지되면 Q8, H8, B8 각각의 상세 장표 또는 제품별 비교표를 만들고, “폴더블 갤럭시 제품 체험 모듈”처럼 포괄 이름 하나로 병합하지 말라. 동일 제품/동일 체험 장표는 중복 생성하지 말고 제품당 1~2장으로 제한하라. Q8/H8/B8처럼 복수 제품이 있으면 한 제품에 상세 장표가 몰리지 않도록 균형 있게 배치하라. 같은 제품에 2장이 필요할 때만 “체험 개요”와 “체험 시나리오”처럼 역할을 명확히 분리하라. productExperienceDetails 배열에는 productCode, productRole, coreValue, experienceTitle, oneLineExperience, visitorMission, visitorAction, systemResponse, mediaOrObject, spatialPlacement, outputOrReward, snsSharePoint, visualDirection, imagePlaceholder, diagramSuggestion을 채워라. 단순 제품 설명이 아니라 방문객 행동, 시스템 반응, 결과물이 명확한 콘텐츠만 작성하라. referenceOnly/doNotTreatAsScope/existingAssets의 참고 사례, 기존 캠페인, 레슨런드 항목은 제외하라. “제작”, “개발”, “운영”, “구성”, “기획”, “제안” 같은 과업/업무 범위 표현은 체험 콘텐츠명으로 사용하지 말고 실행 계획, 제작 범위, 운영 계획 장표에서만 다루라.',
@@ -414,8 +416,10 @@ ${JSON.stringify(outlineWithEvidence, null, 2)}
         sanitizeGeneratedSlides(removeInternalConceptComparisonSlides(sanitizeKpiSlides(enhanceConceptFlowSlides(result.slides, body.conceptDevelopmentLogic, body.selectedConcept), body.analysis)), productCodes),
         body.input,
         body.analysis,
+        { selectedConcept: body.selectedConcept, proposalNarrative, conceptDevelopmentLogic: body.conceptDevelopmentLogic },
       ),
       body.analysis,
+      body.documentChunks ?? [],
     );
     return NextResponse.json(sanitizedSlides.map((slide) => ({
       ...slide,
