@@ -23,6 +23,8 @@ create table if not exists public.documents (
   mime_type text,
   source_type text,
   metadata jsonb,
+  status text,
+  file_size bigint,
   created_at timestamptz not null default now()
 );
 
@@ -39,6 +41,9 @@ create table if not exists public.chunks (
   page_number integer,
   slide_number integer,
   section_title text,
+  source_type text,
+  source_name text,
+  token_count integer,
   embedding vector(1536),
   metadata jsonb,
   created_at timestamptz not null default now(),

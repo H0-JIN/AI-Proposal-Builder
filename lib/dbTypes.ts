@@ -37,6 +37,8 @@ export interface DocumentRecord {
   mime_type: string | null;
   source_type: string | null;
   metadata: JsonValue | null;
+  status: string | null;
+  file_size: number | null;
   created_at: string;
 }
 
@@ -54,6 +56,9 @@ export interface ChunkRecord {
   page_number: number | null;
   slide_number: number | null;
   section_title: string | null;
+  source_type: string | null;
+  source_name: string | null;
+  token_count: number | null;
   embedding: number[] | null;
   metadata: JsonValue | null;
   created_at: string;
@@ -71,7 +76,7 @@ export interface Database {
       };
       documents: {
         Row: DocumentRecord;
-        Insert: Partial<Pick<DocumentRecord, 'id' | 'mime_type' | 'source_type' | 'metadata' | 'created_at'>> &
+        Insert: Partial<Pick<DocumentRecord, 'id' | 'mime_type' | 'source_type' | 'metadata' | 'status' | 'file_size' | 'created_at'>> &
           Pick<DocumentRecord, 'project_id' | 'file_name' | 'role'>;
         Update: Partial<Omit<DocumentRecord, 'id' | 'project_id' | 'created_at'>>;
         Relationships: [
@@ -86,7 +91,7 @@ export interface Database {
       };
       chunks: {
         Row: ChunkRecord;
-        Insert: Partial<Pick<ChunkRecord, 'id' | 'category' | 'categories' | 'tags' | 'importance' | 'page_number' | 'slide_number' | 'section_title' | 'embedding' | 'metadata' | 'created_at'>> &
+        Insert: Partial<Pick<ChunkRecord, 'id' | 'category' | 'categories' | 'tags' | 'importance' | 'page_number' | 'slide_number' | 'section_title' | 'source_type' | 'source_name' | 'token_count' | 'embedding' | 'metadata' | 'created_at'>> &
           Pick<ChunkRecord, 'project_id' | 'document_id' | 'chunk_index' | 'chunk_text'>;
         Update: Partial<Omit<ChunkRecord, 'id' | 'project_id' | 'document_id' | 'created_at'>>;
         Relationships: [
