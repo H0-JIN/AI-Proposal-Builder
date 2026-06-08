@@ -14,6 +14,16 @@ function normalizeText(value?: string) {
   return value?.trim().replace(/\s+/g, ' ') ?? '';
 }
 
+function normalizeEvidenceList(value?: string | string[]) {
+  if (Array.isArray(value)) return value.map(normalizeText).filter(Boolean);
+  const normalized = normalizeText(value);
+  return normalized ? [normalized] : [];
+}
+
+function hasSourceEvidence(value?: string | string[]) {
+  return normalizeEvidenceList(value).length > 0;
+}
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -99,8 +109,8 @@ function asReferenceInsightTitle(slide: SlideOutline | SlideContent, sourceEvide
     slidePurpose: '참고 사례를 신규 과업이나 체험 모듈로 오해하지 않도록 현재 프로젝트 근거 기반 벤치마크 인사이트와 적용 원칙만 정리한다.',
     keyMessage: normalizeText(slide.keyMessage) || '레퍼런스는 실행 범위가 아니라 콘셉트와 공간·콘텐츠 설계의 참고 원칙으로만 활용합니다.',
     mainCopy: '본 장표는 현재 업로드된 RFP/제안 자료에 명시된 참고 사례의 학습 포인트를 정리하고, 신규 제작 범위나 제품 체험 단위로 확장하지 않는 적용 원칙을 명확히 합니다.',
-    sourceEvidence,
-    referenceAllowed: Boolean(sourceEvidence),
+    sourceEvidence: normalizeEvidenceList(sourceEvidence),
+    referenceAllowed: hasSourceEvidence(sourceEvidence),
   };
 }
 
@@ -210,7 +220,7 @@ export function applyReferenceGuardToSlides(slides: SlideContent[], analysis: An
       }
 
       const sourceEvidence = findSourceEvidence(matchedAllowedTerm, analysis, chunks);
-      const guarded = asReferenceInsightTitle(slide, sourceEvidence) as SlideContent & { sourceEvidence?: string; referenceAllowed?: boolean };
+      const guarded = asReferenceInsightTitle(slide, sourceEvidence) as SlideContent;
       if (!guarded.referenceAllowed) return { ...slide, referenceInsights: guardedInsights };
       return {
         ...guarded,

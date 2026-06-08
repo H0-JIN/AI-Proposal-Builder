@@ -192,7 +192,7 @@ export interface SlideNarrativeMetadata {
   slideRole?: string;
   relationToThesis?: string;
   whyThisSlideExists?: string;
-  sourceEvidence?: string;
+  sourceEvidence?: string[];
   referenceAllowed?: boolean;
 }
 

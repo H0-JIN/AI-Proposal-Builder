@@ -90,6 +90,10 @@ function sanitizeImagePlaceholder(value?: string) {
   return text.length > 40 ? `${text.slice(0, 37)}…` : text;
 }
 
+function sanitizeSourceEvidence(value?: string[]) {
+  return value?.map(normalizeText).filter(Boolean) ?? [];
+}
+
 function sanitizeBullets(items: string[]) {
   const cleaned = items
     .map(removeInternalInstructionText)
@@ -132,6 +136,8 @@ function buildFallbackProductDetailSlide(productCode: string): SlideContent {
     slideTitle: `${productCode} 체험 상세`,
     slidePurpose: `${productCode} 단위의 방문객 미션, 행동, 시스템 반응, 결과물, SNS 공유 포인트를 제품별로 복구해 제시한다.`,
     keyMessage: `${productCode}는 포괄 모듈로 합치지 않고 개별 제품 특성에 맞춘 체험 흐름으로 설계합니다.`,
+    sourceEvidence: [],
+    referenceAllowed: false,
     mainCopy: `${productCode} 체험은 선택 콘셉트의 메시지를 제품별 미션과 즉각적인 체험 결과물로 전환해 방문객이 직접 이해하고 공유할 수 있게 합니다.`,
     bodyBullets: [
       `visitorMission: ${productCode}의 핵심 가치를 직접 확인하는 미션을 수행합니다.`,
@@ -192,6 +198,8 @@ export function sanitizeGeneratedSlides(slides: SlideContent[], expectedProductU
       keyMessage: removeInternalInstructionText(slide.keyMessage) || slide.keyMessage,
       mainCopy: removeInternalInstructionText(slide.mainCopy) || slide.mainCopy,
       bodyBullets: sanitizeBullets(slide.bodyBullets ?? []),
+      sourceEvidence: sanitizeSourceEvidence(slide.sourceEvidence),
+      referenceAllowed: Boolean(slide.referenceAllowed),
       imagePlaceholder: sanitizeImagePlaceholder(slide.imagePlaceholder),
       productExperienceDetails: sanitizeProductDetails(slide.productExperienceDetails ?? []),
       speakerNote: normalizeText(slide.speakerNote).replace(/Background insight only:/gi, '배경 인사이트:'),

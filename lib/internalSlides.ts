@@ -83,12 +83,20 @@ function sanitizeStringArray(values?: string[]) {
   return values?.map((value) => sanitizeFinalPptxText(value)).filter(Boolean) ?? [];
 }
 
+function sanitizeEvidenceList(values?: string[]) {
+  return sanitizeStringArray(values);
+}
+
+function hasSanitizedEvidence(values?: string[]) {
+  return sanitizeEvidenceList(values).length > 0;
+}
+
 function isInvalidFinalReferenceSlide(slide: SlideContent) {
   const slideText = [slide.slideType, slide.slideTitle, slide.slidePurpose, slide.keyMessage, slide.mainCopy].join(' ');
   if (!finalReferenceSlidePattern.test(slideText)) return false;
 
   const hasAllowedInsight = (slide.referenceInsights ?? []).some((reference) => reference.referenceAllowed && sanitizeFinalPptxText(reference.sourceEvidence));
-  return !slide.referenceAllowed || !sanitizeFinalPptxText(slide.sourceEvidence) || !hasAllowedInsight;
+  return !slide.referenceAllowed || !hasSanitizedEvidence(slide.sourceEvidence) || !hasAllowedInsight;
 }
 
 export function sanitizeFinalPptxSlides(slides: SlideContent[]) {
@@ -112,6 +120,7 @@ export function sanitizeFinalPptxSlides(slides: SlideContent[]) {
     diagramSuggestion: sanitizeFinalPptxText(slide.diagramSuggestion),
     speakerNote: sanitizeFinalPptxText(slide.speakerNote),
     confirmNeededNote: sanitizeFinalPptxText(slide.confirmNeededNote),
+    sourceEvidence: sanitizeEvidenceList(slide.sourceEvidence),
     productExperienceDetails: slide.productExperienceDetails?.map((detail) => ({
       ...detail,
       productCode: sanitizeFinalPptxText(detail.productCode),

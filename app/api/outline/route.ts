@@ -15,6 +15,24 @@ import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
 import { getPresentationConceptName } from '@/lib/conceptNamingGuard';
 
+
+function normalizeOutlineSourceEvidence(value: unknown) {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean);
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized ? [normalized] : [];
+  }
+  return [];
+}
+
+function sanitizeOutlineSlides(slides: SlideOutline[] = []) {
+  return slides.map((slide) => ({
+    ...slide,
+    sourceEvidence: normalizeOutlineSourceEvidence((slide as { sourceEvidence?: unknown }).sourceEvidence),
+    referenceAllowed: Boolean(slide.referenceAllowed),
+  }));
+}
+
 const styleGuides = {
   basic: '프로젝트 이해, 과제 정의, 경험 전략, 콘셉트, 공간/콘텐츠 구성, 운영 및 기대 효과가 이어지는 기본형 구조.',
   cheil: '브랜드 과제, 소비자 인사이트, 경험 전략, 캠페인형 공간 아이디어, 확산/바이럴 포인트, 실행 계획을 강조하는 제일기획형 구조.',
@@ -72,7 +90,7 @@ export async function POST(request: Request) {
         '아웃라인은 Proposal Narrative의 5단계 구조를 최우선으로 따른다: Phase 1 Problem Definition(시장/산업 맥락, 프로젝트 배경, 클라이언트 과제, audience insight) → Phase 2 Strategic Declaration(전략 기회, proposal thesis, concept rationale, core concept) → Phase 3 Experience Strategy(경험 원칙, visitor journey, spatial strategy) → Phase 4 Content Proposal(hero experience, main experience, media/interactive content, key proof points) → Phase 5 Proof & Impact(expected impact, differentiation, feasibility, 필요한 경우에만 operation/RFP response table).',
         'Core Concept 이전에는 반드시 1) Project / Market Context 2) Core Problem or Challenge 3) Audience Insight 4) Strategic Opportunity / Strategic Direction 5) Concept Rationale 순서가 먼저 설명되어야 한다. Core Concept 장표는 왜 이 콘셉트가 필요한지 설명한 뒤에만 배치하고, Audience Insight 또는 Strategic Direction보다 앞에 두지 말라.',
         'Concept Rationale은 공간 제약에서 시작하지 말고 1) 관람객이 이해하기 어려운 것 2) 클라이언트가 관람객에게 믿게 해야 하는 것 3) 프로젝트의 전략적 기회 4) 간극을 해결하는 경험 원칙 5) 선택 콘셉트가 그 원칙을 가장 잘 표현하는 이유 순서로 작성하라. Hydrogen/HTWO 프로젝트는 수소가 보이지 않고 시스템 기반이라 어렵다는 점, 생산·저장·운송·사용으로 이어지는 value chain, Hyundai Motor Group의 통합 미래 에너지 시스템, HTWO의 hydrogen transition 리더십 신뢰, 연결된 시스템을 보이는 경험화에 집중하라.',
-        '각 outline slide는 slidePurpose를 Problem, Insight, Strategy, Concept, Experience, Content, Proof, Impact 중 하나로만 지정하고 slideRole, relationToThesis, whyThisSlideExists를 반드시 작성하라.',
+        '각 outline slide는 slidePurpose를 Problem, Insight, Strategy, Concept, Experience, Content, Proof, Impact 중 하나로만 지정하고 slideRole, relationToThesis, whyThisSlideExists를 반드시 작성하라. sourceEvidence는 문자열 배열로 작성하고, 현재 프로젝트 근거가 없으면 반드시 빈 배열 []을 넣어라. referenceAllowed는 Reference Guard가 허용한 현재 프로젝트 레퍼런스 근거가 있을 때만 true이고 기본값은 false다.',
         'Company capability/company introduction, KPI/performance goal, Operation plan, VIP support plan, Schedule, Confirmation needs/additional request, RFP requirement table은 현재 RFP가 명시적으로 요구하거나 proposalThesis 증명에 강하게 연결될 때만 포함한다. 포함 시 relationToThesis와 whyThisSlideExists에 thesis 지원 논리를 명확히 작성하라.',
         'RFP 성격에 맞게 슬라이드 제목은 자동 조정하라. 예: 폴더블 제품별 체험 저니, 기업 홍보관 비전 전달 공간, 팝업 포토/바이럴 구조, 미디어 전시 몰입형 시나리오, 의전시설 VIP 동선.',
         '아웃라인 retrieval은 proposal structure 가중치 requiredDeliverables 35, evaluationCriteria 20, performanceGoal 20, constraints 15, venue 10 순서와 category별 목적에 맞춰 사용하라. requiredDeliverables는 필수 목차와 RFP Requirement Response, evaluationCriteria는 평가 항목별 챕터 순서·차별화 장표·심사 대응 메시지, performanceGoal은 KPI 대응 및 성과 측정, constraints는 실행 전략과 운영/제작 가능성, venue는 공간 전략과 동선/장소 적용 장표에만 우선 사용한다.',
@@ -101,7 +119,7 @@ export async function POST(request: Request) {
         '공간 구성과 콘텐츠 구성을 한 장에 뭉뚱그리지 말고 핵심 체험 단위별로 분리하라.',
         'RFP나 분석 결과의 taskSections.requiredDeliverables/requiredScope/productInfo에 제품/서비스 단위가 있으면 그 단위별 Product Experience Detail 장표를 포함하되, “제작”, “개발”, “운영”, “구성”, “기획”, “제안” 같은 과업/업무 범위 표현은 체험 콘텐츠명으로 사용하지 말라. 체험 상세 장표는 방문객 행동, 시스템 반응, 결과물이 명확한 콘텐츠만 생성한다. referenceOnly/doNotTreatAsScope/existingAssets에서만 감지된 참고 사례, 기존 캠페인, 레슨런드 항목은 제품별 체험 상세 장표로 만들지 말라. 포괄적인 “폴더블 갤럭시 체험존” 대신 대화면 멀티태스킹 체험, 미디어 최적화 폼팩터 체험, 전면 디스플레이 셀피 체험처럼 방문객 행동 중심의 구체 제목을 사용하라.',
         'winningStrategyBrief / proposalThesis / experienceLogic은 Winning Strategy Layer 메타데이터다. 제공된 값이 있으면 보존해 제안서 구조의 전략 흐름에 반영하고, 없으면 서버에서 생성된 fallback 값을 사용하라. 이 메타데이터가 없다는 이유로 아웃라인 생성을 중단하거나 빈 장표를 만들지 말라.',
-        'slideNumber는 1부터 순서대로 부여하라. 각 슬라이드에는 사용자가 수정할 수 있는 mainCopy를 포함하고, mainCopy에는 해당 장표의 본문 방향 또는 대표 제안서 문장을 1~2문장으로 작성하라.',
+        'slideNumber는 1부터 순서대로 부여하라. 각 슬라이드에는 사용자가 수정할 수 있는 mainCopy를 포함하고, mainCopy에는 해당 장표의 본문 방향 또는 대표 제안서 문장을 1~2문장으로 작성하라. 모든 slide item은 schema의 모든 필드를 빠짐없이 채워야 하며 sourceEvidence가 없을 때도 []로 채워 생성 실패를 방지하라.',
       ].join('\n'),
       user: `사용자 선택 제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
 RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}
@@ -141,7 +159,8 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
 - Operation Plan 장표 허용: ${structureGuard.hasExplicitOperationPlan ? '예' : '아니오'}`,
     });
 
-    const expandedSlides = expandExperiencePlanOutline(result.slides, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
+    const sanitizedSlides = sanitizeOutlineSlides(result.slides);
+    const expandedSlides = expandExperiencePlanOutline(sanitizedSlides, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
     const coverageCheckedSlides = ensureRfpRequirementCoverage(removeInternalConceptComparisonSlides(expandedSlides), body.analysis, body.documentChunks ?? []);
     const guardedSlides = applyReferenceGuardToOutline(
       applyProposalStructureGuardToOutline(coverageCheckedSlides, body.input, body.analysis, { selectedConcept: body.selectedConcept, proposalNarrative, conceptDevelopmentLogic: body.conceptDevelopmentLogic }),

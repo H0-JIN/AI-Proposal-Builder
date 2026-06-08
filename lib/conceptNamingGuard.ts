@@ -1,5 +1,25 @@
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProposalNarrative } from './types';
 
+const WEAK_GENERIC_CONCEPT_NAMES = [
+  'hydrogen flow',
+  'future nexus',
+  'pulse of hydrogen',
+  'future grid',
+  'living h2',
+  'hydrogen experience',
+  'hydrogen pavilion',
+  'hydrogen journey',
+];
+
+const WEAK_GENERIC_TOKEN_COMBINATIONS = [
+  ['hydrogen', 'flow'],
+  ['future', 'nexus'],
+  ['future', 'grid'],
+  ['hydrogen', 'experience'],
+  ['hydrogen', 'pavilion'],
+  ['hydrogen', 'journey'],
+];
+
 const GENERIC_CATEGORY_WORDS = [
   'pavilion',
   'zone',
@@ -88,6 +108,15 @@ function containsAny(value: string, terms: string[]) {
   return terms.some((term) => normalized.includes(term.toLowerCase()));
 }
 
+function hasWeakGenericConceptName(name: string) {
+  const normalized = normalizedText(name);
+  const tokens = normalized.split(/[\s/·|+_-]+/).filter(Boolean);
+
+  return WEAK_GENERIC_CONCEPT_NAMES.includes(normalized) || WEAK_GENERIC_TOKEN_COMBINATIONS.some((combination) =>
+    combination.every((token) => tokens.includes(token))
+  );
+}
+
 function hasGenericMainNamingDevice(name: string) {
   const normalized = normalizedText(name);
   const tokens = normalized.split(/[\s/·|+_-]+/).filter(Boolean);
@@ -174,6 +203,7 @@ export function validateConceptNaming(
     if (!name.trim()) violations.push(`${label}: conceptName is empty.`);
     if (unitCount > 5 || name.length > 36) violations.push(`${label}: conceptName is too long for a presentation-ready title.`);
     if (isLikelySentence(name)) violations.push(`${label}: conceptName reads like an explanatory sentence or section heading.`);
+    if (hasWeakGenericConceptName(name)) violations.push(`${label}: conceptName is a weak generic keyword combination rather than a proposal-ready idea.`);
     if (hasGenericMainNamingDevice(name)) violations.push(`${label}: conceptName uses a generic category word as the main naming device.`);
     if (containsAny(name, constraintTerms)) violations.push(`${label}: conceptName appears to be derived from constraints, deliverables, venue, schedule, or implementation conditions.`);
   });
@@ -188,7 +218,8 @@ export function buildConceptNamingRetryInstruction(violations: string[]) {
   return [
     'CONCEPT NAMING GUARD REJECTION:',
     ...violations.map((violation) => `- ${violation}`),
-    'Regenerate all 3 concepts. Keep the strategic narrative, but replace rejected naming logic with names derived from proposalThesis, audience transformation, client vision, brand message, strategic opportunity, and core experience promise.',
+    'Regenerate all 3 concepts. Keep the strategic narrative, but replace rejected naming logic with concise, memorable, proposal-ready names derived from proposalThesis, audience transformation, client vision, HTWO/client brand message, hydrogen value chain where relevant, strategic opportunity, and core experience promise.',
     'Do not use constraints, columns, booth limits, venue limitations, schedule, budget, deliverable names, equipment, media types, object lists, or floor-plan limitations as conceptName sources.',
+    'Avoid weak generic names such as Hydrogen Flow, Future Nexus, Future Grid, Pulse of Hydrogen, Living H2, Hydrogen Experience, Hydrogen Pavilion, and Hydrogen Journey. Do not use external project names or unrelated case names to make naming feel stronger.',
   ].join('\n');
 }
