@@ -14,10 +14,13 @@ import {
   validateExtractedText,
 } from '@/lib/extractedTextValidation';
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_RFP_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_DB_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const supportedExtensions = ['pdf', 'docx', 'pptx'] as const;
+const dbSupportedExtensions = ['pdf', 'docx', 'pptx', 'txt', 'md'] as const;
 
 type SupportedExtension = (typeof supportedExtensions)[number];
+type DbSupportedExtension = (typeof dbSupportedExtensions)[number];
 
 type PdfObject = {
   id: number;
@@ -499,18 +502,40 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const file = formData.get('file');
+    const mode = formData.get('mode') === 'db' ? 'db' : 'rfp';
+    const maxFileSizeBytes = mode === 'db' ? MAX_DB_FILE_SIZE_BYTES : MAX_RFP_FILE_SIZE_BYTES;
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: '업로드된 파일을 찾을 수 없습니다.' }, { status: 400 });
     }
 
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json({ error: '파일 크기가 너무 큽니다. 10MB 이하 파일을 업로드해주세요.' }, { status: 413 });
+    if (file.size > maxFileSizeBytes) {
+      const maxMb = Math.floor(maxFileSizeBytes / 1024 / 1024);
+      return NextResponse.json({ error: `파일 크기가 너무 큽니다. ${maxMb}MB 이하 파일을 업로드해주세요.` }, { status: 413 });
     }
 
     const extension = getExtension(file.name);
-    if (!supportedExtensions.includes(extension as SupportedExtension)) {
-      return NextResponse.json({ error: '지원하지 않는 파일 형식입니다. PDF, DOCX 또는 PPTX 파일을 업로드해주세요.' }, { status: 400 });
+    const isSupported = mode === 'db'
+      ? dbSupportedExtensions.includes(extension as DbSupportedExtension)
+      : supportedExtensions.includes(extension as SupportedExtension);
+
+    if (!isSupported) {
+      const formats = mode === 'db' ? 'PDF, DOCX, PPTX, TXT 또는 MD' : 'PDF, DOCX 또는 PPTX';
+      return NextResponse.json({ error: `지원하지 않는 파일 형식입니다. ${formats} 파일을 업로드해주세요.` }, { status: 400 });
+    }
+
+    if (mode === 'db' && (extension === 'txt' || extension === 'md')) {
+      const text = (await file.text()).trim();
+      if (!text) {
+        return NextResponse.json({ error: '저장할 텍스트를 찾을 수 없습니다.' }, { status: 422 });
+      }
+
+      return NextResponse.json({
+        text,
+        status: 'success',
+        message: extension === 'md' ? 'MD 텍스트를 DB 저장용으로 읽었습니다.' : 'TXT 텍스트를 DB 저장용으로 읽었습니다.',
+        extractedPageCount: 1,
+      });
     }
 
     const arrayBuffer = await file.arrayBuffer();
