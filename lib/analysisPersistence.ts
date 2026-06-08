@@ -1,8 +1,9 @@
 import 'server-only';
 
 import { createDocument, createProject, isSupabaseConfigured, saveChunks } from './ragStorage';
-import type { DocumentRole, JsonValue } from './dbTypes';
-import type { DocumentChunk, DocumentType } from './rag';
+import type { JsonValue } from './dbTypes';
+import type { DocumentChunk } from './rag';
+import { inferUploadedDocumentRole, mapDocumentTypeToStorageRole } from './documentRoles';
 import type { AnalysisResult, ProjectInput, UploadedDocument } from './types';
 
 export type AnalysisDbSaveStatus = 'disabled' | 'saved' | 'failed';
@@ -57,13 +58,6 @@ function inferClientName(analysis: AnalysisResult, input: ProjectInput) {
 
 function inferProposalType(analysis: AnalysisResult, input: ProjectInput) {
   return getStringProperty(analysis, ['projectType', 'proposalType', 'proposal_type']) || analysis.inferredProposalType || input.proposalType || null;
-}
-
-function mapDocumentRole(documentType?: DocumentType): DocumentRole {
-  if (documentType === 'rfp') return 'rfp';
-  if (documentType === 'finalProposal') return 'proposal';
-  if (documentType === 'reference') return 'reference';
-  return 'memo';
 }
 
 function toJsonValue(value: unknown): JsonValue | null {
@@ -124,12 +118,12 @@ export async function persistAnalysisToSupabase({ input, analysis, uploadedDocum
       const documentRecord = await createDocument({
         projectId: project.id,
         fileName: document.fileName || 'Analyzed document',
-        role: mapDocumentRole(document.documentType),
+        role: document.documentRole ?? inferUploadedDocumentRole(document.fileName, document.documentAnalysisText || document.extractedText) ?? mapDocumentTypeToStorageRole(document.documentType),
         mimeType: document.fileType || null,
         sourceType: document.visionUsed ? 'visionAnalysis' : 'textExtraction',
         metadata: toJsonValue({
           originalDocumentId: document.id,
-          documentRole: mapDocumentRole(document.documentType),
+          documentRole: document.documentRole ?? inferUploadedDocumentRole(document.fileName, document.documentAnalysisText || document.extractedText) ?? mapDocumentTypeToStorageRole(document.documentType),
           fileType: document.fileType || null,
           extractionStatus: document.extractionStatus,
           visionUsed: document.visionUsed ?? false,
@@ -154,6 +148,8 @@ export async function persistAnalysisToSupabase({ input, analysis, uploadedDocum
           pageNumber: chunk.pageNumber ?? null,
           slideNumber: chunk.slideNumber ?? null,
           sectionTitle: chunk.sectionTitle ?? null,
+          sourceType: chunk.sourceType,
+          sourceName: chunk.documentName,
           embedding: null,
           metadata: toJsonValue({
             originalChunkId: chunk.id,

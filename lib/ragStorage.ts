@@ -30,6 +30,9 @@ export interface SaveChunkInput {
   pageNumber?: number | null;
   slideNumber?: number | null;
   sectionTitle?: string | null;
+  sourceType?: string | null;
+  sourceName?: string | null;
+  tokenCount?: number | null;
   embedding?: number[] | null;
   metadata?: JsonValue | null;
 }
@@ -134,6 +137,9 @@ export async function saveChunks(input: SaveChunksInput): Promise<ChunkRecord[]>
       page_number: chunk.pageNumber ?? null,
       slide_number: chunk.slideNumber ?? null,
       section_title: chunk.sectionTitle ?? null,
+      source_type: chunk.sourceType ?? null,
+      source_name: chunk.sourceName ?? null,
+      token_count: chunk.tokenCount ?? null,
       embedding: chunk.embedding ?? null,
       metadata: chunk.metadata ?? null,
     }));
