@@ -192,6 +192,8 @@ export interface SlideNarrativeMetadata {
   slideRole?: string;
   relationToThesis?: string;
   whyThisSlideExists?: string;
+  sourceEvidence?: string;
+  referenceAllowed?: boolean;
 }
 
 export interface AnalysisResult {
@@ -353,6 +355,8 @@ export interface ReferenceInsight {
   whatToLearn: string;
   howToApply: string;
   caution: string;
+  sourceEvidence: string;
+  referenceAllowed: boolean;
 }
 
 export interface ExperienceScenarioStep {

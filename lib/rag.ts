@@ -114,7 +114,7 @@ const categoryKeywords: Record<ChunkCategory, string[]> = {
   organization: ['조직', 'pm', 'r&r', '보고 체계', '커뮤니케이션', '팀 구성'],
   riskManagement: ['리스크', '위험', '안전', '비상', '대응', '백업', 'contingency'],
   setupDismantling: ['설치', '철거', '반입', '반출', '시공', '셋업', '원상복구'],
-  designDirection: ['디자인', '톤앤매너', 'visual', '공간 연출', '무드', 'look', '브랜딩', '전시 참고 사례', 'FF7 스튜디오 모뉴먼트', 'S26 쇼케이스', '장줄리앙', '밀라노 디자인 위크', '아트월', 'C 브랜드 폴더블 모뉴먼트'],
+  designDirection: ['디자인', '톤앤매너', 'visual', '공간 연출', '무드', 'look', '브랜딩', '전시 참고 사례', '디자인 레퍼런스', '연출 참고', 'reference image', 'benchmark'],
   operationDirection: ['운영 방향', '운영 방안', '운영 계획', '운영 프로세스', '동선 운영', '현장 운영', '보안 운영 프로세스'],
   backgroundInsight: ['배경', '인사이트', '현황', '전년', '전년비', 'lesson learned', '레슨런드', '문제점', '방문객 확대'],
   concept: ['콘셉트', '컨셉', 'concept', 'core idea', 'big idea', '메시지'],
@@ -122,7 +122,7 @@ const categoryKeywords: Record<ChunkCategory, string[]> = {
   projectPurpose: ['목적', '배경', '기대효과', 'goal', 'objective', 'why', '프로젝트 개요'],
   projectObjective: ['프로젝트 목표', '목표', 'objective', 'project objective', '달성 목표', '추진 목표', '핵심 목표'],
   target: ['타깃', '대상', '고객', '참석자', '방문객', 'audience', 'target'],
-  referenceOnly: ['참고', '예시', '예:', '벤치마크', '레퍼런스', '사례', 'reference', 'lesson learned', '별첨', '전시 참고 사례', 'FF7 스튜디오 모뉴먼트', 'S26 쇼케이스', '장줄리앙', '밀라노 디자인 위크', '아트월', 'C 브랜드 폴더블 모뉴먼트'],
+  referenceOnly: ['참고', '예시', '예:', '벤치마크', '레퍼런스', '사례', 'reference', 'lesson learned', '별첨', '전시 참고 사례', '디자인 레퍼런스', '기존 사례', '참고 이미지'],
   existingAsset: ['기존', '보유', '활용 가능', '현재', 'as-is', '자산', '기집행', '기존 집기 활용', '내부 LED', '파사드', '스페이셜 사이니지', '현재 집기 활용 기준'],
   productFeature: ['Q8', 'H8', 'B8', '제품 특징', '제품 특장점', '핵심 기능', '주요 기능', 'key feature', 'feature', 'value proposition', '가치 제안', '제품 가치', '멀티태스킹', '폼팩터', '전면 디스플레이', '셀피'],
   kpi: ['KPI', 'kpi 달성 목표', '방문객 확대', '전년비', '1.1배', '25% 이상', '비중 확대', '상담', '판매 긍정 지표', '성과 지표', '목표 지표'],
@@ -382,10 +382,8 @@ const stageCategoryWeights: Partial<Record<RetrievalStage, Partial<Record<ChunkC
 };
 
 const referencePriorityPatterns = [
-  /\bFF\s*7\b|FF7|스튜디오\s*모뉴먼트/i,
-  /\bS\s*26\b|S26|쇼케이스/i,
-  /MDW|밀라노\s*디자인\s*위크|아트\s*월|Art\s*Wall/i,
-  /Foldable\s*Monument|폴더블\s*모뉴먼트/i,
+  /레퍼런스|벤치마크|참고\s*사례|reference|benchmark|case\s*study/i,
+  /디자인\s*레퍼런스|전시\s*참고\s*사례|reference\s*image|design\s*reference/i,
 ];
 
 function maxStageCategoryWeight(stage: RetrievalStage, chunkCategories: ChunkCategory[], targetCategories: Set<ChunkCategory>, categoryWeights?: Partial<Record<ChunkCategory, number>>) {

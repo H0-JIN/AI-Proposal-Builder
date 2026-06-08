@@ -149,6 +149,8 @@ export function sanitizeFinalPptxSlides(slides: SlideContent[]) {
       whatToLearn: sanitizeFinalPptxText(reference.whatToLearn),
       howToApply: sanitizeFinalPptxText(reference.howToApply),
       caution: sanitizeFinalPptxText(reference.caution),
+      sourceEvidence: sanitizeFinalPptxText(reference.sourceEvidence),
+      referenceAllowed: reference.referenceAllowed,
     })) ?? [],
   }));
 }

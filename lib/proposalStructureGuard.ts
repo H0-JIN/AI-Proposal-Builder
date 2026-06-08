@@ -1,4 +1,4 @@
-import type { AnalysisResult, ProjectInput, ProposalScopeType, SlideContent, SlideOutline } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ProjectInput, ProposalNarrative, ProposalScopeType, SlideContent, SlideOutline } from '@/lib/types';
 
 export const proposalScopeTypeLabels: Record<ProposalScopeType, string> = {
   contentDevelopment: '콘텐츠 개발',
@@ -17,6 +17,11 @@ const brandActivationPattern = /브랜드\s*액티베이션|brand\s*activation|�
 const operationOnlyPattern = /운영\s*대행|운영\s*용역|operation\s*only|현장\s*운영|인력\s*운영|스태핑|staffing|안전\s*운영|유지\s*관리|maintenance/i;
 const designBuildPattern = /설계\s*시공|디자인\s*시공|design\s*build|제작\s*설치|시공|철거|실시설계|공간\s*디자인|제작물\s*납품/i;
 const publicTenderPattern = /입찰|조달|나라장터|공고|제안요청서|평가\s*기준|정량\s*평가|정성\s*평가|우선협상|계약|용역/i;
+
+const spatialConstraintPattern = /column|columns|pillar|booth\s*(size|limit|constraint)|venue\s*(layout|limit|constraint)|floor\s*plan|layout\s*constraint|spatial\s*constraint|sightline|moving\s*line|traffic\s*flow|installation\s*limit|기둥|부스\s*(규모|제약|한계|조건)|공간\s*(제약|조건|한계)|행사장\s*(레이아웃|조건|제약)|장소\s*(조건|제약)|평면|동선|시야|시선|설치\s*(제약|조건)|면적|규격/i;
+const spatialAllowedSectionPattern = /spatial\s*strategy|zoning|zone|sightline|feasibility|implementation|risk\s*management|risk|layout|floor\s*plan|moving\s*line|traffic\s*flow|공간\s*전략|공간\s*구성|조닝|존|동선|시야|시선|실행\s*가능|구현|리스크|위험|평면|배치|운영\s*관리/i;
+const earlyStrategicPurposePattern = /Problem|Insight|Strategy|Concept/i;
+const strategicSectionPattern = /proposal\s*thesis|concept\s*name|concept\s*tagline|concept\s*rationale|core\s*message|core\s*concept|market\s*context|project\s*context|core\s*problem|challenge|audience\s*insight|strategic\s*opportunity|strategic\s*direction|제안\s*명제|콘셉트|컨셉|핵심\s*메시지|시장\s*맥락|프로젝트\s*맥락|핵심\s*문제|과제|관람객|타깃\s*인사이트|전략\s*기회|전략\s*방향/i;
 
 function compactText(values: unknown[]): string {
   return values
@@ -91,24 +96,93 @@ function isSuppressedGenericSlide(slide: Pick<SlideOutline | SlideContent, 'slid
   if (/viral|communication|sns|sharing|share|reward|marketing\s*campaign|visitor\s*reward|output\s*&\s*share|바이럴|확산|SNS|공유|리워드|방문객\s*보상|마케팅\s*캠페인/i.test(text) && !thesisConnected) return true;
   if (!guard.hasExplicitKpi && /KPI|performance\s*goal|expected\s*effect|성과\s*지표|성과\s*목표|기대\s*효과/i.test(text)) return true;
   if (!guard.hasExplicitOperationPlan && /operation\s*plan|staffing|onsite|maintenance|safety|운영\s*계획|스태핑|현장\s*운영|유지\s*관리|안전\s*운영/i.test(text)) return true;
-  if (!thesisConnected && /budget|company\s*introduction|schedule|rfp\s*requirement\s*table|media\s*experience\s*overview|content\s*mechanism|예산|회사\s*소개|일정|과업\s*대응표|요구사항\s*대응표|미디어\s*경험\s*개요|콘텐츠\s*작동\s*원리/i.test(text)) return true;
+  if (!thesisConnected && /budget|company\s*introduction|company\s*capability|vip\s*support|confirmation\s*needs|additional\s*request|schedule|rfp\s*requirement\s*table|media\s*experience\s*overview|content\s*mechanism|예산|회사\s*소개|회사\s*역량|수행\s*역량|VIP\s*지원|확인\s*필요|추가\s*요청|일정|과업\s*대응표|요구사항\s*대응표|미디어\s*경험\s*개요|콘텐츠\s*작동\s*원리/i.test(text)) return true;
   return false;
 }
+
+type StrategicGuardContext = {
+  selectedConcept?: ConceptCandidate;
+  proposalNarrative?: ProposalNarrative;
+  conceptDevelopmentLogic?: { proposalThesis?: string };
+};
 
 function renumber<T extends SlideOutline | SlideContent>(slides: T[]) {
   return slides.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
 }
 
-export function applyProposalStructureGuardToOutline(slides: SlideOutline[], input: ProjectInput, analysis: AnalysisResult) {
-  const guard = buildProposalStructureGuard(input, analysis);
-  const isContentDevelopment = guard.proposalScopeTypes.includes('contentDevelopment');
-  const filtered = slides.filter((slide) => !isSuppressedGenericSlide(slide, guard));
-  return renumber(filtered.slice(0, isContentDevelopment ? guard.maxSlideCount ?? filtered.length : filtered.length));
+function selectedConceptAnchor(context?: StrategicGuardContext) {
+  const conceptName = context?.selectedConcept?.conceptName || context?.selectedConcept?.conceptTitle || '핵심 콘셉트';
+  const coreMessage = context?.selectedConcept?.coreMessage || context?.selectedConcept?.conceptDefinition || context?.selectedConcept?.oneLineDefinition || '클라이언트 비전과 관람객 인식 전환을 하나의 경험 원칙으로 연결합니다.';
+  const thesis = context?.proposalNarrative?.proposalThesis || context?.conceptDevelopmentLogic?.proposalThesis || context?.selectedConcept?.thesisProof || coreMessage;
+  return { conceptName, coreMessage, thesis };
 }
 
-export function applyProposalStructureGuardToSlides(slides: SlideContent[], input: ProjectInput, analysis: AnalysisResult) {
+function isAllowedSpatialConstraintSlide(slide: SlideOutline | SlideContent) {
+  return spatialAllowedSectionPattern.test([slide.slideType, slide.slideTitle, slide.slidePurpose, slide.slideRole, slide.keyMessage].filter(Boolean).join(' '));
+}
+
+function isEarlyStrategicSlide(slide: SlideOutline | SlideContent, index: number) {
+  const text = [slide.slideType, slide.slideTitle, slide.slidePurpose].join(' ');
+  return index < 8 || earlyStrategicPurposePattern.test(slide.slidePurpose) || strategicSectionPattern.test(text);
+}
+
+function isConstraintDominatedStrategicSlide(slide: SlideOutline | SlideContent, index: number) {
+  const text = [slide.slideType, slide.slideTitle, slide.slidePurpose, slide.slideRole, slide.relationToThesis, slide.whyThisSlideExists, slide.keyMessage, slide.mainCopy].filter(Boolean).join(' ');
+  return isEarlyStrategicSlide(slide, index) && !isAllowedSpatialConstraintSlide(slide) && spatialConstraintPattern.test(text);
+}
+
+function rewriteConstraintDominatedSlide<T extends SlideOutline | SlideContent>(slide: T, context?: StrategicGuardContext): T {
+  const { conceptName, coreMessage, thesis } = selectedConceptAnchor(context);
+  const base = {
+    ...slide,
+    slidePurpose: slide.slidePurpose === 'Concept' || /concept/i.test(slide.slidePurpose) ? 'Concept' : slide.slidePurpose,
+    slideRole: slide.slideRole || '제안 명제와 콘셉트 필연성을 공간 제약이 아닌 관람객 인식 전환 관점에서 설명한다.',
+    relationToThesis: `이 장표는 ${conceptName}이 ${thesis}를 증명하는 전략적 이유를 제시한다.`,
+    whyThisSlideExists: `공간 조건이 아니라 관람객 이해 장벽, 클라이언트가 만들고자 하는 믿음, 브랜드/사업 메시지의 경험화 필요성을 통해 ${conceptName}의 필연성을 세운다.`,
+    keyMessage: coreMessage,
+    mainCopy: `${conceptName}은 공간 조건에서 출발한 해법이 아니라, 관람객이 이해하기 어려운 브랜드/기술/사업 가치를 눈에 보이는 경험 구조로 전환하기 위한 전략적 답입니다.`,
+    confirmNeededNote: slide.confirmNeededNote || '',
+  };
+
+  return base as T;
+}
+
+function enforceConstraintPriorityGuard<T extends SlideOutline | SlideContent>(slides: T[], context?: StrategicGuardContext) {
+  return slides.map((slide, index) => {
+    if (!isConstraintDominatedStrategicSlide(slide, index)) return slide;
+    return rewriteConstraintDominatedSlide(slide, context);
+  });
+}
+
+export function buildConstraintPriorityGuardInstruction() {
+  return [
+    'Constraint Priority Guard: columns, booth size, venue layout, schedule, operation limits, sightline, moving line, budget, installation limits are spatial planning constraints only.',
+    'Spatial constraints may appear only in Spatial Strategy, Zoning, Sightline Planning, Feasibility Proof, or Implementation Risk Management.',
+    'Spatial constraints must not be the origin or dominant logic of proposalThesis, conceptName, conceptTagline, conceptRationale, coreMessage, or slide titles before Spatial Strategy.',
+    'If an early strategic slide needs to mention constraints, mention them only after the strategic reason has been established and never as the main reason for the concept.',
+  ].join('\n');
+}
+
+export function buildSelectedConceptDominanceInstruction() {
+  return [
+    'Selected Concept Dominance Guard: after a concept is selected, every slide must align with selectedConcept.conceptName, selectedConcept.coreMessage, and proposalNarrative.proposalThesis.',
+    'Every slide must answer in slideRole/relationToThesis/whyThisSlideExists: why this slide exists, how it proves the concept or thesis, and what role it plays in the proposal story.',
+    'Remove or rewrite slides that cannot prove the selected concept, the core message, or the proposal thesis. Do not include common backend sections by habit.',
+  ].join('\n');
+}
+
+export function applyProposalStructureGuardToOutline(slides: SlideOutline[], input: ProjectInput, analysis: AnalysisResult, context?: StrategicGuardContext) {
   const guard = buildProposalStructureGuard(input, analysis);
   const isContentDevelopment = guard.proposalScopeTypes.includes('contentDevelopment');
   const filtered = slides.filter((slide) => !isSuppressedGenericSlide(slide, guard));
-  return renumber(filtered.slice(0, isContentDevelopment ? guard.maxSlideCount ?? filtered.length : filtered.length));
+  const constrained = enforceConstraintPriorityGuard(filtered, context);
+  return renumber(constrained.slice(0, isContentDevelopment ? guard.maxSlideCount ?? constrained.length : constrained.length));
+}
+
+export function applyProposalStructureGuardToSlides(slides: SlideContent[], input: ProjectInput, analysis: AnalysisResult, context?: StrategicGuardContext) {
+  const guard = buildProposalStructureGuard(input, analysis);
+  const isContentDevelopment = guard.proposalScopeTypes.includes('contentDevelopment');
+  const filtered = slides.filter((slide) => !isSuppressedGenericSlide(slide, guard));
+  const constrained = enforceConstraintPriorityGuard(filtered, context);
+  return renumber(constrained.slice(0, isContentDevelopment ? guard.maxSlideCount ?? constrained.length : constrained.length));
 }

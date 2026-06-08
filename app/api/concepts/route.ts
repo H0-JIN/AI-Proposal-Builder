@@ -31,13 +31,13 @@ export async function POST(request: Request) {
         { label: '콘셉트 필수 산출물 (40)', categories: ['requiredDeliverables'], description: 'concept weighted retrieval 40: 콘셉트가 반드시 대응해야 할 과제/산출물 기준', limit: 5 },
         { label: '성과 목표 (20)', categories: ['performanceGoal'], description: 'concept weighted retrieval 20: 콘셉트의 성과 방향과 기대 효과 기준', limit: 3 },
         { label: '공간 조건 (15)', categories: ['venue'], description: 'concept weighted retrieval 15: 공간 적용성, 동선, 장소 제약 기준', limit: 4 },
-        { label: '우선 참고 레퍼런스 (15)', categories: ['referenceOnly', 'designDirection'], description: 'concept weighted retrieval 15: FF7, S26 Showcase, MDW Art Wall, Foldable Monument를 우선 참고하되 벤치마크 인사이트로만 사용', limit: 5 },
+        { label: '현재 프로젝트 참고 레퍼런스 (15)', categories: ['referenceOnly', 'designDirection'], description: 'concept weighted retrieval 15: 현재 업로드된 RFP/제안 자료에 명시된 레퍼런스만 벤치마크 인사이트로 사용', limit: 5 },
         { label: '제약 조건 (10)', categories: ['constraints'], description: 'concept weighted retrieval 10: 실행/운영/제작 제약 기준', limit: 3 },
         { label: '제품 특징', categories: ['productFeature'], description: 'Q8/H8/B8 제품별 핵심 기능과 가치 제안을 콘셉트 차별화 근거로 사용', limit: 4 },
       ],
     });
     const retrievalContext = formatCategoryEvidenceGroupsForPrompt(conceptEvidenceGroups, 9000);
-    const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis);
+    const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis, body.documentChunks ?? []);
     const proposalNarrative = ensureProposalNarrative(body.proposalNarrative, { input: body.input, analysis: body.analysis, documentText: body.input.briefText });
 
     const systemPrompt = [
@@ -49,14 +49,15 @@ export async function POST(request: Request) {
       isEventOperationType ? '행사 운영형 콘셉트명도 Smart Networking Hub, Smart Integrated Operation Platform처럼 시스템명/카테고리명으로 만들지 말고 행사 목적, 브랜드 메시지, 파트너십, 기술 공유, 비즈니스 기회를 압축한 2~5단어 정체성 이름으로 도출하라.' : '각 후보는 서로 다른 전략적 관점, 경험 구조, 핵심 체험 자산 방향을 가져야 하며, 반드시 conceptDevelopmentLogic의 과제와 경험 기회에 근거해 도출되어야 한다.',
       '각 후보에는 conceptId, conceptName, conceptTagline, conceptDefinition, conceptRationale, coreMessage, thesisProof, experienceStructure, expectedAssets, strengths, risks, evaluationSummary를 반드시 작성하라. conceptRationale은 conceptDefinition보다 먼저 사고하고 작성하며 problemInsight, clientNeed, audienceBarrier, strategicShift, whyThisConcept 다섯 필드를 모두 포함한다. 기존 호환 필드인 conceptTitle은 conceptName과 동일하게, subtitle은 conceptTagline과 동일하게, oneLineDefinition은 conceptDefinition과 동일하게 작성하라. conceptNameKR/conceptNameEN도 conceptName과 충돌하지 않는 짧은 이름만 작성하라.',
       'conceptName 규칙: 짧고 기억 가능하며 발표용 제목처럼 보여야 한다. 2~5 words를 선호한다. 한국어, 영어, 한영 혼합 모두 가능하다. 섹션 제목이나 전략 설명문이 아니라 제안 콘셉트명이어야 한다. 긴 설명문, RFP 키워드 단순 결합, Pavilion/Zone/Experience/Journey/Hub/Platform/Showcase/Lab/Center 및 파빌리온/존/체험/여정/허브/플랫폼/쇼케이스/랩/센터/공간/전시 같은 카테고리 단어를 주 명명 장치로 쓰지 말라. "~을 위한", "~와 함께하는", "~중심의", "~기반의", "~플랫폼", "~공간", "~체험", "~전시" 구조를 쓰지 말라.',
-      'conceptRationale 작성 규칙: problemInsight는 RFP의 핵심 문제/긴장 중 이 콘셉트를 필요하게 만드는 전략적 문제만 짚고, clientNeed는 발주처가 관람객에게 궁극적으로 이해·감정·믿음으로 남기려는 것을 정의하며, audienceBarrier는 관람객이 지금 이해하거나 관심 갖지 못하는 이유를 설명하고, strategicShift는 제안이 도입하는 관점 전환을 제시하며, whyThisConcept는 proposalNarrative.proposalThesis와 conceptName을 직접 연결해 왜 이 이름의 콘셉트가 전략의 최선 표현인지 설명하라.',
+      'conceptRationale 작성 규칙: 반드시 1) 관람객이 이해하기 어려운 것 2) 클라이언트가 관람객에게 믿게 해야 하는 것 3) 프로젝트의 전략적 기회 4) 그 간극을 해결하는 경험 원칙 5) 선택 콘셉트가 그 원칙을 다른 선택지보다 더 잘 표현하는 이유의 논리 순서로 작성하라. problemInsight는 audience understanding barrier에서 출발하고, clientNeed는 발주처가 남겨야 할 믿음을 정의하며, strategicShift는 전략적 기회와 경험 원칙을 제시하고, whyThisConcept는 proposalNarrative.proposalThesis와 conceptName을 직접 연결해 콘셉트의 필연성을 증명하라.',
+      'Hydrogen/HTWO 프로젝트의 conceptRationale은 수소가 invisible하고 system-based라 이해하기 어렵다는 장벽, production-storage-transport-use value chain, Hyundai Motor Group이 보여줄 integrated future energy system, HTWO가 hydrogen transition의 credible leader로 인식되어야 하는 과제, 연결된 시스템을 visible/experiential하게 만드는 전시 원칙을 중심으로 작성하라.',
       'conceptRationale은 일반 RFP 요약을 반복하지 말고 “왜 이 콘셉트가 필연적인가”를 간결하게 증명하라. columns, booth size, venue limits, schedule, budget 등 공간·일정·운영 제약은 콘셉트의 출발점으로 쓰지 말고 implementation challenge, feasibility proof, risk mitigation 맥락에서만 언급하라.',
       'conceptTagline은 conceptName보다 설명적이어도 되지만 한 개의 간결한 문장으로 방향을 설명하라. conceptDefinition은 2~3문장으로 콘셉트의 의미를 설명하고 proposalNarrative.proposalThesis에 직접 연결하라.',
       'Concept Source Priority Guard: 콘셉트는 반드시 1) client vision 2) brand message 3) audience transformation 4) strategic opportunity 5) proposal thesis 6) core experience promise에서 우선 도출하라. RFP 키워드 조합으로 콘셉트를 만들지 말라.',
       'Concept Source Rejection Guard: columns, booth constraints, venue limitations, schedule, budget, required deliverables, equipment names, media types, operation conditions, object lists, floor plan limitations는 conceptName이나 핵심 콘셉트 출처가 될 수 없다. 이런 요소는 spatial strategy, feasibility proof, risk mitigation, implementation detail, experience design solution에서만 다뤄라.',
       'Bad conceptName 예시: Beyond the Column, 기둥과 함께하는 수소 미래 체험, 공간의 제약을 기회로, Hydrogen Tech Pavilion, Future Experience Zone, Immersive Brand Experience. Better 예시 톤: Hydrogen in Motion, Living H2 Network, Flowing Tomorrow, Connected H2 Future, The Hydrogen Shift.',
       '콘셉트 후보 생성 retrieval은 category 가중치 requiredDeliverables 40, performanceGoal 20, venue 15, referenceOnly 15, constraints 10 순으로 참고하되, requiredDeliverables/venue/constraints는 콘셉트 출처가 아니라 대응성·공간 적용성·실행 가능성 검증 기준으로 사용하라.',
-      'referenceOnly category 근거는 FF7, S26 Showcase, MDW Art Wall, Foldable Monument를 우선 참고해 spatialApplication의 참고 원칙으로 반영하되, 신규 산출물/체험 모듈/제품 단위처럼 명명하지 말라. venue category 근거가 있으면 spatialApplication과 executionFeasibility에 반드시 반영하라.',
+      'referenceOnly category 근거는 현재 프로젝트 evidence에 명시된 경우에만 참고 원칙으로 반영하고, FF7/MDW/SFF/SAFE/Samsung Foundry/Galaxy/teamLab/Delight 등 근거 없는 다른 프로젝트명은 절대 사용하지 말라. venue category 근거가 있으면 콘셉트 출처가 아니라 spatialApplication과 executionFeasibility 검증에만 반영하라.',
       referenceGuardInstruction,
       '모든 콘셉트는 proposalNarrative.proposalThesis를 증명해야 한다. thesisProof에는 이 콘셉트가 제안 명제를 어떻게 증명하는지 명시하고, 일반적인 RFP 요구 반복으로 채우지 말라. experienceStructure에는 콘텐츠 목록이 아니라 관람객의 문제 인식→참여 행동→감정/인식 변화→브랜드 확신으로 이어지는 narrative 또는 behavioral transformation을 작성하라.',
       'evaluationScores는 rfpFitScore, targetFitScore, differentiationScore, spatialFeasibilityScore, viralPotentialScore, operationFeasibilityScore를 각각 1~5점 숫자로 작성하라.',
