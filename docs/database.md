@@ -34,4 +34,4 @@ If you use the Supabase CLI, you can also run the SQL against your linked projec
 
 ## Current status
 
-Database storage is currently optional and foundation-only. The app does **not** yet automatically save uploads to Supabase, replace in-memory chunks with database chunks, perform vector retrieval, retrieve old proposal patterns, alter proposal prompts, or change PPTX export behavior.
+Database storage is currently optional and non-blocking. After analysis completes, the app attempts to save a `projects` record, one `documents` record per uploaded file, and analyzed `chunks` with `embedding` set to `null`. The in-memory analysis, concept generation, proposal generation, retrieval from current uploads, slide generation, and PPTX export flows still work without Supabase and do not depend on the database save. The app does **not** yet perform vector retrieval, generate embeddings, retrieve old proposal patterns, alter proposal prompts, or change PPTX export behavior.

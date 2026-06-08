@@ -11,7 +11,8 @@ export type DocumentRole =
   | 'budgetSample'
   | 'scheduleSample'
   | 'organizationSample'
-  | 'other';
+  | 'other'
+  | 'memo';
 
 export type ChunkImportance = 'high' | 'medium' | 'low';
 
@@ -51,6 +52,7 @@ export interface ChunkRecord {
   tags: string[];
   importance: ChunkImportance;
   page_number: number | null;
+  slide_number: number | null;
   section_title: string | null;
   embedding: number[] | null;
   metadata: JsonValue | null;
@@ -84,7 +86,7 @@ export interface Database {
       };
       chunks: {
         Row: ChunkRecord;
-        Insert: Partial<Pick<ChunkRecord, 'id' | 'category' | 'categories' | 'tags' | 'importance' | 'page_number' | 'section_title' | 'embedding' | 'metadata' | 'created_at'>> &
+        Insert: Partial<Pick<ChunkRecord, 'id' | 'category' | 'categories' | 'tags' | 'importance' | 'page_number' | 'slide_number' | 'section_title' | 'embedding' | 'metadata' | 'created_at'>> &
           Pick<ChunkRecord, 'project_id' | 'document_id' | 'chunk_index' | 'chunk_text'>;
         Update: Partial<Omit<ChunkRecord, 'id' | 'project_id' | 'document_id' | 'created_at'>>;
         Relationships: [

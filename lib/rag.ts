@@ -59,6 +59,7 @@ export interface DocumentChunk {
   index?: string;
   sectionTitle?: string;
   slideTitle?: string;
+  slideNumber?: number;
   slidePurpose?: string;
   keyMessage?: string;
   clientTemplate?: string;
