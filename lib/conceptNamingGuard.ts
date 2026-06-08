@@ -1,6 +1,10 @@
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProposalNarrative } from './types';
 
 const WEAK_GENERIC_CONCEPT_NAMES = [
+  'modular interactive hydrogen value chain',
+  'modular interactive value chain',
+  'hydrogen value chain',
+  'interactive hydrogen value chain',
   'hydrogen flow',
   'future nexus',
   'pulse of hydrogen',
@@ -42,6 +46,94 @@ const GENERIC_CATEGORY_WORDS = [
   '체험',
   '전시',
   '여정',
+];
+
+
+const CONCEPT_ROLE_GUARD_TERMS = [
+  'modular',
+  'interactive',
+  'value chain',
+  'media',
+  'zone',
+  'pavilion',
+  'experience',
+  'content',
+  'mechanism',
+  'spatial',
+  'spatial layout',
+  'layout',
+  'booth constraint',
+  'booth',
+  'column constraint',
+  'column',
+  'columns',
+  'deliverable category',
+  'deliverable',
+  'rfp object',
+  'rfp',
+  'module',
+  'zoning',
+  'object list',
+  '모듈러',
+  '인터랙티브',
+  '밸류체인',
+  '가치사슬',
+  '미디어',
+  '존',
+  '파빌리온',
+  '체험',
+  '콘텐츠',
+  '컨텐츠',
+  '메커니즘',
+  '공간',
+  '레이아웃',
+  '부스',
+  '기둥',
+  '산출물',
+  '오브젝트',
+];
+
+const EXECUTION_NAMING_DEVICE_TERMS = [
+  'modular',
+  'interactive',
+  'media',
+  'zone',
+  'pavilion',
+  'experience',
+  'content',
+  'mechanism',
+  'spatial',
+  'layout',
+  'booth',
+  'column',
+  'columns',
+  'deliverable',
+  'module',
+  'zoning',
+  '모듈러',
+  '인터랙티브',
+  '미디어',
+  '존',
+  '파빌리온',
+  '체험',
+  '콘텐츠',
+  '컨텐츠',
+  '메커니즘',
+  '공간',
+  '레이아웃',
+  '부스',
+  '기둥',
+  '산출물',
+];
+
+const RFP_KEYWORD_NAMING_DEVICES = [
+  'value chain',
+  'hydrogen value chain',
+  'rfp object list',
+  'object list',
+  '밸류체인',
+  '가치사슬',
+  '오브젝트 리스트',
 ];
 
 const EXPLANATORY_PATTERNS = [
@@ -106,6 +198,24 @@ function titleUnitCount(name: string) {
 function containsAny(value: string, terms: string[]) {
   const normalized = normalizedText(value);
   return terms.some((term) => normalized.includes(term.toLowerCase()));
+}
+
+function countTerms(value: string, terms: string[]) {
+  const normalized = normalizedText(value);
+  return terms.reduce((count, term) => count + (normalized.includes(term.toLowerCase()) ? 1 : 0), 0);
+}
+
+function hasUntransformedConceptRoleTerm(name: string) {
+  return containsAny(name, CONCEPT_ROLE_GUARD_TERMS);
+}
+
+function hasExecutionDescriptionName(name: string) {
+  const normalized = normalizedText(name);
+  const executionTermCount = countTerms(name, EXECUTION_NAMING_DEVICE_TERMS);
+  return executionTermCount >= 2
+    || /modular[\s/·|+_-]+interactive/i.test(normalized)
+    || /interactive[\s/·|+_-]+modular/i.test(normalized)
+    || RFP_KEYWORD_NAMING_DEVICES.some((term) => normalized.includes(term.toLowerCase()));
 }
 
 function hasWeakGenericConceptName(name: string) {
@@ -205,6 +315,8 @@ export function validateConceptNaming(
     if (isLikelySentence(name)) violations.push(`${label}: conceptName reads like an explanatory sentence or section heading.`);
     if (hasWeakGenericConceptName(name)) violations.push(`${label}: conceptName is a weak generic keyword combination rather than a proposal-ready idea.`);
     if (hasGenericMainNamingDevice(name)) violations.push(`${label}: conceptName uses a generic category word as the main naming device.`);
+    if (hasUntransformedConceptRoleTerm(name)) violations.push(`${label}: conceptName uses execution methods, content categories, spatial solutions, constraints, or RFP keywords as the main naming device instead of a transformed strategic metaphor.`);
+    if (hasExecutionDescriptionName(name)) violations.push(`${label}: conceptName reads like an execution strategy, content category, spatial solution, RFP keyword, or technical description instead of a strategic idea.`);
     if (containsAny(name, constraintTerms)) violations.push(`${label}: conceptName appears to be derived from constraints, deliverables, venue, schedule, or implementation conditions.`);
   });
 
@@ -219,6 +331,8 @@ export function buildConceptNamingRetryInstruction(violations: string[]) {
     'CONCEPT NAMING GUARD REJECTION:',
     ...violations.map((violation) => `- ${violation}`),
     'Regenerate all 3 concepts. Keep the strategic narrative, but replace rejected naming logic with concise, memorable, proposal-ready names derived from proposalThesis, audience transformation, client vision, HTWO/client brand message, hydrogen value chain where relevant, strategic opportunity, and core experience promise.',
+    'Concept Role Guard: conceptName must express the proposal strategic idea, not the execution method. Do not use modular, interactive, value chain, media, zone, pavilion, experience, content, mechanism, spatial layout, booth/column constraints, deliverable categories, or RFP object lists as the main naming device unless transformed into a strong strategic metaphor.',
+    'Reject names that read like technical descriptions, combine 2+ execution terms, use modular interactive or value chain as the main naming device, exceed 5 words without a strong reason, sound like slide titles, or start from constraints instead of proposalThesis.',
     'Do not use constraints, columns, booth limits, venue limitations, schedule, budget, deliverable names, equipment, media types, object lists, or floor-plan limitations as conceptName sources.',
     'Avoid weak generic names such as Hydrogen Flow, Future Nexus, Future Grid, Pulse of Hydrogen, Living H2, Hydrogen Experience, Hydrogen Pavilion, and Hydrogen Journey. Do not use external project names or unrelated case names to make naming feel stronger.',
   ].join('\n');

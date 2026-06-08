@@ -22,6 +22,9 @@ const spatialConstraintPattern = /column|columns|pillar|booth\s*(size|limit|cons
 const spatialAllowedSectionPattern = /spatial\s*strategy|zoning|zone|sightline|feasibility|implementation|risk\s*management|risk|layout|floor\s*plan|moving\s*line|traffic\s*flow|공간\s*전략|공간\s*구성|조닝|존|동선|시야|시선|실행\s*가능|구현|리스크|위험|평면|배치|운영\s*관리/i;
 const earlyStrategicPurposePattern = /Problem|Insight|Strategy|Concept/i;
 const strategicSectionPattern = /proposal\s*thesis|concept\s*name|concept\s*tagline|concept\s*rationale|core\s*message|core\s*concept|market\s*context|project\s*context|core\s*problem|challenge|audience\s*insight|strategic\s*opportunity|strategic\s*direction|제안\s*명제|콘셉트|컨셉|핵심\s*메시지|시장\s*맥락|프로젝트\s*맥락|핵심\s*문제|과제|관람객|타깃\s*인사이트|전략\s*기회|전략\s*방향/i;
+const coreConceptPattern = /core\s*concept|핵심\s*(콘셉트|컨셉)/i;
+const executionBeforeConceptPattern = /media|interactive|content\s*mechanism|spatial\s*(overview|plan)|zoning|zone|layout|visitor\s*journey|experience\s*(overview|structure)|미디어|인터랙티브|콘텐츠\s*메커니즘|공간\s*(개요|구성|전략)|조닝|존|레이아웃|동선|저니|체험\s*(구조|개요)/i;
+
 
 function compactText(values: unknown[]): string {
   return values
@@ -131,6 +134,80 @@ function isConstraintDominatedStrategicSlide(slide: SlideOutline | SlideContent,
   return isEarlyStrategicSlide(slide, index) && !isAllowedSpatialConstraintSlide(slide) && spatialConstraintPattern.test(text);
 }
 
+
+type FoundationRole = 'projectMarketContext' | 'coreProblem' | 'audienceInsight' | 'strategicOpportunity' | 'conceptRationale';
+
+const foundationRoles: Array<{ role: FoundationRole; slideType: string; slideTitle: string; slidePurpose: string; pattern: RegExp }> = [
+  { role: 'projectMarketContext', slideType: 'Project / Market Context', slideTitle: 'Project / Market Context', slidePurpose: 'Problem', pattern: /project\s*\/\s*market\s*context|market\s*context|project\s*context|project\s*understanding|시장\s*맥락|프로젝트\s*맥락|프로젝트\s*이해/i },
+  { role: 'coreProblem', slideType: 'Core Problem', slideTitle: 'Core Problem', slidePurpose: 'Problem', pattern: /core\s*problem|core\s*challenge|challenge|problem|핵심\s*(문제|과제)|문제\s*정의|과제\s*정의/i },
+  { role: 'audienceInsight', slideType: 'Audience Insight', slideTitle: 'Audience Insight', slidePurpose: 'Insight', pattern: /audience\s*insight|target\s*insight|visitor\s*insight|관람객\s*인사이트|타깃\s*인사이트|오디언스\s*인사이트/i },
+  { role: 'strategicOpportunity', slideType: 'Strategic Opportunity', slideTitle: 'Strategic Opportunity', slidePurpose: 'Strategy', pattern: /strategic\s*(opportunity|direction)|strategy\s*opportunity|전략\s*(기회|방향)/i },
+  { role: 'conceptRationale', slideType: 'Concept Rationale', slideTitle: 'Concept Rationale', slidePurpose: 'Concept', pattern: /concept\s*rationale|why\s*this\s*concept|콘셉트\s*(도출|필연|근거)|컨셉\s*(도출|필연|근거)/i },
+];
+
+function foundationSlideText(slide: SlideOutline) {
+  return [slide.slideType, slide.slideTitle, slide.slidePurpose, slide.slideRole, slide.keyMessage].filter(Boolean).join(' ');
+}
+
+function isCoreConceptSlide(slide: SlideOutline) {
+  return coreConceptPattern.test(foundationSlideText(slide));
+}
+
+function isExecutionSlideBeforeConcept(slide: SlideOutline) {
+  return executionBeforeConceptPattern.test(foundationSlideText(slide)) && !isCoreConceptSlide(slide) && !foundationRoles.some((item) => item.pattern.test(foundationSlideText(slide)));
+}
+
+function createFoundationSlide(role: (typeof foundationRoles)[number], context?: StrategicGuardContext): SlideOutline {
+  const { conceptName, coreMessage, thesis } = selectedConceptAnchor(context);
+  const rationaleCopy = role.role === 'conceptRationale'
+    ? `${conceptName}은 공간/미디어 실행 방식에서 출발한 이름이 아니라, ${thesis}를 관람객이 믿을 수 있는 경험 약속으로 전환하기 위한 전략적 결론입니다.`
+    : `${role.slideTitle} 단계는 ${conceptName}을 바로 선언하기 전에 ${thesis}가 왜 필요한지 증명합니다.`;
+
+  return {
+    slideNumber: 0,
+    slideType: role.slideType,
+    slideTitle: role.slideTitle,
+    slidePurpose: role.slidePurpose,
+    slideRole: `${role.slideTitle}를 통해 Core Concept 이전의 전략적 근거를 세운다.`,
+    relationToThesis: `이 장표는 ${thesis}를 Core Concept 선언 전에 단계적으로 입증한다.`,
+    whyThisSlideExists: `Core Concept가 실행 방법이나 제약 조건에서 나온 것처럼 보이지 않도록 ${role.slideTitle} 관점의 근거를 먼저 제시한다.`,
+    keyMessage: role.role === 'conceptRationale' ? coreMessage : thesis,
+    mainCopy: rationaleCopy,
+    confirmNeededNote: '',
+    sourceEvidence: [],
+    referenceAllowed: false,
+  };
+}
+
+function enforcePreConceptOrdering(slides: SlideOutline[], context?: StrategicGuardContext) {
+  const coreIndex = slides.findIndex(isCoreConceptSlide);
+  if (coreIndex < 0) return slides;
+
+  const beforeCore = slides.slice(0, coreIndex);
+  const coreAndAfter = slides.slice(coreIndex);
+  const selectedFoundation: Partial<Record<FoundationRole, SlideOutline>> = {};
+  const selectedIndexes = new Set<number>();
+  const deferredExecution: SlideOutline[] = [];
+
+  beforeCore.forEach((slide, index) => {
+    const text = foundationSlideText(slide);
+    const role = foundationRoles.find((item) => item.pattern.test(text) && !selectedFoundation[item.role]);
+    if (role) {
+      selectedFoundation[role.role] = slide;
+      selectedIndexes.add(index);
+      return;
+    }
+    if (isExecutionSlideBeforeConcept(slide)) {
+      deferredExecution.push(slide);
+      selectedIndexes.add(index);
+    }
+  });
+
+  const remainingBeforeCore = beforeCore.filter((_, index) => !selectedIndexes.has(index));
+  const orderedFoundation = foundationRoles.map((role) => selectedFoundation[role.role] ?? createFoundationSlide(role, context));
+  return [...remainingBeforeCore, ...orderedFoundation, ...coreAndAfter, ...deferredExecution];
+}
+
 function rewriteConstraintDominatedSlide<T extends SlideOutline | SlideContent>(slide: T, context?: StrategicGuardContext): T {
   const { conceptName, coreMessage, thesis } = selectedConceptAnchor(context);
   const base = {
@@ -160,6 +237,7 @@ export function buildConstraintPriorityGuardInstruction() {
     'Spatial constraints may appear only in Spatial Strategy, Zoning, Sightline Planning, Feasibility Proof, or Implementation Risk Management.',
     'Spatial constraints must not be the origin or dominant logic of proposalThesis, conceptName, conceptTagline, conceptRationale, coreMessage, or slide titles before Spatial Strategy.',
     'If an early strategic slide needs to mention constraints, mention them only after the strategic reason has been established and never as the main reason for the concept.',
+    'Before Spatial Strategy, columns/booth constraints may be mentioned at most once as a project constraint and must not dominate proposalThesis, conceptRationale, coreMessage, conceptName, or early slide titles.',
   ].join('\n');
 }
 
@@ -176,7 +254,8 @@ export function applyProposalStructureGuardToOutline(slides: SlideOutline[], inp
   const isContentDevelopment = guard.proposalScopeTypes.includes('contentDevelopment');
   const filtered = slides.filter((slide) => !isSuppressedGenericSlide(slide, guard));
   const constrained = enforceConstraintPriorityGuard(filtered, context);
-  return renumber(constrained.slice(0, isContentDevelopment ? guard.maxSlideCount ?? constrained.length : constrained.length));
+  const conceptOrdered = enforcePreConceptOrdering(constrained, context);
+  return renumber(conceptOrdered.slice(0, isContentDevelopment ? guard.maxSlideCount ?? conceptOrdered.length : conceptOrdered.length));
 }
 
 export function applyProposalStructureGuardToSlides(slides: SlideContent[], input: ProjectInput, analysis: AnalysisResult, context?: StrategicGuardContext) {
