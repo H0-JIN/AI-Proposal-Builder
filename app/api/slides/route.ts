@@ -95,10 +95,25 @@ function buildExperienceApproachBullets(logic?: ConceptDevelopmentLogic) {
   ];
 }
 
+
+function buildConceptRationaleBullets(concept?: ConceptCandidate) {
+  const rationale = concept?.conceptRationale;
+  if (!rationale) return [];
+
+  return [
+    conciseSectionLine('문제 인식', rationale.problemInsight, ''),
+    conciseSectionLine('발주처 니즈', rationale.clientNeed, ''),
+    conciseSectionLine('관람객 장벽', rationale.audienceBarrier, ''),
+    conciseSectionLine('전략적 전환', rationale.strategicShift, ''),
+    conciseSectionLine('컨셉 도출 이유', rationale.whyThisConcept, ''),
+  ].filter((line) => !line.endsWith(': '));
+}
+
 function buildCoreConceptBullets(concept?: ConceptCandidate, logic?: ConceptDevelopmentLogic) {
   const conceptNames = getPresentationConceptName(concept) || [concept?.conceptNameEN, concept?.conceptNameKR].map((name) => name?.trim()).filter(Boolean).join(' / ') || '핵심 경험 콘셉트';
   return [
     `Concept Name: ${conceptNames}`,
+    ...buildConceptRationaleBullets(concept),
     sectionLine('Concept Statement', getConceptDefinition(concept), '프로젝트 과제를 하나의 전시 주제로 압축해 방문객이 직관적으로 이해하고 참여할 수 있도록 선언합니다.'),
     sectionLine('Core Message', concept?.coreMessage, '브랜드가 전달해야 할 핵심 메시지를 방문객의 행동과 감정으로 체감하게 합니다.'),
     sectionLine('Experience Logic', concept?.experienceLogic, '방문객의 선택, 체험, 반응, 결과물, 공유가 순차적으로 연결되는 경험 흐름으로 설계합니다.'),
@@ -128,6 +143,14 @@ function enhanceConceptFlowSlides(slides: SlideContent[], logic?: ConceptDevelop
         ...slide,
         slideTitle: 'Experience Approach',
         bodyBullets: buildExperienceApproachBullets(logic),
+      };
+    }
+
+    if (/concept rationale|왜 이 컨셉|왜 이 콘셉트/i.test(slideKey)) {
+      return {
+        ...slide,
+        slideTitle: 'Concept Rationale',
+        bodyBullets: buildConceptRationaleBullets(concept),
       };
     }
 
@@ -322,7 +345,7 @@ export async function POST(request: Request) {
         'RFP에 명시되지 않은 필수 요구사항, KPI 수치, 일정, 평가 기준, 공간 제약은 만들지 말라. 근거가 부족한 내용은 “제안 가정상”, “운영 설계 기준으로”, “추후 발주처 확인 후”처럼 가정 또는 확인 필요 문장으로 작성하라.',
         'proposalScopeTypes와 proposalStructureGuard를 준수하라. contentDevelopment + boothExhibition에서는 Hero Content, Sub Content, Zoning & Flow, Content Scenario, Reference, Schedule, Credential 문안에 집중하고, RFP에 명시되지 않은 Viral/Communication Strategy, KPI/Performance Goal, Operation Plan, Output & Share, Visitor Reward, SNS Sharing, Marketing Campaign 내용으로 확장하지 말라.',
         'KPI는 정량 targetKPI 또는 평가 기준의 performance metrics 요구가 있을 때만 별도 장표 본문으로 작성한다. “이해도 제고”, “브랜드 인지도 상승”은 프로젝트 목표/전략 문장으로만 처리한다. Operation Plan은 부스 운영 계획, staffing, onsite operation, visitor flow operation, maintenance, safety operation이 명시된 경우에만 작성하고 그렇지 않으면 Schedule로 제한한다.',
-        isEventOperationType ? '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 콘셉트는 단순 시스템명이나 운영 플랫폼명이 아니라 행사 목적, 브랜드 메시지, 파트너십, 기술 공유, 비즈니스 기회를 압축한 행사 정체성으로 표현하라. Experience Structure, Main Experience Image, Key Experience Asset, Visitor Action, Interactive Flow, Content Mechanism, Output & Share, Viral Communication Strategy, Media Experience Overview, Key Media Scene, Photo / Viral Spot, Hands-on Demo 장표와 본문 표현은 생성하지 말라. Operation Framework 장표는 등록, 세션, 파트너 부스, 네트워킹, 동선, 인력, 리스크를 연결하는 운영 체계로 작성하라.' : '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 선택되지 않은 콘셉트, 후보 간 비교, 평가 점수, 보류 사유는 어떤 장표에서도 언급하지 말라. Concept Candidates, 콘셉트 후보 3안 비교, 3개 콘셉트 비교표, 선택되지 않은 콘셉트 설명, 내부 평가 점수표 장표는 절대 작성하지 말라. Experience Approach 장표는 내부 분석 항목명이 아니라 Challenge, Insight, Opportunity, Approach 네 항목의 제안서 문장으로 작성하고, “후보 중 선택”이 아니라 “이 과제를 해결하려면 이러한 경험 접근이 필요하고 따라서 이 핵심 콘셉트로 전개해야 한다”는 논리로 작성하라. Core Concept 장표는 단순 소개가 아니라 Concept Name, Concept Statement, Core Message, Experience Logic, Why This Concept 구성의 전시 주제 선언으로 작성하라. Why This Concept에는 핵심 과제와 타깃 인사이트를 해결하기 위해 왜 이 콘셉트가 필요한지 설명하라. Experience Structure 장표에는 Spatial Zone, Hands-on Demo / Interactive Experience, Media / Signage, Photo / Viral Spot, Output / Share 항목을 포함하되 각 항목은 1~2문장 이내로 핵심 콘셉트의 실행 확장 구조를 보여줘라. 최종 본문에는 내부 JSON 필드명 또는 camelCase 항목명을 노출하지 말라.',
+        isEventOperationType ? '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 콘셉트는 단순 시스템명이나 운영 플랫폼명이 아니라 행사 목적, 브랜드 메시지, 파트너십, 기술 공유, 비즈니스 기회를 압축한 행사 정체성으로 표현하라. Experience Structure, Main Experience Image, Key Experience Asset, Visitor Action, Interactive Flow, Content Mechanism, Output & Share, Viral Communication Strategy, Media Experience Overview, Key Media Scene, Photo / Viral Spot, Hands-on Demo 장표와 본문 표현은 생성하지 말라. Operation Framework 장표는 등록, 세션, 파트너 부스, 네트워킹, 동선, 인력, 리스크를 연결하는 운영 체계로 작성하라.' : '사용자가 선택한 하나의 핵심 콘셉트만 이후 실행 장표의 기준으로 작성하라. 선택되지 않은 콘셉트, 후보 간 비교, 평가 점수, 보류 사유는 어떤 장표에서도 언급하지 말라. Concept Candidates, 콘셉트 후보 3안 비교, 3개 콘셉트 비교표, 선택되지 않은 콘셉트 설명, 내부 평가 점수표 장표는 절대 작성하지 말라. Experience Approach 장표는 내부 분석 항목명이 아니라 Challenge, Insight, Opportunity, Approach 네 항목의 제안서 문장으로 작성하고, “후보 중 선택”이 아니라 “이 과제를 해결하려면 이러한 경험 접근이 필요하고 따라서 이 핵심 콘셉트로 전개해야 한다”는 논리로 작성하라. Concept Rationale 장표는 Core Concept보다 먼저 두고 문제 인식, 발주처 니즈, 관람객 장벽, 전략적 전환, 컨셉 도출 이유를 간결히 설명하라. Core Concept 장표는 단순 소개가 아니라 Concept Name, Concept Statement, Core Message, Experience Logic, Why This Concept 구성의 전시 주제 선언으로 작성하라. Why This Concept에는 핵심 과제와 타깃 인사이트를 해결하기 위해 왜 이 콘셉트가 필요한지 설명하라. Experience Structure 장표에는 Spatial Zone, Hands-on Demo / Interactive Experience, Media / Signage, Photo / Viral Spot, Output / Share 항목을 포함하되 각 항목은 1~2문장 이내로 핵심 콘셉트의 실행 확장 구조를 보여줘라. 최종 본문에는 내부 JSON 필드명 또는 camelCase 항목명을 노출하지 말라.',
         '제안 아이디어와 장표 문안은 analysis.requiredDeliverables, analysis.scopeOfWork, analysis.taskSections[].requiredDeliverables를 최우선 기준으로 삼고 analysis.requiredScope, analysis.productInfo, analysis.productFeatures 중심으로만 생성하라. proposalType별 템플릿보다 RFP 필수 항목과 과업 범위가 우선이다. analysis.referenceOnly, analysis.doNotTreatAsScope, analysis.existingAssets 항목은 독립 체험 모듈/제품 상세/신규 콘텐츠 단위로 생성하지 말고 참고 방향 또는 레퍼런스 인사이트로만 사용하라.',
         'RFP Requirement Response / 과업 대응표 장표는 RFP 요구사항, 대응 장표, 제안 방향, 비고 형식의 표처럼 읽히게 작성하라. requiredDeliverables와 scopeOfWork는 개별 단독 장표를 과도하게 만들지 말고 먼저 과업 대응표 row와 기존 본문 장표 bullet/note에 매핑하라. 그래도 불가능한 경우에만 유사 항목을 묶은 보완 장표에 요구사항명을 명시하라.',
         'Evaluation Criteria 관련 장표와 각 chapter 문안은 analysis.evaluationCriteria 및 evaluationCriteria retrieval chunk를 근거로 심사 기준에 어떻게 대응하는지 드러나게 작성하라. Reference Insight 또는 Design Reference Direction 장표가 있으면 FF7, S26 Showcase, MDW Art Wall, Foldable Monument를 우선 참고해 referenceInsights 배열에 referenceName, referenceType, whatToLearn, howToApply, caution을 채워라. caution에는 “실제 제안 범위가 아닌 참고 사례”라는 의미가 분명히 드러나야 한다.',

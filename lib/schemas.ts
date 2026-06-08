@@ -215,6 +215,19 @@ const conceptDevelopmentLogicSchema = {
   ],
 } as const;
 
+const conceptRationaleSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    problemInsight: { type: 'string' },
+    clientNeed: { type: 'string' },
+    audienceBarrier: { type: 'string' },
+    strategicShift: { type: 'string' },
+    whyThisConcept: { type: 'string' },
+  },
+  required: ['problemInsight', 'clientNeed', 'audienceBarrier', 'strategicShift', 'whyThisConcept'],
+} as const;
+
 const conceptEvaluationScoresSchema = {
   type: 'object',
   additionalProperties: false,
@@ -253,6 +266,7 @@ export const conceptCandidatesJsonSchema = {
           conceptName: { type: 'string' },
           conceptTagline: { type: 'string' },
           conceptDefinition: { type: 'string' },
+          conceptRationale: conceptRationaleSchema,
           conceptTitle: { type: 'string' },
           subtitle: { type: 'string' },
           conceptNameKR: { type: 'string' },
@@ -281,6 +295,7 @@ export const conceptCandidatesJsonSchema = {
           'conceptName',
           'conceptTagline',
           'conceptDefinition',
+          'conceptRationale',
           'conceptTitle',
           'subtitle',
           'conceptNameKR',

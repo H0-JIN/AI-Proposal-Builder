@@ -248,6 +248,14 @@ export interface ConceptDevelopmentLogic {
   conceptDevelopmentCriteria?: string[];
 }
 
+export interface ConceptRationale {
+  problemInsight: string;
+  clientNeed: string;
+  audienceBarrier: string;
+  strategicShift: string;
+  whyThisConcept: string;
+}
+
 export interface ConceptEvaluationScores {
   rfpFitScore: number;
   targetFitScore: number;
@@ -262,6 +270,7 @@ export interface ConceptCandidate {
   conceptName: string;
   conceptTagline: string;
   conceptDefinition: string;
+  conceptRationale?: ConceptRationale;
   conceptTitle: string;
   subtitle: string;
   conceptNameKR: string;
