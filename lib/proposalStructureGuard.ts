@@ -24,7 +24,9 @@ const earlyStrategicPurposePattern = /Problem|Insight|Strategy|Concept/i;
 const strategicSectionPattern = /proposal\s*thesis|concept\s*name|concept\s*tagline|concept\s*rationale|core\s*message|core\s*concept|market\s*context|project\s*context|core\s*problem|challenge|audience\s*insight|strategic\s*opportunity|strategic\s*direction|제안\s*명제|콘셉트|컨셉|핵심\s*메시지|시장\s*맥락|프로젝트\s*맥락|핵심\s*문제|과제|관람객|타깃\s*인사이트|전략\s*기회|전략\s*방향/i;
 const coreConceptPattern = /core\s*concept|핵심\s*(콘셉트|컨셉)/i;
 const caseInsightPattern = /case\s*insight|benchmark\s*insight|experience\s*case\s*insight|유사\s*사례\s*인사이트|컨셉\s*도출을\s*위한\s*사례\s*인사이트|콘셉트\s*도출을\s*위한\s*사례\s*인사이트|사례\s*인사이트/i;
-const executionBeforeConceptPattern = /media|interactive|content\s*mechanism|spatial\s*(overview|plan)|zoning|zone|layout|visitor\s*journey|experience\s*(overview|structure)|미디어|인터랙티브|콘텐츠\s*메커니즘|공간\s*(개요|구성|전략)|조닝|존|레이아웃|동선|저니|체험\s*(구조|개요)/i;
+const executionBeforeConceptPattern = /media|interactive|content\s*mechanism|spatial\s*(overview|plan)|zoning|zone|layout|visitor\s*journey|experience\s*(principle|overview|structure)|hero\s*(image|content|experience)|key\s*media\s*scene|content\s*modules?|미디어|인터랙티브|콘텐츠\s*메커니즘|공간\s*(개요|구성|전략)|조닝|존|레이아웃|동선|저니|체험\s*(원칙|구조|개요)|히어로\s*(이미지|콘텐츠|체험)|핵심\s*미디어\s*장면|콘텐츠\s*모듈/i;
+const postConceptPrinciplePattern = /experience\s*principle|visitor\s*journey|experience\s*journey|visitor\s*experience|체험\s*원칙|방문객\s*여정|관람객\s*여정|방문\s*여정|체험\s*여정/i;
+const coverSlidePattern = /cover|title\s*slide|opening|intro|표지|커버|오프닝/i;
 
 
 function compactText(values: unknown[]): string {
@@ -181,51 +183,121 @@ function createFoundationSlide(role: (typeof foundationRoles)[number], context?:
   };
 }
 
+function isCoverSlide(slide: SlideOutline, index: number) {
+  return index === 0 && coverSlidePattern.test(foundationSlideText(slide));
+}
+
+function isPostConceptPrincipleSlide(slide: SlideOutline) {
+  return postConceptPrinciplePattern.test(foundationSlideText(slide)) && !foundationRoles.some((item) => item.pattern.test(foundationSlideText(slide))) && !isCoreConceptSlide(slide);
+}
+
+function uniqueSlidesByIdentity(slides: SlideOutline[]) {
+  const seen = new Set<SlideOutline>();
+  return slides.filter((slide) => {
+    if (seen.has(slide)) return false;
+    seen.add(slide);
+    return true;
+  });
+}
+
+
+function createExperiencePrincipleSlide(context?: StrategicGuardContext): SlideOutline {
+  const { conceptName, coreMessage, thesis } = selectedConceptAnchor(context);
+  return {
+    slideNumber: 0,
+    slideType: 'Experience Principle / Visitor Journey',
+    slideTitle: 'Experience Principle / Visitor Journey',
+    slidePurpose: 'Experience',
+    slideRole: 'Core Concept 이후 경험 원칙과 방문객 이해 흐름을 연결한다.',
+    relationToThesis: `이 장표는 ${conceptName}이 ${thesis}를 관람객 경험으로 전환하는 첫 번째 실행 원칙을 제시한다.`,
+    whyThisSlideExists: 'Core Concept 선언 직후 공간·미디어·콘텐츠 상세로 넘어가기 전에 방문객이 어떤 순서로 이해하고 믿게 되는지 정렬한다.',
+    keyMessage: coreMessage,
+    mainCopy: `${conceptName}은 핵심 메시지를 먼저 이해시키고, 시스템의 연결성을 체감하게 하며, 마지막에는 브랜드 리더십을 신뢰하게 만드는 여정으로 확장됩니다.`,
+    confirmNeededNote: '',
+    sourceEvidence: [],
+    referenceAllowed: false,
+  };
+}
+
 function enforcePreConceptOrdering(slides: SlideOutline[], context?: StrategicGuardContext) {
   const coreIndex = slides.findIndex(isCoreConceptSlide);
   if (coreIndex < 0) return slides;
 
-  const beforeCore = slides.slice(0, coreIndex);
   const coreSlide = slides[coreIndex];
-  const afterCore = slides.slice(coreIndex + 1);
-  const afterCoreCaseInsight = afterCore.find((slide) => caseInsightPattern.test(foundationSlideText(slide)));
-  const remainingAfterCore = afterCore.filter((slide) => !caseInsightPattern.test(foundationSlideText(slide)));
   const selectedFoundation: Partial<Record<FoundationRole, SlideOutline>> = {};
-  const selectedIndexes = new Set<number>();
+  const selectedFoundationSlides = new Set<SlideOutline>();
+  const covers: SlideOutline[] = [];
+  const preFoundationContext: SlideOutline[] = [];
+  const postConceptPrinciples: SlideOutline[] = [];
   const deferredExecution: SlideOutline[] = [];
+  const remainder: SlideOutline[] = [];
 
-  beforeCore.forEach((slide, index) => {
+  slides.forEach((slide, index) => {
+    if (index === coreIndex) return;
+
     const text = foundationSlideText(slide);
-    const role = foundationRoles.find((item) => item.pattern.test(text) && !selectedFoundation[item.role]);
-    if (role) {
-      selectedFoundation[role.role] = slide;
-      selectedIndexes.add(index);
+    const matchedFoundation = foundationRoles.find((item) => item.pattern.test(text) && !selectedFoundation[item.role]);
+    if (matchedFoundation) {
+      selectedFoundation[matchedFoundation.role] = slide;
+      selectedFoundationSlides.add(slide);
       return;
     }
+
+    if (isCoverSlide(slide, index)) {
+      covers.push(slide);
+      return;
+    }
+
+    if (isPostConceptPrincipleSlide(slide)) {
+      postConceptPrinciples.push(slide);
+      return;
+    }
+
     if (isExecutionSlideBeforeConcept(slide)) {
       deferredExecution.push(slide);
-      selectedIndexes.add(index);
+      return;
     }
+
+    // Preserve non-execution front matter only when it originally appeared before the Core Concept.
+    // Strategic/execution slides are normalized into the mandatory foundation order below.
+    if (index < coreIndex && !strategicSectionPattern.test(text)) {
+      preFoundationContext.push(slide);
+      return;
+    }
+
+    remainder.push(slide);
   });
 
-  const remainingBeforeCore = beforeCore.filter((_, index) => !selectedIndexes.has(index));
-  const foundationWithLateCaseInsight = { ...selectedFoundation, caseInsight: selectedFoundation.caseInsight ?? afterCoreCaseInsight };
   const orderedFoundation = foundationRoles
-    .filter((role) => role.role !== 'caseInsight' || foundationWithLateCaseInsight.caseInsight)
-    .map((role) => foundationWithLateCaseInsight[role.role] ?? createFoundationSlide(role, context));
-  return [...remainingBeforeCore, ...orderedFoundation, coreSlide, ...remainingAfterCore, ...deferredExecution];
+    .filter((role) => role.role !== 'caseInsight' || selectedFoundation.caseInsight)
+    .map((role) => selectedFoundation[role.role] ?? createFoundationSlide(role, context));
+  const orderedPostConceptPrinciples = postConceptPrinciples.length ? postConceptPrinciples : [createExperiencePrincipleSlide(context)];
+
+  return uniqueSlidesByIdentity([
+    ...covers,
+    ...preFoundationContext,
+    ...orderedFoundation,
+    coreSlide,
+    ...orderedPostConceptPrinciples,
+    ...remainder.filter((slide) => !selectedFoundationSlides.has(slide) && !foundationRoles.some((role) => role.pattern.test(foundationSlideText(slide)))),
+    ...deferredExecution,
+  ]);
 }
 
 function rewriteConstraintDominatedSlide<T extends SlideOutline | SlideContent>(slide: T, context?: StrategicGuardContext): T {
   const { conceptName, coreMessage, thesis } = selectedConceptAnchor(context);
+  const strategicTitle = /problem|challenge|문제|과제/i.test(slide.slidePurpose) ? 'Core Problem / Challenge' : /insight|인사이트/i.test(slide.slidePurpose) ? 'Audience Insight' : /concept|콘셉트|컨셉/i.test(slide.slidePurpose) ? 'Concept Rationale' : 'Strategic Opportunity';
+  const titleHasConstraint = spatialConstraintPattern.test([slide.slideTitle, slide.slideType].filter(Boolean).join(' '));
   const base = {
     ...slide,
+    slideType: titleHasConstraint ? strategicTitle : slide.slideType,
+    slideTitle: titleHasConstraint ? strategicTitle : slide.slideTitle,
     slidePurpose: slide.slidePurpose === 'Concept' || /concept/i.test(slide.slidePurpose) ? 'Concept' : slide.slidePurpose,
-    slideRole: slide.slideRole || '제안 명제와 콘셉트 필연성을 공간 제약이 아닌 관람객 인식 전환 관점에서 설명한다.',
+    slideRole: '제안 명제와 콘셉트 필연성을 공간 제약이 아닌 관람객 인식 전환 관점에서 설명한다.',
     relationToThesis: `이 장표는 ${conceptName}이 ${thesis}를 증명하는 전략적 이유를 제시한다.`,
-    whyThisSlideExists: `공간 조건이 아니라 관람객 이해 장벽, 클라이언트가 만들고자 하는 믿음, 브랜드/사업 메시지의 경험화 필요성을 통해 ${conceptName}의 필연성을 세운다.`,
+    whyThisSlideExists: `공간 조건은 보조 과제로만 다루고, 보이지 않는 시스템 가치·복잡한 value chain·서로 다른 audience 이해 수준·리더십 신뢰 형성을 통해 ${conceptName}의 필연성을 세운다.`,
     keyMessage: coreMessage,
-    mainCopy: `${conceptName}은 공간 조건에서 출발한 해법이 아니라, 관람객이 이해하기 어려운 브랜드/기술/사업 가치를 눈에 보이는 경험 구조로 전환하기 위한 전략적 답입니다.`,
+    mainCopy: `${conceptName}은 공간 조건에서 출발한 해법이 아니라, 관람객이 이해하기 어려운 보이지 않는 시스템 가치와 복잡한 브랜드/기술/사업 맥락을 눈에 보이는 경험 구조로 전환하기 위한 전략적 답입니다.`,
     confirmNeededNote: slide.confirmNeededNote || '',
   };
 
