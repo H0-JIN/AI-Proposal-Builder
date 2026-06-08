@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -722,6 +722,44 @@ function scoreSummary(concept: ConceptCandidate) {
   ].join(' / ');
 }
 
+
+function ProposalNarrativePanel({ narrative }: { narrative?: ProposalNarrative }) {
+  if (!narrative) return null;
+
+  const rows = [
+    ['Market Context', narrative.marketContext],
+    ['Core Problem', narrative.coreProblem],
+    ['Strategic Opportunity', narrative.strategicOpportunity],
+    ['Proposal Thesis', narrative.proposalThesis],
+    ['Why Now', narrative.whyNow],
+    ['Why Us', narrative.whyUs],
+    ['Why This Concept', narrative.whyThisConcept],
+  ];
+
+  return (
+    <div className="mt-6 rounded-3xl border border-violet-100 bg-violet-50 p-5 text-violet-950">
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-violet-700">Proposal Narrative</p>
+      <h3 className="mt-2 text-xl font-black">설득형 제안 내러티브</h3>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {rows.filter(([, value]) => Boolean(value?.trim())).map(([label, value]) => (
+          <div key={label} className="rounded-2xl bg-white/80 p-3 text-sm leading-6">
+            <p className="font-black text-violet-800">{label}</p>
+            <p>{value}</p>
+          </div>
+        ))}
+      </div>
+      {narrative.narrativeFlow?.length ? (
+        <div className="mt-4 rounded-2xl bg-white/80 p-3 text-sm leading-6">
+          <p className="font-black text-violet-800">Narrative Flow</p>
+          <ol className="mt-2 list-decimal space-y-1 pl-5">
+            {narrative.narrativeFlow.map((flow, index) => <li key={`${flow.stage}-${index}`}><span className="font-bold">{flow.stage}</span> · {flow.purpose}</li>)}
+          </ol>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLogic }) {
   if (!logic) return null;
 
@@ -1002,6 +1040,7 @@ function appendUploadedDocument(document: UploadedDocument) {
     conceptCandidates: undefined,
     conceptRecommendation: undefined,
     conceptGenerationResult: undefined,
+    proposalNarrative: undefined,
     selectedConcept: undefined,
     outline: undefined,
     slides: undefined,
@@ -1178,7 +1217,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -1946,7 +1985,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: analysisInput, documentChunks });
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
@@ -1964,7 +2003,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
@@ -1976,11 +2015,14 @@ export default function Home() {
   const runConcepts = async () => {
     if (!state.analysis) return;
     setError('');
-    setLoading('콘셉트 후보 3안 생성 중...');
+    setLoading('제안 내러티브 생성 중...');
     try {
-      const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', { input: analysisInput, analysis: state.analysis, documentChunks });
+      const proposalNarrative = await postJson<ProposalNarrative>('/api/narrative', { input: analysisInput, analysis: state.analysis, uploadedDocuments: state.uploadedDocuments, documentChunks });
+      setLoading('콘셉트 후보 3안 생성 중...');
+      const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', { input: analysisInput, analysis: state.analysis, proposalNarrative, documentChunks });
       setState((current) => ({
         ...current,
+        proposalNarrative,
         conceptDevelopmentLogic: conceptResult.conceptDevelopmentLogic,
         conceptCandidates: conceptResult.concepts,
         conceptRecommendation: conceptResult.recommendation,
@@ -2004,7 +2046,7 @@ export default function Home() {
 
   const renumberOutline = (outline: SlideOutline[]) => outline.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
 
-  const updateOutlineSlide = (slideNumber: number, field: keyof Pick<SlideOutline, 'slideTitle' | 'slidePurpose' | 'keyMessage' | 'mainCopy'>, value: string) => {
+  const updateOutlineSlide = (slideNumber: number, field: keyof Pick<SlideOutline, 'slideTitle' | 'slidePurpose' | 'slideRole' | 'relationToThesis' | 'whyThisSlideExists' | 'keyMessage' | 'mainCopy'>, value: string) => {
     setState((current) => ({
       ...current,
       outline: current.outline?.map((slide) => (slide.slideNumber === slideNumber ? { ...slide, [field]: value } : slide)),
@@ -2039,7 +2081,10 @@ export default function Home() {
         slideNumber: outline.length + 1,
         slideType: 'Custom Slide',
         slideTitle: '새 슬라이드 제목',
-        slidePurpose: '이 슬라이드가 제안서에서 수행할 역할을 입력하세요.',
+        slidePurpose: 'Strategy',
+        slideRole: '이 슬라이드가 제안서에서 수행할 역할을 입력하세요.',
+        relationToThesis: '제안 명제와의 연결을 입력하세요.',
+        whyThisSlideExists: '이 슬라이드가 필요한 이유를 입력하세요.',
         keyMessage: '핵심 메시지를 입력하세요.',
         mainCopy: '본문 방향 또는 주요 서술 문장을 입력하세요.',
         confirmNeededNote: '',
@@ -2053,7 +2098,7 @@ export default function Home() {
     setError('');
     setLoading('제안서 구조 생성 중...');
     try {
-      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, documentChunks });
+      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, proposalNarrative: state.proposalNarrative, documentChunks });
       setState((current) => ({ ...current, outline, slides: undefined }));
       setStep('outline');
     } catch (err) {
@@ -2069,7 +2114,7 @@ export default function Home() {
     setLoading('장표별 문안 생성 중...');
     try {
       const editableOutline = state.outline.map((slide) => ({ ...slide, mainCopy: slide.mainCopy ?? slide.keyMessage }));
-      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: removeInternalConceptComparisonSlides(editableOutline), conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, documentChunks });
+      const slides = await postJson<SlideContent[]>('/api/slides', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, outline: removeInternalConceptComparisonSlides(editableOutline), conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, proposalNarrative: state.proposalNarrative, documentChunks });
       setState((current) => ({ ...current, slides }));
       setStep('slides');
     } catch (err) {
@@ -2272,6 +2317,7 @@ export default function Home() {
                 </p>
               )}
             </div>
+            <ProposalNarrativePanel narrative={state.proposalNarrative} />
             <ConceptDevelopmentLogicPanel logic={state.conceptDevelopmentLogic} />
             <ConceptRecommendationPanel recommendation={state.conceptRecommendation} />
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
@@ -2280,15 +2326,16 @@ export default function Home() {
                 return (
                   <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
-                    <h3 className="mt-2 text-2xl font-black text-slate-950">{concept.conceptNameEN}</h3>
-                    <p className="text-lg font-bold text-blue-700">{concept.conceptNameKR}</p>
+                    <h3 className="mt-2 text-2xl font-black text-slate-950">{concept.conceptTitle || concept.conceptNameEN}</h3>
+                    <p className="text-lg font-bold text-blue-700">{concept.subtitle || concept.conceptNameKR}</p>
                     <p className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm font-semibold leading-6 text-slate-700">{concept.oneLineDefinition}</p>
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
                       <div><dt className="font-black text-slate-950">핵심 메시지</dt><dd>{concept.coreMessage}</dd></div>
-                      <div><dt className="font-black text-slate-950">경험 구조</dt><dd>{concept.experienceLogic}</dd></div>
+                      <div><dt className="font-black text-slate-950">명제 증명</dt><dd>{concept.thesisProof || concept.whyThisWorks}</dd></div>
+                      <div><dt className="font-black text-slate-950">경험 구조</dt><dd>{concept.experienceStructure || concept.experienceLogic}</dd></div>
                       <div><dt className="font-black text-slate-950">예상 핵심 체험 자산 방향</dt><dd>{concept.keyExperienceAssetDirection}</dd></div>
-                      <div><dt className="font-black text-slate-950">강점</dt><dd>{concept.whyThisWorks}</dd></div>
-                      <div><dt className="font-black text-slate-950">리스크</dt><dd>{concept.riskOrCaution}</dd></div>
+                      <div><dt className="font-black text-slate-950">강점</dt><dd>{concept.strengths?.length ? concept.strengths.join(' / ') : concept.whyThisWorks}</dd></div>
+                      <div><dt className="font-black text-slate-950">리스크</dt><dd>{concept.risks?.length ? concept.risks.join(' / ') : concept.riskOrCaution}</dd></div>
                       <div><dt className="font-black text-slate-950">평가 점수 요약</dt><dd>{scoreSummary(concept)}</dd></div>
                     </dl>
                     <button
@@ -2342,9 +2389,23 @@ export default function Home() {
                       핵심 메시지
                       <input value={slide.keyMessage} onChange={(event) => updateOutlineSlide(slide.slideNumber, 'keyMessage', event.target.value)} className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal text-slate-900 outline-none focus:border-blue-500" />
                     </label>
-                    <label className="text-sm font-bold text-slate-700 md:col-span-2">
+                    <label className="text-sm font-bold text-slate-700">
                       슬라이드 목적
-                      <textarea value={slide.slidePurpose} onChange={(event) => updateOutlineSlide(slide.slideNumber, 'slidePurpose', event.target.value)} className="mt-1 min-h-20 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal text-slate-900 outline-none focus:border-blue-500" />
+                      <select value={slide.slidePurpose} onChange={(event) => updateOutlineSlide(slide.slideNumber, 'slidePurpose', event.target.value)} className="mt-1 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 font-normal text-slate-900 outline-none focus:border-blue-500">
+                        {['Problem', 'Insight', 'Strategy', 'Concept', 'Experience', 'Content', 'Proof', 'Impact'].map((purpose) => <option key={purpose} value={purpose}>{purpose}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-sm font-bold text-slate-700">
+                      슬라이드 역할
+                      <input value={slide.slideRole ?? ''} onChange={(event) => updateOutlineSlide(slide.slideNumber, 'slideRole', event.target.value)} className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal text-slate-900 outline-none focus:border-blue-500" />
+                    </label>
+                    <label className="text-sm font-bold text-slate-700 md:col-span-2">
+                      제안 명제와의 연결
+                      <textarea value={slide.relationToThesis ?? ''} onChange={(event) => updateOutlineSlide(slide.slideNumber, 'relationToThesis', event.target.value)} className="mt-1 min-h-20 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal text-slate-900 outline-none focus:border-blue-500" />
+                    </label>
+                    <label className="text-sm font-bold text-slate-700 md:col-span-2">
+                      이 슬라이드가 필요한 이유
+                      <textarea value={slide.whyThisSlideExists ?? ''} onChange={(event) => updateOutlineSlide(slide.slideNumber, 'whyThisSlideExists', event.target.value)} className="mt-1 min-h-20 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal text-slate-900 outline-none focus:border-blue-500" />
                     </label>
                     <label className="text-sm font-bold text-slate-700 md:col-span-2">
                       메인 카피 / 문안 방향
@@ -2377,6 +2438,12 @@ export default function Home() {
                   <div className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{slide.slideType}</div>
                   <h3 className="mt-2 text-xl font-black text-slate-950">{slide.slideTitle}</h3>
                   <p className="mt-1 text-sm font-semibold text-blue-700">{slide.keyMessage}</p>
+                  <div className="mt-3 grid gap-2 text-xs text-violet-900 md:grid-cols-2">
+                    <div className="rounded-2xl bg-violet-50 p-3"><span className="font-black">Purpose</span><br />{slide.slidePurpose}</div>
+                    <div className="rounded-2xl bg-violet-50 p-3"><span className="font-black">Role</span><br />{slide.slideRole}</div>
+                    <div className="rounded-2xl bg-violet-50 p-3"><span className="font-black">Relation to Thesis</span><br />{slide.relationToThesis}</div>
+                    <div className="rounded-2xl bg-violet-50 p-3"><span className="font-black">Why This Slide Exists</span><br />{slide.whyThisSlideExists}</div>
+                  </div>
                   <p className="mt-2 text-sm leading-6 text-slate-600">{slide.mainCopy}</p>
                   <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-700">
                     {slide.bodyBullets.map((bullet, index) => <li key={`${bullet}-${index}`}>{bullet}</li>)}

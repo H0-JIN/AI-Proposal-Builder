@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { slideContentJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ProjectInput, SlideContent, SlideOutline } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ProjectInput, ProposalNarrative, SlideContent, SlideOutline } from '@/lib/types';
 import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -14,6 +14,7 @@ import { formatChunksForPrompt, retrieveRelevantChunks } from '@/lib/rag';
 import { applyProposalStructureGuardToOutline, applyProposalStructureGuardToSlides, buildProposalStructureGuard, proposalScopeTypeLabels } from '@/lib/proposalStructureGuard';
 import { applyReferenceGuardToSlides, buildReferenceGuardInstruction, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
+import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
 
 
 function normalizeSentence(value?: string) {
@@ -263,7 +264,7 @@ function buildSlideEvidenceOutline(input: ProjectInput, outline: SlideOutline[],
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; outline: SlideOutline[]; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptGenerationResult?: ConceptCandidatesResult; documentChunks?: DocumentChunk[] };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; outline: SlideOutline[]; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptGenerationResult?: ConceptCandidatesResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[] };
 
     if (!body.input || !body.analysis || !body.selectedConcept || !body.outline?.length) {
       return NextResponse.json({ error: '프로젝트 입력값, 분석 결과, 선택된 콘셉트, 아웃라인이 필요합니다.' }, { status: 400 });
@@ -292,6 +293,7 @@ export async function POST(request: Request) {
     const referenceGuardInstruction = buildReferenceGuardInstruction(body.analysis);
     const strategyLayerMetadata = buildStrategyLayerMetadata({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic, conceptGenerationResult: body.conceptGenerationResult });
     const strategicMessageSummary = strategicMessageFieldsFromLogic(body.conceptDevelopmentLogic);
+    const proposalNarrative = ensureProposalNarrative(body.proposalNarrative, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, documentText: body.input.briefText });
     const fallbackRetrievedChunks = retrieveRelevantChunks({
       stage: 'slide',
       proposalType: effectiveProposalType,
@@ -307,7 +309,10 @@ export async function POST(request: Request) {
       system: [
         '너는 전시/브랜드 체험관 및 MICE/컨퍼런스 운영 제안서 초안을 작성하는 한국어 크리에이티브 전략가이자 제안서 작가다.',
         isEventOperationType ? '이 단계는 행사 운영형 제안 생성 단계다. 사용자가 수정한 슬라이드 아웃라인을 최종 기준으로 삼아 RFP 요약을 반복하지 말고 행사 목적, 브랜드 메시지, 프로그램, 등록/입장, 세션 시스템, 파트너 부스, 네트워킹/케이터링, 동선, 설치/전환, 인력, 리스크, 예산 문안을 실제 제안서 초안 수준으로 생성하라.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '이 단계는 콘텐츠 개발형 제안 생성 단계다. 사용자가 수정한 슬라이드 아웃라인을 최종 기준으로 삼아 RFP 요약을 반복하지 말고 content concept, narrative, media mechanism, hero content, sub content, scenario, reference, schedule, credential 중심의 PPT 장표 문안을 실제 제안서 초안 수준으로 생성하라.' : '이 단계는 제안 생성 단계다. 사용자가 수정한 슬라이드 아웃라인을 최종 기준으로 삼아 RFP 요약을 반복하지 말고 경험 전략, 콘셉트, 핵심 체험 자산, 공간/콘텐츠 구성, 미디어/인터랙션, 방문객 여정, PPT 장표 문안을 실제 제안서 초안 수준으로 생성하라. 아웃라인의 slideTitle, slidePurpose, keyMessage, mainCopy 수정 내용은 반드시 반영하라.',
-        `각 슬라이드는 slideNumber, slideType, slideTitle, slidePurpose, keyMessage, mainCopy, bodyBullets, visualDirection, visitorAction, contentMechanism, spatialPlacement, mediaOrObject, outputOrReward, imagePlaceholder, visualPrompt, diagramSuggestion, productExperienceDetails, keyExperienceAssets, experienceScenarioSteps, referenceInsights, speakerNote, confirmNeededNote를 모두 작성한다. 일반 슬라이드에서 해당 배열이 없으면 빈 배열을 넣는다. 제품/콘텐츠 상세 장표는 ${experienceDetailFields.join(', ')} 항목을 productExperienceDetails에 명확히 작성하라.`,
+        '각 슬라이드는 Proposal Narrative와 outline metadata를 보존한다. slidePurpose는 Problem, Insight, Strategy, Concept, Experience, Content, Proof, Impact 중 하나만 사용하고 slideRole, relationToThesis, whyThisSlideExists를 반드시 작성하라.',
+        `각 슬라이드는 slideNumber, slideType, slideTitle, slidePurpose, slideRole, relationToThesis, whyThisSlideExists, keyMessage, mainCopy, bodyBullets, visualDirection, visitorAction, contentMechanism, spatialPlacement, mediaOrObject, outputOrReward, imagePlaceholder, visualPrompt, diagramSuggestion, productExperienceDetails, keyExperienceAssets, experienceScenarioSteps, referenceInsights, speakerNote, confirmNeededNote를 모두 작성한다. 일반 슬라이드에서 해당 배열이 없으면 빈 배열을 넣는다. 제품/콘텐츠 상세 장표는 ${experienceDetailFields.join(', ')} 항목을 productExperienceDetails에 명확히 작성하라.`,
+        '모든 content/detail slide의 mainCopy와 bodyBullets는 Why → What → How → Proof 흐름으로 작성하라. RFP object를 raw list로 제시하지 말고 RFP object → experience role → visitor meaning → proof of client capability로 변환하라.',
+        'KPI, Operation, Budget, Company Introduction, Schedule, RFP Requirement Table, Media Experience Overview, Content Mechanism 장표는 RFP가 명시하거나 proposalThesis에 직접 연결될 때만 작성하고, relationToThesis와 whyThisSlideExists에서 그 이유를 설명하라.',
         '본문 문안에는 RFP Fact / AI Proposal / Confirm Needed 구분을 반영하라. 단, AI Proposal 영역은 RFP 반복이 아니라 새 제안 아이디어여야 하며 Confirm Needed는 confirmNeededNote에만 배치하라.',
         '각 슬라이드 문안은 슬라이드 아웃라인에 포함된 retrievalQuery와 evidenceSnippets를 우선 근거로 사용하라. evidenceSnippets는 해당 slideTitle, slideType, slidePurpose로 검색된 슬라이드별 RFP/RAG 근거이며, 다른 슬라이드의 evidenceSnippets를 해당 슬라이드의 RFP 사실처럼 전용하지 말라.',
         'winningStrategyBrief / proposalThesis / experienceLogic은 Winning Strategy Layer 메타데이터다. 제공된 값이 있으면 보존해 제안서 문안의 전략 축에 반영하고, 없으면 서버 fallback 값을 사용하라. 이 메타데이터가 없다는 이유로 장표 문안 생성을 중단하지 말라.',
@@ -356,6 +361,9 @@ ${strategicMessageSummary || '전략 메시지 추출 필드 없음'}
 
 Winning Strategy Layer 메타데이터(제공값 우선, 누락 시 서버 fallback):
 ${JSON.stringify(strategyLayerMetadata, null, 2)}
+
+Proposal Narrative:
+${summarizeProposalNarrative(proposalNarrative)}
 
 경험 접근 로직:
 ${JSON.stringify(body.conceptDevelopmentLogic ?? null, null, 2)}

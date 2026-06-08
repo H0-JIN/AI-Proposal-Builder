@@ -169,6 +169,31 @@ export interface NumericInformation {
   proposedMeasurement: string[];
 }
 
+export interface ProposalNarrativeFlowStage {
+  stage: string;
+  purpose: string;
+}
+
+export interface ProposalNarrative {
+  marketContext: string;
+  coreProblem: string;
+  strategicOpportunity: string;
+  proposalThesis: string;
+  whyNow: string;
+  whyUs: string;
+  whyThisConcept: string;
+  narrativeFlow: ProposalNarrativeFlowStage[];
+}
+
+export type SlidePurpose = 'Problem' | 'Insight' | 'Strategy' | 'Concept' | 'Experience' | 'Content' | 'Proof' | 'Impact';
+
+export interface SlideNarrativeMetadata {
+  slidePurpose: string;
+  slideRole?: string;
+  relationToThesis?: string;
+  whyThisSlideExists?: string;
+}
+
 export interface AnalysisResult {
   projectOverview: string;
   clientChallenge: string;
@@ -234,10 +259,18 @@ export interface ConceptEvaluationScores {
 
 export interface ConceptCandidate {
   conceptId: string;
+  conceptTitle: string;
+  subtitle: string;
   conceptNameKR: string;
   conceptNameEN: string;
   oneLineDefinition: string;
   coreMessage: string;
+  thesisProof: string;
+  experienceStructure: string;
+  expectedAssets: string[];
+  strengths: string[];
+  risks: string[];
+  evaluationSummary: string;
   experienceLogic: string;
   keyExperienceAssetDirection: string;
   targetRelevance: string;
@@ -262,11 +295,10 @@ export interface ConceptCandidatesResult {
   recommendation: ConceptRecommendation;
 }
 
-export interface SlideOutline {
+export interface SlideOutline extends SlideNarrativeMetadata {
   slideNumber: number;
   slideType: string;
   slideTitle: string;
-  slidePurpose: string;
   keyMessage: string;
   mainCopy: string;
   confirmNeededNote: string;
@@ -320,11 +352,10 @@ export interface ExperienceScenarioStep {
   designNote: string;
 }
 
-export interface SlideContent {
+export interface SlideContent extends SlideNarrativeMetadata {
   slideNumber: number;
   slideType: string;
   slideTitle: string;
-  slidePurpose: string;
   keyMessage: string;
   mainCopy: string;
   bodyBullets: string[];
@@ -361,6 +392,7 @@ export interface ProposalState {
   conceptCandidates?: ConceptCandidate[];
   conceptRecommendation?: ConceptRecommendation;
   conceptGenerationResult?: ConceptCandidatesResult;
+  proposalNarrative?: ProposalNarrative;
   selectedConcept?: ConceptCandidate;
   outline?: SlideOutline[];
   slides?: SlideContent[];
