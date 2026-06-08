@@ -312,7 +312,7 @@ export function createDocumentChunks(params: {
   visualSummary?: string;
   pageNumber?: number;
   visionPages?: { pageNumber: number; extractedText: string; visualSummary: string }[];
-  pageSources?: { pageNumber: number; text: string; sourceType: ChunkSourceType; visualSummary?: string }[];
+  pageSources?: { pageNumber?: number; slideNumber?: number; sectionTitle?: string; text: string; sourceType: ChunkSourceType; visualSummary?: string }[];
   createdAt?: string;
 }): DocumentChunk[] {
   const documentType = params.documentType ?? inferDocumentType(params.documentName);
@@ -338,6 +338,8 @@ export function createDocumentChunks(params: {
         documentName: params.documentName,
         documentType,
         pageNumber: page.pageNumber,
+        slideNumber: page.slideNumber,
+        sectionTitle: page.sectionTitle,
         chunkIndex,
         chunkText,
         visualSummary: page.visualSummary,

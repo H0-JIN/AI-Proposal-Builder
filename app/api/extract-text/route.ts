@@ -15,7 +15,7 @@ import {
 } from '@/lib/extractedTextValidation';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const supportedExtensions = ['pdf', 'docx'] as const;
+const supportedExtensions = ['pdf', 'docx', 'pptx'] as const;
 
 type SupportedExtension = (typeof supportedExtensions)[number];
 
@@ -35,6 +35,12 @@ type PdfCMap = {
 
 type PdfPageExtraction = {
   pageNumber: number;
+  text: string;
+};
+
+type PptxSlideExtraction = {
+  slideNumber: number;
+  title?: string;
   text: string;
 };
 
@@ -77,6 +83,61 @@ function decodeXmlEntities(value: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&');
+}
+
+
+function getPptxSlideNumber(path: string) {
+  return Number(path.match(/ppt\/slides\/slide(\d+)\.xml$/)?.[1] ?? 0);
+}
+
+function extractTextRunsFromXml(xml: string) {
+  const tokens = Array.from(xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>|<a:br\b[^>]*\/>|<a:p\b[^>]*>|<\/a:p>/g));
+  return tokens
+    .map((match) => {
+      if (match[1] !== undefined) return decodeXmlEntities(match[1]);
+      if (match[0].startsWith('<a:br')) return '\n';
+      if (match[0].startsWith('</a:p')) return '\n';
+      return '';
+    })
+    .join('')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+async function extractPptxSlides(buffer: Buffer): Promise<PptxSlideExtraction[]> {
+  const zip = await JSZip.loadAsync(buffer);
+  const slideFiles = Object.keys(zip.files)
+    .filter((path) => /^ppt\/slides\/slide\d+\.xml$/.test(path))
+    .sort((left, right) => getPptxSlideNumber(left) - getPptxSlideNumber(right));
+
+  if (!slideFiles.length) {
+    throw new Error('PPTX 슬라이드를 찾을 수 없습니다.');
+  }
+
+  const slides: PptxSlideExtraction[] = [];
+
+  for (const slidePath of slideFiles) {
+    const slideNumber = getPptxSlideNumber(slidePath);
+    const slideXml = await zip.file(slidePath)?.async('string');
+    if (!slideXml) continue;
+
+    const visibleLines = extractTextRunsFromXml(slideXml);
+    const notesPath = `ppt/notesSlides/notesSlide${slideNumber}.xml`;
+    const notesXml = await zip.file(notesPath)?.async('string');
+    const notesLines = notesXml ? extractTextRunsFromXml(notesXml) : [];
+    const title = visibleLines.find((line) => line.length >= 2 && line.length <= 80) ?? visibleLines[0] ?? `Slide ${slideNumber}`;
+    const text = [
+      `[Slide ${slideNumber}]`,
+      title ? `Title: ${title}` : '',
+      visibleLines.join('\n'),
+      notesLines.length ? `Speaker notes:\n${notesLines.join('\n')}` : '',
+    ].filter(Boolean).join('\n').trim();
+
+    slides.push({ slideNumber, title, text });
+  }
+
+  return slides;
 }
 
 async function extractDocxText(buffer: Buffer): Promise<string> {
@@ -449,7 +510,7 @@ export async function POST(request: Request) {
 
     const extension = getExtension(file.name);
     if (!supportedExtensions.includes(extension as SupportedExtension)) {
-      return NextResponse.json({ error: '지원하지 않는 파일 형식입니다. PDF 또는 DOCX 파일을 업로드해주세요.' }, { status: 400 });
+      return NextResponse.json({ error: '지원하지 않는 파일 형식입니다. PDF, DOCX 또는 PPTX 파일을 업로드해주세요.' }, { status: 400 });
     }
 
     const arrayBuffer = await file.arrayBuffer();
@@ -464,6 +525,26 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ text: validation.text });
+    }
+
+    if (extension === 'pptx') {
+      const slides = await extractPptxSlides(buffer);
+      const text = slides.map((slide) => slide.text).join('\n\n');
+      const validation = validateExtractedText(text);
+
+      if (!validation.ok) {
+        const key = validation.reason === 'short' ? 'warning' : 'error';
+        return NextResponse.json({ [key]: validation.message, slides }, { status: 422 });
+      }
+
+      return NextResponse.json({
+        text: validation.text,
+        status: 'success',
+        message: 'PPTX 슬라이드 텍스트를 추출했습니다.',
+        slides,
+        pageCount: slides.length,
+        extractedPageCount: slides.filter((slide) => slide.text.trim()).length,
+      });
     }
 
     const pdfExtraction = extractPdfText(buffer);

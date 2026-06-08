@@ -25,6 +25,7 @@ import {
 import { DEFAULT_VISION_CHUNK_SIZE, DEFAULT_VISION_MODE } from '@/lib/visionConfig';
 import { getConceptDefinition, getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
 import { createDocumentChunks, inferDocumentType } from '@/lib/rag';
+import { inferUploadedDocumentRole, mapStorageRoleToDocumentType } from '@/lib/documentRoles';
 
 type Step = 'home' | 'create' | 'analysis' | 'concepts' | 'outline' | 'slides';
 
@@ -35,6 +36,12 @@ type UploadNotice = {
 
 type ExtractedPdfPage = {
   pageNumber: number;
+  text: string;
+};
+
+type ExtractedPptxSlide = {
+  slideNumber: number;
+  title?: string;
   text: string;
 };
 
@@ -53,6 +60,7 @@ type ExtractTextResponse = {
   qualityReasons?: string[];
   extractionQuality?: 'low';
   pages?: ExtractedPdfPage[];
+  slides?: ExtractedPptxSlide[];
   pageQuality?: ExtractedPageQuality[];
   pageCount?: number;
   extractedPageCount?: number;
@@ -61,6 +69,14 @@ type ExtractTextResponse = {
 type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[] };
 
 type DbSaveStatus = 'idle' | 'disabled' | 'saving' | 'saved' | 'failed';
+
+type PersistDocumentResponse = {
+  status?: 'disabled' | 'saved' | 'failed';
+  projectId?: string;
+  documentId?: string;
+  chunkCount?: number;
+  role?: 'rfp' | 'proposal' | 'reference' | 'memo';
+};
 
 type PersistAnalysisResponse = {
   status?: 'disabled' | 'saved' | 'failed';
@@ -88,7 +104,7 @@ type VisionPdfResponse = {
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const clientReadableExtensions = ['txt', 'md'];
-const serverReadableExtensions = ['pdf', 'docx'];
+const serverReadableExtensions = ['pdf', 'docx', 'pptx'];
 
 const STORAGE_KEY = 'ai-proposal-builder-state';
 
@@ -274,6 +290,19 @@ function DbSaveStatusIndicator({ status }: { status: DbSaveStatus }) {
   );
 }
 
+
+function getDocumentDbSaveStatusLabel(status?: UploadedDocument['dbSaveStatus']) {
+  const statusConfig: Record<Exclude<DbSaveStatus, 'idle'>, { label: string; tone: string }> = {
+    disabled: { label: 'DB save disabled', tone: 'border-slate-200 bg-slate-50 text-slate-600' },
+    saving: { label: 'Saving document to DB', tone: 'border-blue-200 bg-blue-50 text-blue-700' },
+    saved: { label: 'Saved to DB', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    failed: { label: 'DB save failed, file still available', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+  };
+
+  if (!status || status === 'idle') return null;
+  return statusConfig[status];
+}
+
 function LoadingOverlay({ message }: { message: string }) {
   if (!message) return null;
 
@@ -378,7 +407,10 @@ function UploadedDocumentsList({
         {documents.map((document, index) => (
           <div key={document.id || `${document.fileName}-${index}`} className="grid grid-cols-12 gap-3 px-4 py-4 text-sm text-slate-700">
             <div className="col-span-12 font-bold text-slate-950 md:col-span-3">{document.fileName}</div>
-            <div className="col-span-3 text-xs font-bold md:col-span-1">{document.documentType ?? inferDocumentType(document.fileName)}</div>
+            <div className="col-span-3 text-xs font-bold md:col-span-1">
+              <p>{document.documentRole ?? inferUploadedDocumentRole(document.fileName, document.documentAnalysisText || document.extractedText)}</p>
+              <p className="mt-1 text-[10px] text-slate-400">{document.documentType ?? inferDocumentType(document.fileName)}</p>
+            </div>
             <div className="col-span-9 md:col-span-2">
               <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusTone[document.extractionStatus]}`}>
                 {document.extractionStatus}
@@ -388,6 +420,15 @@ function UploadedDocumentsList({
               {document.failedChunks?.length ? <p className="mt-2 text-xs leading-5 text-slate-500">실패 구간: {formatFailedChunks(document.failedChunks)}</p> : null}
               {document.failedPages?.length ? <p className="mt-2 text-xs font-semibold leading-5 text-red-600">재시도 후 실패 페이지: {formatFailedPages(document.failedPages)}</p> : null}
               {document.errorMessage && document.errorMessage !== document.warningMessage && <p className="mt-2 text-xs font-semibold leading-5 text-red-600">{document.errorMessage}</p>}
+              {(() => {
+                const dbStatus = getDocumentDbSaveStatusLabel(document.dbSaveStatus);
+                return dbStatus ? (
+                  <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-[11px] font-black ${dbStatus.tone}`}>
+                    {document.dbSaveStatus === 'saving' && <span className="mr-2 h-1.5 w-1.5 animate-pulse self-center rounded-full bg-current" />}
+                    {dbStatus.label}{document.dbChunkCount !== undefined ? ` · ${document.dbChunkCount} chunks` : ''}
+                  </span>
+                ) : null;
+              })()}
             </div>
             <div className="col-span-6 text-xs leading-5 text-slate-600 md:col-span-2">{getTopCategories(document)}</div>
             <div className="col-span-2 text-center text-xs font-bold tabular-nums md:col-span-1">{(document.chunks ?? []).length}</div>
@@ -924,7 +965,8 @@ function getVisionProcessingMessage(processedPageCount?: number, totalPageCount?
 
 function enrichDocumentWithChunks(document: UploadedDocument): UploadedDocument {
   const text = (document.documentAnalysisText || document.extractedText || '').trim();
-  const documentType = document.documentType ?? inferDocumentType(document.fileName);
+  const documentRole = document.documentRole ?? inferUploadedDocumentRole(document.fileName, document.documentAnalysisText || document.extractedText);
+  const documentType = document.documentType ?? mapStorageRoleToDocumentType(documentRole) ?? inferDocumentType(document.fileName);
   const sourceType = document.visionUsed ? 'visionAnalysis' : 'textExtraction';
   const chunks = text
     ? createDocumentChunks({
@@ -942,7 +984,7 @@ function enrichDocumentWithChunks(document: UploadedDocument): UploadedDocument 
       })
     : [];
 
-  return { ...document, documentType, chunks };
+  return { ...document, documentRole, documentType, chunks };
 }
 
 function getAllDocumentChunks(documents: UploadedDocument[] = []) {
@@ -1031,6 +1073,7 @@ function buildTextPageSources(pages: ExtractedPdfPage[] = [], visionPageNumbers:
 function mergeHybridPageSources(textPageSources: NonNullable<UploadedDocument['pageTextSources']>, visionPages: VisionPageAnalysis[] = []) {
   const visionSources = visionPages.map((page) => ({
     pageNumber: page.pageNumber,
+    slideNumber: undefined,
     text: [page.extractedText, page.visualSummary].filter(Boolean).join('\n'),
     sourceType: 'visionAnalysis' as const,
     visualSummary: page.visualSummary,
@@ -1038,7 +1081,18 @@ function mergeHybridPageSources(textPageSources: NonNullable<UploadedDocument['p
 
   return [...textPageSources, ...visionSources]
     .filter((page) => page.text.trim())
-    .sort((a, b) => a.pageNumber - b.pageNumber);
+    .sort((a, b) => (a.pageNumber ?? a.slideNumber ?? 0) - (b.pageNumber ?? b.slideNumber ?? 0));
+}
+
+function buildSlideTextSources(slides: ExtractedPptxSlide[] = []) {
+  return slides
+    .filter((slide) => slide.text.trim())
+    .map((slide) => ({
+      slideNumber: slide.slideNumber,
+      sectionTitle: slide.title,
+      text: slide.text.trim(),
+      sourceType: 'textExtraction' as const,
+    }));
 }
 
 function buildDocumentTextFromPageSources(pageSources: NonNullable<UploadedDocument['pageTextSources']>) {
@@ -1285,6 +1339,38 @@ export default function Home() {
     }));
   };
 
+  const persistUploadedDocumentSafely = async (document: UploadedDocument) => {
+    const enrichedDocument = enrichDocumentWithChunks(document);
+    const role = enrichedDocument.documentRole ?? inferUploadedDocumentRole(enrichedDocument.fileName, enrichedDocument.documentAnalysisText || enrichedDocument.extractedText);
+
+    if (role === 'rfp' || !enrichedDocument.chunks?.length) return;
+
+    updateUploadedDocument(enrichedDocument.id, { dbSaveStatus: 'saving' });
+
+    try {
+      const response = await postJson<PersistDocumentResponse>('/api/persist-document', {
+        input: state.input,
+        document: { ...enrichedDocument, dbSaveStatus: 'saving' },
+        documentChunks: enrichedDocument.chunks,
+      });
+
+      updateUploadedDocument(enrichedDocument.id, {
+        documentRole: response.role ?? role,
+        dbSaveStatus: response.status === 'disabled' ? 'disabled' : response.status === 'saved' ? 'saved' : 'failed',
+        dbProjectId: response.projectId,
+        dbDocumentId: response.documentId,
+        dbChunkCount: response.chunkCount,
+      });
+    } catch {
+      updateUploadedDocument(enrichedDocument.id, { dbSaveStatus: 'failed' });
+    }
+  };
+
+  const addUploadedDocumentAndPersist = (document: UploadedDocument, noticeType: UploadNotice['type'], message: string) => {
+    addUploadedDocument(document, noticeType, message);
+    void persistUploadedDocumentSafely(document);
+  };
+
   const createUploadedDocument = (
     file: File,
     extractionStatus: ExtractionStatus,
@@ -1295,7 +1381,8 @@ export default function Home() {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     fileName: file.name,
     fileType: getFileTypeLabel(file.name),
-    documentType: inferDocumentType(file.name),
+    documentRole: inferUploadedDocumentRole(file.name, options.documentAnalysisText || extractedText),
+    documentType: mapStorageRoleToDocumentType(inferUploadedDocumentRole(file.name, options.documentAnalysisText || extractedText)),
     extractionStatus,
     extractedText,
     documentAnalysisText: options.documentAnalysisText,
@@ -1316,6 +1403,7 @@ export default function Home() {
     ocrAvailable: options.ocrAvailable ?? false,
     warningMessage,
     errorMessage: options.errorMessage,
+    dbSaveStatus: 'idle',
   });
 
   const runAutomaticVisionAnalysis = async (documentId: string, file: File, textPrefix = '', qualityFallback = false) => {
@@ -1625,7 +1713,7 @@ export default function Home() {
           ? `Vision 일부 완료 · 페이지: ${getSuccessfulPageCount()}/${finalPageCount} · ${failureSummary}`
           : `Vision 분석 실패 · ${failureSummary || '분석 가능한 페이지가 없습니다.'}`;
 
-      updateUploadedDocument(documentId, {
+      const finalPatch: Partial<UploadedDocument> = {
         extractionStatus: finalStatus,
         extractedText: hasSuccessfulPages ? combinedText : '',
         documentAnalysisText: hasSuccessfulPages ? combinedText : undefined,
@@ -1642,7 +1730,22 @@ export default function Home() {
         ocrAvailable: false,
         warningMessage: finalStatus === 'Vision 일부 완료' ? finalMessage : undefined,
         errorMessage: finalStatus === 'Vision 분석 실패' ? finalMessage : failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
-      });
+      };
+      updateUploadedDocument(documentId, finalPatch);
+      if (hasSuccessfulPages) {
+        void persistUploadedDocumentSafely(enrichDocumentWithChunks({
+          id: documentId,
+          fileName: file.name,
+          fileType: getFileTypeLabel(file.name),
+          documentRole: inferUploadedDocumentRole(file.name, combinedText),
+          documentType: mapStorageRoleToDocumentType(inferUploadedDocumentRole(file.name, combinedText)),
+          extractionStatus: finalStatus,
+          extractedText: combinedText,
+          documentAnalysisText: combinedText,
+          extractedCharCount: combinedText.length,
+          ...finalPatch,
+        }));
+      }
       console.info('vision chunked analysis finished', { documentId, fileName: file.name, successfulPages: getSuccessfulPageCount(), processedThroughPage, totalPageCount, failedChunks: failedChunks.length, failedPages: failedPages.length, finalStatus });
       setUploadNotice({ type: finalStatus === '전체 Vision 분석 완료' ? 'success' : finalStatus === 'Vision 일부 완료' ? 'warning' : 'error', message: finalMessage });
       if (finalStatus === 'Vision 분석 실패') setError(finalMessage);
@@ -1836,7 +1939,7 @@ export default function Home() {
         ? `하이브리드 PDF 분석 일부 완료 · Vision 실패 페이지: ${formatFailedPages(failedPages)} · 텍스트 사용 페이지: ${textLabel}`
         : `텍스트 추출 + 일부 페이지 Vision 분석 완료 · Vision 분석 페이지: ${visionLabel} · 텍스트 사용 페이지: ${textLabel}`;
 
-      updateUploadedDocument(documentId, {
+      const finalPatch: Partial<UploadedDocument> = {
         extractionStatus: finalStatus,
         extractedText: combinedText,
         documentAnalysisText: combinedText || undefined,
@@ -1856,7 +1959,20 @@ export default function Home() {
         ocrAvailable: false,
         warningMessage: failedPages.length ? finalMessage : undefined,
         errorMessage: failedPages.length ? `재시도 후 실패 페이지: ${formatFailedPages(failedPages)}` : undefined,
-      });
+      };
+      updateUploadedDocument(documentId, finalPatch);
+      void persistUploadedDocumentSafely(enrichDocumentWithChunks({
+        id: documentId,
+        fileName: file.name,
+        fileType: getFileTypeLabel(file.name),
+        documentRole: inferUploadedDocumentRole(file.name, combinedText),
+        documentType: mapStorageRoleToDocumentType(inferUploadedDocumentRole(file.name, combinedText)),
+        extractionStatus: finalStatus,
+        extractedText: combinedText,
+        documentAnalysisText: combinedText || undefined,
+        extractedCharCount: combinedText.length,
+        ...finalPatch,
+      }));
       setUploadNotice({ type: failedPages.length ? 'warning' : 'success', message: finalMessage });
     } catch (error) {
       const message = error instanceof Error ? `하이브리드 Vision 분석 실패: ${error.message}` : '하이브리드 Vision 분석 실패';
@@ -1880,7 +1996,7 @@ export default function Home() {
 
     const extension = getFileExtension(file.name);
     if (![...clientReadableExtensions, ...serverReadableExtensions].includes(extension)) {
-      setUploadNotice({ type: 'error', message: '지원하지 않는 파일 형식입니다. PDF, DOCX, TXT, MD 파일을 업로드해주세요.' });
+      setUploadNotice({ type: 'error', message: '지원하지 않는 파일 형식입니다. PDF, PPTX, DOCX, TXT, MD 파일을 업로드해주세요.' });
       return;
     }
 
@@ -1890,7 +2006,7 @@ export default function Home() {
       if (clientReadableExtensions.includes(extension)) {
         const validation = validateExtractedText(await file.text());
         if (!validation.ok) {
-          addUploadedDocument(
+          addUploadedDocumentAndPersist(
             createUploadedDocument(file, '추출 실패', '', validation.message),
             validation.reason === 'short' ? 'warning' : 'error',
             validation.message,
@@ -1898,7 +2014,7 @@ export default function Home() {
           return;
         }
 
-        addUploadedDocument(
+        addUploadedDocumentAndPersist(
           createUploadedDocument(file, '텍스트 추출 완료', validation.text),
           'success',
           '파일에서 텍스트를 추출했습니다. 추출 원문은 화면에 표시하지 않고 AI 분석 입력에만 사용합니다.',
@@ -1931,7 +2047,7 @@ export default function Home() {
           textExtractionPageNumbers: textPageNumbers,
           visionPageNumbers: pagesNeedingVision,
         });
-        addUploadedDocument(document, 'warning', message);
+        addUploadedDocumentAndPersist(document, 'warning', message);
         await runHybridPdfAnalysis(document.id, file, pdfPages, pdfPageQualities);
         return;
       }
@@ -1949,7 +2065,7 @@ export default function Home() {
               visionTotalPageCount: DEFAULT_VISION_CHUNK_SIZE,
             })
           : createUploadedDocument(file, '추출 실패', data.text ?? '', message);
-        addUploadedDocument(document, extension === 'pdf' ? 'warning' : 'error', extension === 'pdf' ? [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · ') : message);
+        addUploadedDocumentAndPersist(document, extension === 'pdf' ? 'warning' : 'error', extension === 'pdf' ? [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · ') : message);
         if (extension === 'pdf') {
           await runAutomaticVisionAnalysis(document.id, file, '', true);
         }
@@ -1969,7 +2085,7 @@ export default function Home() {
               visionTotalPageCount: DEFAULT_VISION_CHUNK_SIZE,
             })
           : createUploadedDocument(file, '추출 실패', validation.text, message);
-        addUploadedDocument(document, 'warning', extension === 'pdf' ? [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · ') : message);
+        addUploadedDocumentAndPersist(document, 'warning', extension === 'pdf' ? [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE, VISION_FALLBACK_IN_PROGRESS_MESSAGE].join(' · ') : message);
         if (extension === 'pdf') {
           await runAutomaticVisionAnalysis(document.id, file, '', true);
         }
@@ -1978,8 +2094,14 @@ export default function Home() {
 
       const status: ExtractionStatus = data.status === 'partial' ? '일부 텍스트만 추출' : '텍스트 추출 완료';
       const serverMessage = data.message ?? (extension === 'pdf' ? PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE : undefined);
-      const document = createUploadedDocument(file, status, validation.text, data.status === 'partial' ? serverMessage : undefined);
-      addUploadedDocument(
+      const slideTextSources = extension === 'pptx' ? buildSlideTextSources(data.slides ?? []) : [];
+      const documentText = slideTextSources.length ? buildDocumentTextFromPageSources(slideTextSources) : validation.text;
+      const document = createUploadedDocument(file, status, documentText, data.status === 'partial' ? serverMessage : undefined, {
+        totalPageCount: extension === 'pptx' ? data.pageCount ?? slideTextSources.length : data.pageCount,
+        pageTextSources: slideTextSources.length ? slideTextSources : undefined,
+        documentAnalysisText: documentText,
+      });
+      addUploadedDocumentAndPersist(
         document,
         data.status === 'partial' ? 'warning' : 'success',
         serverMessage || '파일에서 텍스트를 추출했습니다. 추출 원문은 화면에 표시하지 않고 AI 분석 입력에만 사용합니다.',
@@ -1993,12 +2115,12 @@ export default function Home() {
           visionPageCount: 0,
           visionTotalPageCount: DEFAULT_VISION_CHUNK_SIZE,
         });
-        addUploadedDocument(document, 'warning', '텍스트 추출 실패 · 빠른 Vision 분석을 시작합니다.');
+        addUploadedDocumentAndPersist(document, 'warning', '텍스트 추출 실패 · 빠른 Vision 분석을 시작합니다.');
         await runAutomaticVisionAnalysis(document.id, file);
         return;
       }
 
-      addUploadedDocument(createUploadedDocument(file, '추출 실패', '', extractionErrorMessage), 'error', extractionErrorMessage);
+      addUploadedDocumentAndPersist(createUploadedDocument(file, '추출 실패', '', extractionErrorMessage), 'error', extractionErrorMessage);
     } finally {
       setLoading('');
     }
@@ -2247,7 +2369,7 @@ export default function Home() {
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">RFP / 전달자료 업로드</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, DOCX, TXT, MD</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, PPTX, DOCX, TXT, MD</p>
                     <p className="mt-1 text-sm leading-6 text-slate-600">업로드된 파일은 텍스트 추출/Vision 분석 요청에만 사용되며 원본 파일은 저장하지 않습니다.</p>
                     {hasVisionAnalysisInProgress && <p className="mt-1 text-sm leading-6 text-amber-700">{VISION_PROCESSING_GUIDANCE}</p>}
                     <p className="mt-1 text-xs font-bold text-blue-700">Vision 옵션: {VISION_FULL_CHUNKED_LABEL}</p>
@@ -2256,7 +2378,7 @@ export default function Home() {
                     파일 선택
                     <input
                       type="file"
-                      accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+                      accept=".pdf,.pptx,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
                       onChange={handleBriefFileUpload}
                       disabled={Boolean(loading)}
                       className="sr-only"

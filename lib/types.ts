@@ -1,3 +1,4 @@
+import type { DocumentRole } from './dbTypes';
 import type { ChunkCategory, DocumentChunk, DocumentType } from './rag';
 
 export type ProposalType = 'basic' | 'cheil' | 'innocean' | 'hyundai' | 'mice_event_operation' | 'conference_forum';
@@ -74,7 +75,9 @@ export interface VisionFailedPage {
 }
 
 export interface DocumentPageTextSource {
-  pageNumber: number;
+  pageNumber?: number;
+  slideNumber?: number;
+  sectionTitle?: string;
   text: string;
   sourceType: 'textExtraction' | 'visionAnalysis';
   visualSummary?: string;
@@ -85,6 +88,11 @@ export interface UploadedDocument {
   fileName: string;
   fileType: string;
   documentType?: DocumentType;
+  documentRole?: Extract<DocumentRole, 'rfp' | 'proposal' | 'reference' | 'memo'>;
+  dbSaveStatus?: 'idle' | 'disabled' | 'saving' | 'saved' | 'failed';
+  dbProjectId?: string;
+  dbDocumentId?: string;
+  dbChunkCount?: number;
   extractionStatus: ExtractionStatus;
   extractedText: string;
   documentAnalysisText?: string;
