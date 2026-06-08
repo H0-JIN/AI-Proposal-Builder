@@ -104,6 +104,8 @@ type VisionPdfResponse = {
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_DB_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const LARGE_FILE_UPLOAD_GUIDANCE = '파일 용량이 커서 서버 업로드 제한에 걸렸습니다. PDF/PPTX 원본 대신 텍스트를 추출한 MD 또는 TXT 파일로 업로드하면 안정적으로 저장할 수 있습니다.';
+const DB_UPLOAD_SIZE_GUIDANCE = '대용량 PDF/PPTX는 서버 제한으로 실패할 수 있습니다. 안정적인 저장은 MD/TXT 권장.';
 const clientReadableExtensions = ['txt', 'md'];
 const serverReadableExtensions = ['pdf', 'docx', 'pptx'];
 
@@ -177,6 +179,15 @@ function buildVisionErrorMessage(data: VisionPdfResponse, fallback: string) {
   return [data.message || fallback, data.error, data.details]
     .filter(Boolean)
     .join(' · ');
+}
+
+function isLargePayloadError(error: unknown, responseStatus?: number) {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return responseStatus === 413 || /request entity too large|function_payload_too_large|payload too large|413/i.test(message);
+}
+
+function getUploadErrorMessage(error: unknown, fallback: string, responseStatus?: number) {
+  return isLargePayloadError(error, responseStatus) ? LARGE_FILE_UPLOAD_GUIDANCE : error instanceof Error ? error.message : typeof error === 'string' && error ? error : fallback;
 }
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -1269,6 +1280,7 @@ export default function Home() {
   const [dbSaveStatus, setDbSaveStatus] = useState<DbSaveStatus>('idle');
   const [dbUploadRole, setDbUploadRole] = useState<'proposal' | 'reference' | 'memo'>('proposal');
   const [dbUploadNotice, setDbUploadNotice] = useState<UploadNotice | null>(null);
+  const [isDbUploadModalOpen, setIsDbUploadModalOpen] = useState(false);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -1294,6 +1306,8 @@ export default function Home() {
   const supplementalInfo = state.supplementalInfo ?? initialSupplementalInfo;
   const uploadedDocuments = state.uploadedDocuments ?? [];
   const dbUploadedDocuments = state.dbUploadedDocuments ?? [];
+  const latestDbUploadedDocument = dbUploadedDocuments.at(-1);
+  const latestDbUploadStatus = getDocumentDbSaveStatusLabel(latestDbUploadedDocument?.dbSaveStatus);
   const analysisInput = useMemo(() => ({ ...state.input, briefText: buildAnalysisBriefText(state.input, uploadedDocuments) }), [state.input, uploadedDocuments]);
   const hasFastVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'quick_analyzing' || document.extractionStatus === '빠른 Vision 분석 중');
   const hasFullVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'analyzing' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === '하이브리드 PDF 분석 중' || document.extractionStatus === 'Vision 분석 중');
@@ -1415,9 +1429,11 @@ export default function Home() {
         type: savedStatus === 'saved' ? 'success' : savedStatus === 'partial' ? 'warning' : savedStatus === 'disabled' ? 'warning' : 'error',
         message: getDocumentDbSaveStatusLabel(savedStatus)?.label ?? 'DB upload failed',
       });
-    } catch {
-      updateDbUploadedDocument(enrichedDocument.id, { dbSaveStatus: 'failed' });
-      setDbUploadNotice({ type: 'error', message: 'DB upload failed' });
+    } catch (err) {
+      console.error('DB upload persist request failed; uploaded file remains separate from RFP analysis.', err);
+      const message = getUploadErrorMessage(err, 'DB upload failed');
+      updateDbUploadedDocument(enrichedDocument.id, { dbSaveStatus: 'failed', errorMessage: message });
+      setDbUploadNotice({ type: 'error', message: isLargePayloadError(err) ? message : 'DB upload failed' });
     }
   };
 
@@ -2063,13 +2079,22 @@ export default function Home() {
 
       const response = await fetch('/api/extract-text', { method: 'POST', body: formData });
       const data = await parseJsonResponse<ExtractTextResponse>(response, 'DB 업로드 텍스트 추출 API');
+
+      if (!response.ok) {
+        const message = data.error || data.warning || data.message || TEXT_EXTRACTION_FAILED_MESSAGE;
+        console.error('DB upload text extraction failed.', { status: response.status, message });
+        throw new Error(isLargePayloadError(message, response.status) ? LARGE_FILE_UPLOAD_GUIDANCE : message);
+      }
+
       const text = (data.text ?? '').trim();
 
       if (!text) {
         const message = data.warning || data.error || TEXT_EXTRACTION_FAILED_MESSAGE;
-        const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed' });
+        console.error('DB upload produced no text.', { fileName: file.name, message });
+        const friendlyMessage = getUploadErrorMessage(message, 'DB upload failed');
+        const failedDocument = createUploadedDocument(file, '추출 실패', '', friendlyMessage, { documentRole: dbUploadRole, dbSaveStatus: 'failed', errorMessage: friendlyMessage });
         addDbUploadedDocument(failedDocument);
-        setDbUploadNotice({ type: 'error', message: 'DB upload failed' });
+        setDbUploadNotice({ type: 'error', message: isLargePayloadError(message) ? friendlyMessage : 'DB upload failed' });
         return;
       }
 
@@ -2091,10 +2116,11 @@ export default function Home() {
       setDbUploadNotice({ type: 'warning', message: 'Uploading to DB' });
       await persistDbUploadedDocumentSafely(document, isPartial);
     } catch (err) {
-      const message = err instanceof Error ? `${TEXT_EXTRACTION_FAILED_MESSAGE} ${err.message}` : TEXT_EXTRACTION_FAILED_MESSAGE;
-      const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed' });
+      console.error('DB upload extract/upload failed.', err);
+      const message = getUploadErrorMessage(err, TEXT_EXTRACTION_FAILED_MESSAGE);
+      const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed', errorMessage: message });
       addDbUploadedDocument(failedDocument);
-      setDbUploadNotice({ type: 'error', message: 'DB upload failed' });
+      setDbUploadNotice({ type: 'error', message: isLargePayloadError(err) ? message : 'DB upload failed' });
     } finally {
       setLoading('');
     }
@@ -2437,6 +2463,8 @@ export default function Home() {
     setStep('create');
     setError('');
     setUploadNotice(null);
+    setDbUploadNotice(null);
+    setIsDbUploadModalOpen(false);
   };
 
   return (
@@ -2449,8 +2477,86 @@ export default function Home() {
             <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-950 md:text-5xl">AI Proposal Builder</h1>
             <p className="mt-3 max-w-2xl text-slate-600">RFP/프로젝트 브리프를 분석해 전시·브랜드 체험관 제안서 구조와 장표별 문안을 만들고 PPTX로 다운로드합니다.</p>
           </div>
-          {step !== 'home' && <SecondaryButton onClick={reset}>새 제안서 만들기</SecondaryButton>}
+          <div className="flex flex-wrap gap-3 md:justify-end">
+            <SecondaryButton onClick={() => setIsDbUploadModalOpen(true)}>DB 자료 업로드</SecondaryButton>
+            {step !== 'home' && <SecondaryButton onClick={reset}>새 제안서 만들기</SecondaryButton>}
+          </div>
         </header>
+
+        {isDbUploadModalOpen && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/55 px-5 py-8 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="db-upload-title">
+            <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[2rem] border border-white/30 bg-white p-6 shadow-2xl shadow-slate-950/30 md:p-8">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-700">Library upload</p>
+                  <h2 id="db-upload-title" className="mt-2 text-2xl font-black text-slate-950">기존 제안서 / 레퍼런스 DB 업로드</h2>
+                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-600">기존 제안서, 레퍼런스, 메모를 내부 RAG 자료로 저장합니다. 제안서 생성에는 아직 자동 반영되지 않습니다.</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, PPTX, DOCX, TXT, MD · 최대 100MB</p>
+                  <p className="mt-1 text-xs font-bold leading-5 text-amber-700">{DB_UPLOAD_SIZE_GUIDANCE}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDbUploadModalOpen(false)}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-600 transition hover:bg-slate-50"
+                  aria-label="DB 업로드 창 닫기"
+                >
+                  닫기
+                </button>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">문서 유형</span>
+                  <select
+                    value={dbUploadRole}
+                    onChange={(event) => setDbUploadRole(event.target.value as 'proposal' | 'reference' | 'memo')}
+                    className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
+                  >
+                    <option value="proposal">기존 제안서 / Proposal</option>
+                    <option value="reference">레퍼런스 / Reference</option>
+                    <option value="memo">메모 / Memo</option>
+                  </select>
+                </label>
+                <label className="inline-flex cursor-pointer items-center justify-center self-end rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700">
+                  DB 파일 선택
+                  <input
+                    type="file"
+                    accept=".pdf,.pptx,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+                    onChange={handleDbFileUpload}
+                    disabled={Boolean(loading)}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm leading-6 text-slate-700">
+                <p className="font-black text-emerald-900">업로드 상태</p>
+                <p className="mt-1 font-semibold">DB upload disabled · Uploading to DB · Saved to DB · DB upload failed · Partial text saved</p>
+                {latestDbUploadStatus && (
+                  <span className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-black ${latestDbUploadStatus.tone}`} role="status" aria-live="polite">
+                    {latestDbUploadedDocument?.dbSaveStatus === 'saving' && <span className="mr-2 h-1.5 w-1.5 animate-pulse self-center rounded-full bg-current" />}
+                    {latestDbUploadStatus.label}{latestDbUploadedDocument?.dbChunkCount !== undefined ? ` · ${latestDbUploadedDocument.dbChunkCount} chunks` : ''}
+                  </span>
+                )}
+              </div>
+
+              <UploadedDocumentsList documents={dbUploadedDocuments} />
+              {dbUploadNotice && (
+                <div
+                  className={`mt-4 rounded-2xl border p-4 text-sm font-semibold leading-6 ${
+                    dbUploadNotice.type === 'success'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : dbUploadNotice.type === 'warning'
+                        ? 'border-amber-200 bg-amber-50 text-amber-900'
+                        : 'border-red-200 bg-red-50 text-red-700'
+                  }`}
+                >
+                  {dbUploadNotice.message}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {error && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 font-medium text-red-700">{error}</div>}
 
@@ -2488,7 +2594,7 @@ export default function Home() {
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">RFP / 전달자료 업로드</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, PPTX, DOCX, TXT, MD</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, PPTX, DOCX, TXT, MD · 최대 10MB</p>
                     <p className="mt-1 text-sm leading-6 text-slate-600">업로드된 파일은 텍스트 추출/Vision 분석 요청에만 사용되며 원본 파일은 저장하지 않습니다.</p>
                     {hasVisionAnalysisInProgress && <p className="mt-1 text-sm leading-6 text-amber-700">{VISION_PROCESSING_GUIDANCE}</p>}
                     <p className="mt-1 text-xs font-bold text-blue-700">Vision 옵션: {VISION_FULL_CHUNKED_LABEL}</p>
@@ -2516,53 +2622,6 @@ export default function Home() {
                     }`}
                   >
                     {currentUploadNotice.message}
-                  </div>
-                )}
-              </div>
-              <div className="rounded-3xl border border-dashed border-emerald-200 bg-emerald-50/60 p-5 md:col-span-2">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                  <div className="max-w-2xl">
-                    <p className="text-sm font-black uppercase tracking-[0.18em] text-emerald-700">기존 제안서 / 레퍼런스 DB 업로드</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-700">내부 RAG 저장 전용 · 지원 형식: PDF, PPTX, DOCX, TXT, MD · 최대 100MB</p>
-                    <p className="mt-1 text-sm leading-6 text-slate-600">이 업로드는 DB 저장만 수행하며 RFP 분석, 콘셉트/목차/장표 생성 입력으로 사용하지 않습니다.</p>
-                  </div>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">문서 유형</span>
-                      <select
-                        value={dbUploadRole}
-                        onChange={(event) => setDbUploadRole(event.target.value as 'proposal' | 'reference' | 'memo')}
-                        className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 sm:w-56"
-                      >
-                        <option value="proposal">기존 제안서 / Proposal</option>
-                        <option value="reference">레퍼런스 / Reference</option>
-                        <option value="memo">메모 / Memo</option>
-                      </select>
-                    </label>
-                    <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-bold text-emerald-700 shadow-sm ring-1 ring-emerald-200 transition hover:bg-emerald-50 sm:mt-6">
-                      DB 파일 선택
-                      <input
-                        type="file"
-                        accept=".pdf,.pptx,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
-                        onChange={handleDbFileUpload}
-                        disabled={Boolean(loading)}
-                        className="sr-only"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <UploadedDocumentsList documents={dbUploadedDocuments} />
-                {dbUploadNotice && (
-                  <div
-                    className={`mt-4 rounded-2xl border p-4 text-sm font-semibold leading-6 ${
-                      dbUploadNotice.type === 'success'
-                        ? 'border-emerald-200 bg-white text-emerald-800'
-                        : dbUploadNotice.type === 'warning'
-                          ? 'border-amber-200 bg-amber-50 text-amber-900'
-                          : 'border-red-200 bg-red-50 text-red-700'
-                    }`}
-                  >
-                    {dbUploadNotice.message}
                   </div>
                 )}
               </div>
