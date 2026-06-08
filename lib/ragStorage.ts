@@ -28,6 +28,7 @@ export interface SaveChunkInput {
   tags?: string[];
   importance?: ChunkImportance;
   pageNumber?: number | null;
+  slideNumber?: number | null;
   sectionTitle?: string | null;
   embedding?: number[] | null;
   metadata?: JsonValue | null;
@@ -40,7 +41,7 @@ export interface SaveChunksInput {
 }
 
 function logRagStorageError(operation: string, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error);
   console.error(`[ragStorage] ${operation} failed: ${message}`);
 }
 
@@ -131,6 +132,7 @@ export async function saveChunks(input: SaveChunksInput): Promise<ChunkRecord[]>
       tags: chunk.tags ?? [],
       importance: chunk.importance ?? 'medium',
       page_number: chunk.pageNumber ?? null,
+      slide_number: chunk.slideNumber ?? null,
       section_title: chunk.sectionTitle ?? null,
       embedding: chunk.embedding ?? null,
       metadata: chunk.metadata ?? null,

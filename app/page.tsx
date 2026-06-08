@@ -60,6 +60,15 @@ type ExtractTextResponse = {
 
 type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[] };
 
+type DbSaveStatus = 'idle' | 'disabled' | 'saving' | 'saved' | 'failed';
+
+type PersistAnalysisResponse = {
+  status?: 'disabled' | 'saved' | 'failed';
+  projectId?: string;
+  documentCount?: number;
+  chunkCount?: number;
+};
+
 type VisionPdfResponse = {
   ok?: boolean;
   text?: string;
@@ -241,6 +250,26 @@ function InputQualityPanel({ quality, compact = false }: { quality: ReturnType<t
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function DbSaveStatusIndicator({ status }: { status: DbSaveStatus }) {
+  if (status === 'idle') return null;
+
+  const statusConfig: Record<Exclude<DbSaveStatus, 'idle'>, { label: string; tone: string }> = {
+    disabled: { label: 'DB save disabled', tone: 'border-slate-200 bg-slate-50 text-slate-600' },
+    saving: { label: 'Saving analysis to DB', tone: 'border-blue-200 bg-blue-50 text-blue-700' },
+    saved: { label: 'Saved to DB', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    failed: { label: 'DB save failed, analysis still available', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+  };
+
+  const config = statusConfig[status];
+
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-xs font-black ${config.tone}`} role="status" aria-live="polite">
+      {status === 'saving' && <span className="h-2 w-2 animate-pulse rounded-full bg-current" />}
+      <span>{config.label}</span>
     </div>
   );
 }
@@ -1180,6 +1209,7 @@ export default function Home() {
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
+  const [dbSaveStatus, setDbSaveStatus] = useState<DbSaveStatus>('idle');
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -1987,6 +2017,25 @@ export default function Home() {
     };
   };
 
+  const persistAnalysisSafely = async (input: ProjectInput, analysis: AnalysisResult) => {
+    setDbSaveStatus('saving');
+    try {
+      const response = await postJson<PersistAnalysisResponse>('/api/persist-analysis', {
+        input,
+        analysis,
+        uploadedDocuments: uploadedDocuments.map(enrichDocumentWithChunks),
+        documentChunks,
+      });
+
+      if (response.status === 'disabled') setDbSaveStatus('disabled');
+      else if (response.status === 'saved') setDbSaveStatus('saved');
+      else setDbSaveStatus('failed');
+    } catch (err) {
+      console.error('Analysis DB save request failed; analysis remains available.', err);
+      setDbSaveStatus('failed');
+    }
+  };
+
   const runAnalyze = async () => {
     setError('');
     if (hasPartialVisionAnalysisInput) {
@@ -2002,6 +2051,7 @@ export default function Home() {
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
       setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
+      void persistAnalysisSafely(analysisInput, analysis);
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
     } finally {
@@ -2020,6 +2070,7 @@ export default function Home() {
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
       setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
+      void persistAnalysisSafely(mergedInput, analysis);
     } catch (err) {
       setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
     } finally {
@@ -2261,6 +2312,7 @@ export default function Home() {
                   <p>추가 분석 완료 후 재분석 권장</p>
                 </div>
               )}
+              <DbSaveStatusIndicator status={dbSaveStatus} />
               <KeyValueList data={state.analysis} evidence={state.retrievalEvidence} />
               <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
             </div>

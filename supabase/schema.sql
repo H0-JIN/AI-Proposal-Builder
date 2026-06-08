@@ -37,6 +37,7 @@ create table if not exists public.chunks (
   tags text[] not null default '{}',
   importance text not null default 'medium',
   page_number integer,
+  slide_number integer,
   section_title text,
   embedding vector(1536),
   metadata jsonb,
