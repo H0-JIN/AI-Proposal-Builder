@@ -50,6 +50,28 @@ create table if not exists public.chunks (
   constraint chunks_importance_check check (importance in ('high', 'medium', 'low'))
 );
 
+
+create table if not exists public.slide_visual_patterns (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references public.projects(id) on delete cascade,
+  document_id uuid references public.documents(id) on delete cascade,
+  chunk_id uuid references public.chunks(id) on delete set null,
+  slide_number int,
+  slide_title text,
+  slide_role text,
+  layout_type text,
+  visual_text_ratio text,
+  hero_element text,
+  visual_direction text,
+  diagram_type text,
+  tone_and_manner text,
+  image_prompt text,
+  source_type text default 'text_extracted',
+  confidence text default 'medium',
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+
 create index if not exists projects_created_at_idx on public.projects(created_at desc);
 create index if not exists documents_project_id_idx on public.documents(project_id);
 create index if not exists chunks_project_id_idx on public.chunks(project_id);
@@ -57,3 +79,6 @@ create index if not exists chunks_document_id_idx on public.chunks(document_id);
 create index if not exists chunks_category_idx on public.chunks(category);
 create index if not exists chunks_categories_gin_idx on public.chunks using gin(categories);
 create index if not exists chunks_embedding_idx on public.chunks using ivfflat (embedding vector_cosine_ops) with (lists = 100);
+create index if not exists slide_visual_patterns_project_id_idx on public.slide_visual_patterns(project_id);
+create index if not exists slide_visual_patterns_document_id_idx on public.slide_visual_patterns(document_id);
+create index if not exists slide_visual_patterns_chunk_id_idx on public.slide_visual_patterns(chunk_id);
