@@ -250,6 +250,9 @@ export const conceptCandidatesJsonSchema = {
         additionalProperties: false,
         properties: {
           conceptId: { type: 'string' },
+          conceptName: { type: 'string' },
+          conceptTagline: { type: 'string' },
+          conceptDefinition: { type: 'string' },
           conceptTitle: { type: 'string' },
           subtitle: { type: 'string' },
           conceptNameKR: { type: 'string' },
@@ -275,6 +278,9 @@ export const conceptCandidatesJsonSchema = {
         },
         required: [
           'conceptId',
+          'conceptName',
+          'conceptTagline',
+          'conceptDefinition',
           'conceptTitle',
           'subtitle',
           'conceptNameKR',

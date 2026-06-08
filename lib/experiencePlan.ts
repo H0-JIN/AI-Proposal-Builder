@@ -1,6 +1,7 @@
 import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ConceptRecommendation, ProjectInput, SlideOutline } from '@/lib/types';
 import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import { isTaskScopeExpression, sanitizeOutlineSlides } from '@/lib/slideSanitizer';
+import { getPresentationConceptName } from '@/lib/conceptNamingGuard';
 
 export const experienceDetailFields = [
   'productCode',
@@ -182,8 +183,9 @@ function buildExperienceApproachSlide(context?: ExperiencePlanContext): SlideOut
 }
 
 function buildCoreConceptSlide(selectedConcept?: ConceptCandidate): SlideOutline {
-  const titleSuffix = selectedConcept?.conceptNameEN ? `: ${selectedConcept.conceptNameEN}` : '';
-  const conceptName = selectedConcept?.conceptNameKR || selectedConcept?.conceptNameEN || '핵심 콘셉트';
+  const displayConceptName = getPresentationConceptName(selectedConcept);
+  const titleSuffix = displayConceptName ? `: ${displayConceptName}` : '';
+  const conceptName = displayConceptName || '핵심 콘셉트';
 
   return {
     slideNumber: 0,

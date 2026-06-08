@@ -15,6 +15,7 @@ import { applyProposalStructureGuardToOutline, applyProposalStructureGuardToSlid
 import { applyReferenceGuardToSlides, buildReferenceGuardInstruction, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
+import { getConceptDefinition, getPresentationConceptName } from '@/lib/conceptNamingGuard';
 
 
 function normalizeSentence(value?: string) {
@@ -95,10 +96,10 @@ function buildExperienceApproachBullets(logic?: ConceptDevelopmentLogic) {
 }
 
 function buildCoreConceptBullets(concept?: ConceptCandidate, logic?: ConceptDevelopmentLogic) {
-  const conceptNames = [concept?.conceptNameEN, concept?.conceptNameKR].map((name) => name?.trim()).filter(Boolean).join(' / ') || '핵심 경험 콘셉트';
+  const conceptNames = getPresentationConceptName(concept) || [concept?.conceptNameEN, concept?.conceptNameKR].map((name) => name?.trim()).filter(Boolean).join(' / ') || '핵심 경험 콘셉트';
   return [
     `Concept Name: ${conceptNames}`,
-    sectionLine('Concept Statement', concept?.oneLineDefinition, '프로젝트 과제를 하나의 전시 주제로 압축해 방문객이 직관적으로 이해하고 참여할 수 있도록 선언합니다.'),
+    sectionLine('Concept Statement', getConceptDefinition(concept), '프로젝트 과제를 하나의 전시 주제로 압축해 방문객이 직관적으로 이해하고 참여할 수 있도록 선언합니다.'),
     sectionLine('Core Message', concept?.coreMessage, '브랜드가 전달해야 할 핵심 메시지를 방문객의 행동과 감정으로 체감하게 합니다.'),
     sectionLine('Experience Logic', concept?.experienceLogic, '방문객의 선택, 체험, 반응, 결과물, 공유가 순차적으로 연결되는 경험 흐름으로 설계합니다.'),
     `Why This Concept: ${combineSentences(
@@ -133,7 +134,7 @@ function enhanceConceptFlowSlides(slides: SlideContent[], logic?: ConceptDevelop
     if (/^core concept|핵심 콘셉트/i.test(slideKey)) {
       return {
         ...slide,
-        slideTitle: concept?.conceptNameEN ? `Core Concept: ${concept.conceptNameEN}` : 'Core Concept',
+        slideTitle: getPresentationConceptName(concept) ? `Core Concept: ${getPresentationConceptName(concept)}` : 'Core Concept',
         bodyBullets: buildCoreConceptBullets(concept, logic),
       };
     }

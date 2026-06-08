@@ -64,6 +64,7 @@ export function buildFallbackProposalNarrative({
   const thesis = firstText(
     selectedConcept?.thesisProof,
     selectedConcept?.coreMessage,
+    selectedConcept?.conceptDefinition,
     selectedConcept?.oneLineDefinition,
     analysis?.rfpRequirements?.aiProposal?.[0],
     `${input.projectName || '본 프로젝트'}는 문제 정의, 전략 선언, 경험 실행, 증명 가능한 임팩트가 하나로 이어질 때 경쟁력 있는 제안이 됩니다.`,
@@ -76,7 +77,13 @@ export function buildFallbackProposalNarrative({
     proposalThesis: thesis,
     whyNow: firstText(analysis?.schedule?.[0], analysis?.kpiTimelineConstraints?.aiProposal?.[0], '지금은 RFP 요구를 실행 항목으로만 대응하기보다 시장 변화와 클라이언트 과제를 선명한 제안 명제로 재정의해야 하는 시점입니다.')!,
     whyUs: firstText(analysis?.evaluationCriteria?.[1], selectedConcept?.executionFeasibility, '우리는 전략 메시지, 공간/콘텐츠 실행, 근거 기반 제안 구조를 함께 설계해 심사 관점과 현장 구현 가능성을 동시에 충족합니다.')!,
-    whyThisConcept: firstText(selectedConcept?.thesisProof, selectedConcept?.whyThisWorks, selectedConcept?.oneLineDefinition, '이 콘셉트는 RFP 요구를 방문객 의미와 클라이언트 역량 증명의 경험 구조로 전환합니다.')!,
+    whyThisConcept: firstText(
+      selectedConcept?.thesisProof,
+      selectedConcept?.whyThisWorks,
+      selectedConcept?.conceptDefinition,
+      selectedConcept?.oneLineDefinition,
+      '이 콘셉트는 RFP 요구를 방문객 의미와 클라이언트 역량 증명의 경험 구조로 전환합니다.',
+    )!,
     narrativeFlow: defaultFlow,
   };
 }
