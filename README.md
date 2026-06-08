@@ -127,3 +127,5 @@ lib/
 ## 보안 참고
 
 OpenAI API Key는 `.env.local`에만 저장하세요. `.env.local`은 `.gitignore`에 포함되어 있으므로 저장소에 커밋되지 않습니다. 클라이언트는 `/api/analyze`, `/api/outline`, `/api/slides` API route만 호출하고, 실제 OpenAI API 호출은 서버에서 수행됩니다.
+
+Codex GitHub PR connection test.
