@@ -68,10 +68,10 @@ type ExtractTextResponse = {
 
 type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[] };
 
-type DbSaveStatus = 'idle' | 'disabled' | 'saving' | 'saved' | 'failed';
+type DbSaveStatus = 'idle' | 'disabled' | 'saving' | 'saved' | 'failed' | 'partial';
 
 type PersistDocumentResponse = {
-  status?: 'disabled' | 'saved' | 'failed';
+  status?: 'disabled' | 'saved' | 'failed' | 'partial';
   projectId?: string;
   documentId?: string;
   chunkCount?: number;
@@ -103,6 +103,7 @@ type VisionPdfResponse = {
 
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_DB_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const clientReadableExtensions = ['txt', 'md'];
 const serverReadableExtensions = ['pdf', 'docx', 'pptx'];
 
@@ -278,6 +279,7 @@ function DbSaveStatusIndicator({ status }: { status: DbSaveStatus }) {
     saving: { label: 'Saving analysis to DB', tone: 'border-blue-200 bg-blue-50 text-blue-700' },
     saved: { label: 'Saved to DB', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
     failed: { label: 'DB save failed, analysis still available', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+    partial: { label: 'Partial text saved', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
   };
 
   const config = statusConfig[status];
@@ -293,10 +295,11 @@ function DbSaveStatusIndicator({ status }: { status: DbSaveStatus }) {
 
 function getDocumentDbSaveStatusLabel(status?: UploadedDocument['dbSaveStatus']) {
   const statusConfig: Record<Exclude<DbSaveStatus, 'idle'>, { label: string; tone: string }> = {
-    disabled: { label: 'DB save disabled', tone: 'border-slate-200 bg-slate-50 text-slate-600' },
-    saving: { label: 'Saving document to DB', tone: 'border-blue-200 bg-blue-50 text-blue-700' },
+    disabled: { label: 'DB upload disabled', tone: 'border-slate-200 bg-slate-50 text-slate-600' },
+    saving: { label: 'Uploading to DB', tone: 'border-blue-200 bg-blue-50 text-blue-700' },
     saved: { label: 'Saved to DB', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-    failed: { label: 'DB save failed, file still available', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+    failed: { label: 'DB upload failed', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+    partial: { label: 'Partial text saved', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
   };
 
   if (!status || status === 'idle') return null;
@@ -1259,11 +1262,13 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[], selecte
 
 export default function Home() {
   const [step, setStep] = useState<Step>('home');
-  const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [] });
+  const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [], dbUploadedDocuments: [] });
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
   const [dbSaveStatus, setDbSaveStatus] = useState<DbSaveStatus>('idle');
+  const [dbUploadRole, setDbUploadRole] = useState<'proposal' | 'reference' | 'memo'>('proposal');
+  const [dbUploadNotice, setDbUploadNotice] = useState<UploadNotice | null>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -1288,6 +1293,7 @@ export default function Home() {
 
   const supplementalInfo = state.supplementalInfo ?? initialSupplementalInfo;
   const uploadedDocuments = state.uploadedDocuments ?? [];
+  const dbUploadedDocuments = state.dbUploadedDocuments ?? [];
   const analysisInput = useMemo(() => ({ ...state.input, briefText: buildAnalysisBriefText(state.input, uploadedDocuments) }), [state.input, uploadedDocuments]);
   const hasFastVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'quick_analyzing' || document.extractionStatus === '빠른 Vision 분석 중');
   const hasFullVisionAnalysisInProgress = uploadedDocuments.some((document) => document.visionStatus === 'analyzing' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === '하이브리드 PDF 분석 중' || document.extractionStatus === 'Vision 분석 중');
@@ -1371,40 +1377,88 @@ export default function Home() {
     void persistUploadedDocumentSafely(document);
   };
 
+  const addDbUploadedDocument = (document: UploadedDocument) => {
+    setState((current) => ({
+      ...current,
+      dbUploadedDocuments: [...(current.dbUploadedDocuments ?? []), document],
+    }));
+  };
+
+  const updateDbUploadedDocument = (documentId: string, patch: Partial<UploadedDocument>) => {
+    setState((current) => ({
+      ...current,
+      dbUploadedDocuments: (current.dbUploadedDocuments ?? []).map((item) => (item.id === documentId ? enrichDocumentWithChunks({ ...item, ...patch }) : item)),
+    }));
+  };
+
+  const persistDbUploadedDocumentSafely = async (document: UploadedDocument, partialTextSaved = false) => {
+    const enrichedDocument = enrichDocumentWithChunks(document);
+
+    updateDbUploadedDocument(enrichedDocument.id, { dbSaveStatus: 'saving' });
+
+    try {
+      const response = await postJson<PersistDocumentResponse>('/api/persist-document', {
+        input: state.input,
+        document: { ...enrichedDocument, dbSaveStatus: 'saving' },
+        documentChunks: enrichedDocument.chunks ?? [],
+      });
+      const savedStatus = response.status === 'saved' && partialTextSaved ? 'partial' : response.status === 'disabled' ? 'disabled' : response.status === 'saved' ? 'saved' : response.status === 'partial' ? 'partial' : 'failed';
+
+      updateDbUploadedDocument(enrichedDocument.id, {
+        documentRole: response.role ?? enrichedDocument.documentRole,
+        dbSaveStatus: savedStatus,
+        dbProjectId: response.projectId,
+        dbDocumentId: response.documentId,
+        dbChunkCount: response.chunkCount,
+      });
+      setDbUploadNotice({
+        type: savedStatus === 'saved' ? 'success' : savedStatus === 'partial' ? 'warning' : savedStatus === 'disabled' ? 'warning' : 'error',
+        message: getDocumentDbSaveStatusLabel(savedStatus)?.label ?? 'DB upload failed',
+      });
+    } catch {
+      updateDbUploadedDocument(enrichedDocument.id, { dbSaveStatus: 'failed' });
+      setDbUploadNotice({ type: 'error', message: 'DB upload failed' });
+    }
+  };
+
   const createUploadedDocument = (
     file: File,
     extractionStatus: ExtractionStatus,
     extractedText = '',
     warningMessage?: string,
-    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'pageTextSources' | 'textExtractionPageNumbers' | 'visionPageNumbers' | 'failedChunks' | 'failedPages' | 'needsReview' | 'errorMessage'> = {},
-  ): UploadedDocument => enrichDocumentWithChunks({
-    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    fileName: file.name,
-    fileType: getFileTypeLabel(file.name),
-    documentRole: inferUploadedDocumentRole(file.name, options.documentAnalysisText || extractedText),
-    documentType: mapStorageRoleToDocumentType(inferUploadedDocumentRole(file.name, options.documentAnalysisText || extractedText)),
-    extractionStatus,
-    extractedText,
-    documentAnalysisText: options.documentAnalysisText,
-    extractedCharCount: (options.documentAnalysisText || extractedText).length,
-    visionStatus: options.visionStatus ?? 'unused',
-    visionUsed: options.visionUsed ?? false,
-    visionPageCount: options.visionPageCount,
-    visionTotalPageCount: options.visionTotalPageCount,
-    totalPageCount: options.totalPageCount,
-    visionAnalysis: options.visionAnalysis,
-    pageTextSources: options.pageTextSources,
-    textExtractionPageNumbers: options.textExtractionPageNumbers,
-    visionPageNumbers: options.visionPageNumbers,
-    failedChunks: options.failedChunks,
-    failedPages: options.failedPages,
-    needsReview: options.needsReview,
-    ocrUsed: options.ocrUsed ?? false,
-    ocrAvailable: options.ocrAvailable ?? false,
-    warningMessage,
-    errorMessage: options.errorMessage,
-    dbSaveStatus: 'idle',
-  });
+    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'pageTextSources' | 'textExtractionPageNumbers' | 'visionPageNumbers' | 'failedChunks' | 'failedPages' | 'needsReview' | 'errorMessage' | 'documentRole' | 'dbSaveStatus'> = {},
+  ): UploadedDocument => {
+    const documentRole = options.documentRole ?? inferUploadedDocumentRole(file.name, options.documentAnalysisText || extractedText);
+
+    return enrichDocumentWithChunks({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      fileName: file.name,
+      fileType: getFileTypeLabel(file.name),
+      documentRole,
+      documentType: mapStorageRoleToDocumentType(documentRole),
+      extractionStatus,
+      extractedText,
+      documentAnalysisText: options.documentAnalysisText,
+      extractedCharCount: (options.documentAnalysisText || extractedText).length,
+      visionStatus: options.visionStatus ?? 'unused',
+      visionUsed: options.visionUsed ?? false,
+      visionPageCount: options.visionPageCount,
+      visionTotalPageCount: options.visionTotalPageCount,
+      totalPageCount: options.totalPageCount,
+      visionAnalysis: options.visionAnalysis,
+      pageTextSources: options.pageTextSources,
+      textExtractionPageNumbers: options.textExtractionPageNumbers,
+      visionPageNumbers: options.visionPageNumbers,
+      failedChunks: options.failedChunks,
+      failedPages: options.failedPages,
+      needsReview: options.needsReview,
+      ocrUsed: options.ocrUsed ?? false,
+      ocrAvailable: options.ocrAvailable ?? false,
+      warningMessage,
+      errorMessage: options.errorMessage,
+      dbSaveStatus: options.dbSaveStatus ?? 'idle',
+    });
+  };
 
   const runAutomaticVisionAnalysis = async (documentId: string, file: File, textPrefix = '', qualityFallback = false) => {
     const processingMessage = qualityFallback
@@ -1981,6 +2035,71 @@ export default function Home() {
     }
   };
 
+  const handleDbFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setError('');
+    setDbUploadNotice(null);
+
+    if (file.size > MAX_DB_UPLOAD_FILE_SIZE_BYTES) {
+      setDbUploadNotice({ type: 'error', message: '파일 크기가 너무 큽니다. 100MB 이하 파일을 업로드해주세요.' });
+      return;
+    }
+
+    const extension = getFileExtension(file.name);
+    if (![...clientReadableExtensions, ...serverReadableExtensions].includes(extension)) {
+      setDbUploadNotice({ type: 'error', message: '지원하지 않는 파일 형식입니다. PDF, PPTX, DOCX, TXT, MD 파일을 업로드해주세요.' });
+      return;
+    }
+
+    setLoading('DB 업로드 저장 중...');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('mode', 'db');
+
+      const response = await fetch('/api/extract-text', { method: 'POST', body: formData });
+      const data = await parseJsonResponse<ExtractTextResponse>(response, 'DB 업로드 텍스트 추출 API');
+      const text = (data.text ?? '').trim();
+
+      if (!text) {
+        const message = data.warning || data.error || TEXT_EXTRACTION_FAILED_MESSAGE;
+        const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed' });
+        addDbUploadedDocument(failedDocument);
+        setDbUploadNotice({ type: 'error', message: 'DB upload failed' });
+        return;
+      }
+
+      const isPartial = data.status === 'partial' || Boolean(data.warning) || !response.ok;
+      const document = createUploadedDocument(
+        file,
+        isPartial ? '일부 텍스트만 추출' : '텍스트 추출 완료',
+        text,
+        isPartial ? data.warning || data.message || 'Partial text saved' : undefined,
+        {
+          documentRole: dbUploadRole,
+          dbSaveStatus: 'saving',
+          totalPageCount: data.pageCount,
+          pageTextSources: extension === 'pptx' && data.slides?.length ? buildSlideTextSources(data.slides) : undefined,
+        },
+      );
+
+      addDbUploadedDocument(document);
+      setDbUploadNotice({ type: 'warning', message: 'Uploading to DB' });
+      await persistDbUploadedDocumentSafely(document, isPartial);
+    } catch (err) {
+      const message = err instanceof Error ? `${TEXT_EXTRACTION_FAILED_MESSAGE} ${err.message}` : TEXT_EXTRACTION_FAILED_MESSAGE;
+      const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed' });
+      addDbUploadedDocument(failedDocument);
+      setDbUploadNotice({ type: 'error', message: 'DB upload failed' });
+    } finally {
+      setLoading('');
+    }
+  };
+
   const handleBriefFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -2314,7 +2433,7 @@ export default function Home() {
 
   const reset = () => {
     window.localStorage.removeItem(STORAGE_KEY);
-    setState({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [] });
+    setState({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [], dbUploadedDocuments: [] });
     setStep('create');
     setError('');
     setUploadNotice(null);
@@ -2397,6 +2516,53 @@ export default function Home() {
                     }`}
                   >
                     {currentUploadNotice.message}
+                  </div>
+                )}
+              </div>
+              <div className="rounded-3xl border border-dashed border-emerald-200 bg-emerald-50/60 p-5 md:col-span-2">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="max-w-2xl">
+                    <p className="text-sm font-black uppercase tracking-[0.18em] text-emerald-700">기존 제안서 / 레퍼런스 DB 업로드</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-700">내부 RAG 저장 전용 · 지원 형식: PDF, PPTX, DOCX, TXT, MD · 최대 100MB</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">이 업로드는 DB 저장만 수행하며 RFP 분석, 콘셉트/목차/장표 생성 입력으로 사용하지 않습니다.</p>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">문서 유형</span>
+                      <select
+                        value={dbUploadRole}
+                        onChange={(event) => setDbUploadRole(event.target.value as 'proposal' | 'reference' | 'memo')}
+                        className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 sm:w-56"
+                      >
+                        <option value="proposal">기존 제안서 / Proposal</option>
+                        <option value="reference">레퍼런스 / Reference</option>
+                        <option value="memo">메모 / Memo</option>
+                      </select>
+                    </label>
+                    <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-bold text-emerald-700 shadow-sm ring-1 ring-emerald-200 transition hover:bg-emerald-50 sm:mt-6">
+                      DB 파일 선택
+                      <input
+                        type="file"
+                        accept=".pdf,.pptx,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+                        onChange={handleDbFileUpload}
+                        disabled={Boolean(loading)}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <UploadedDocumentsList documents={dbUploadedDocuments} />
+                {dbUploadNotice && (
+                  <div
+                    className={`mt-4 rounded-2xl border p-4 text-sm font-semibold leading-6 ${
+                      dbUploadNotice.type === 'success'
+                        ? 'border-emerald-200 bg-white text-emerald-800'
+                        : dbUploadNotice.type === 'warning'
+                          ? 'border-amber-200 bg-amber-50 text-amber-900'
+                          : 'border-red-200 bg-red-50 text-red-700'
+                    }`}
+                  >
+                    {dbUploadNotice.message}
                   </div>
                 )}
               </div>

@@ -89,7 +89,7 @@ export interface UploadedDocument {
   fileType: string;
   documentType?: DocumentType;
   documentRole?: Extract<DocumentRole, 'rfp' | 'proposal' | 'reference' | 'memo'>;
-  dbSaveStatus?: 'idle' | 'disabled' | 'saving' | 'saved' | 'failed';
+  dbSaveStatus?: 'idle' | 'disabled' | 'saving' | 'saved' | 'failed' | 'partial';
   dbProjectId?: string;
   dbDocumentId?: string;
   dbChunkCount?: number;
@@ -411,6 +411,7 @@ export interface ProposalState {
   input: ProjectInput;
   supplementalInfo?: SupplementalInfo;
   uploadedDocuments?: UploadedDocument[];
+  dbUploadedDocuments?: UploadedDocument[];
   analysis?: AnalysisResult;
   conceptDevelopmentLogic?: ConceptDevelopmentLogic;
   conceptCandidates?: ConceptCandidate[];
