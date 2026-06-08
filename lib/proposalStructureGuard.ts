@@ -81,7 +81,7 @@ export function buildProposalStructureGuard(input?: ProjectInput, analysis?: Par
     hasExplicitKpi,
     hasExplicitOperationPlan,
     copyFocus: proposalScopeTypes.includes('contentDevelopment')
-      ? ['content concept', 'narrative', 'media mechanism', 'hero content', 'sub content', 'scenario', 'reference', 'schedule', 'credential']
+      ? ['content concept', 'narrative', 'media mechanism', 'hero content', 'sub content', 'scenario', 'schedule', 'credential']
       : [],
   };
 }
