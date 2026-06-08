@@ -38,6 +38,7 @@ export const experienceScenarioSteps = ['Entry', 'Select', 'Experience', 'Genera
 
 const productDetailSlideType = 'Spatial / Content Plan - Product Experience Detail';
 const experienceApproachSlideType = 'Experience Approach';
+const conceptRationaleSlideType = 'Concept Rationale';
 const coreConceptSlideType = 'Core Concept';
 const experienceStructureSlideType = 'Experience Structure';
 const referenceInsightSlideType = 'Reference Insight';
@@ -178,6 +179,20 @@ function buildExperienceApproachSlide(context?: ExperiencePlanContext): SlideOut
     mainCopy: eventMode
       ? '본 제안은 운영 효율만이 아니라 행사의 메시지와 관계 형성 목적이 현장의 모든 접점에서 선명하게 드러나도록 설계합니다.'
       : '과제 정의에서 출발해 타깃 인사이트와 브랜드/제품 가치를 연결하고, 현장에서 작동할 경험 기회와 전략 접근을 제시해 핵심 콘셉트의 필연성을 설득한다.',
+    confirmNeededNote: '',
+  };
+}
+
+
+function buildConceptRationaleSlide(selectedConcept?: ConceptCandidate): SlideOutline {
+  const displayConceptName = getPresentationConceptName(selectedConcept) || '핵심 콘셉트';
+  return {
+    slideNumber: 0,
+    slideType: conceptRationaleSlideType,
+    slideTitle: 'Concept Rationale',
+    slidePurpose: 'Core Concept를 제시하기 전에 RFP 문제 인식, 발주처 니즈, 관람객 장벽, 전략적 전환, 콘셉트 도출 이유를 간결하게 증명한다.',
+    keyMessage: `${appendKoreanTopicParticle(displayConceptName)} 임의의 네이밍이 아니라 제안 명제와 관람객 인사이트가 요구하는 필연적 전략 결론입니다.`,
+    mainCopy: '본 장표는 콘셉트 설명보다 먼저 왜 이 콘셉트가 필요한지 설명하고, 공간·일정 제약이 아닌 문제 인식과 전략적 전환에서 콘셉트가 도출되었음을 보여준다.',
     confirmNeededNote: '',
   };
 }
@@ -371,7 +386,7 @@ function hasReferenceInsight(slides: SlideOutline[]) {
 
 
 function isCanonicalConceptFlowSlide(slide: SlideOutline) {
-  return /experience approach|경험 설계 접근|strategic approach|our approach|제안 접근 방향|concept development logic|컨셉 도출|콘셉트 도출|selected concept rationale|selected concept|선택.*콘셉트|선정 콘셉트|^core concept|핵심 콘셉트|experience structure/i.test(`${slide.slideType} ${slide.slideTitle}`);
+  return /experience approach|경험 설계 접근|strategic approach|our approach|제안 접근 방향|concept rationale|왜 이 컨셉|왜 이 콘셉트|concept development logic|컨셉 도출|콘셉트 도출|selected concept rationale|selected concept|선택.*콘셉트|선정 콘셉트|^core concept|핵심 콘셉트|experience structure/i.test(`${slide.slideType} ${slide.slideTitle}`);
 }
 
 function insertConceptDevelopmentSlides(slides: SlideOutline[], context?: ExperiencePlanContext) {
@@ -380,12 +395,14 @@ function insertConceptDevelopmentSlides(slides: SlideOutline[], context?: Experi
   const retainedSlides = slides.filter((slide) => !isCanonicalConceptFlowSlide(slide));
   const additions: SlideOutline[] = [
     buildExperienceApproachSlide(context),
+    buildConceptRationaleSlide(context.selectedConcept),
     buildCoreConceptSlide(context.selectedConcept),
     buildExperienceStructureSlide(context),
   ];
 
-  const insertIndex = retainedSlides.findIndex((slide) => /experience strategy|key challenge|전략|과제/i.test(`${slide.slideType} ${slide.slideTitle}`));
-  const targetIndex = insertIndex >= 0 ? insertIndex + 1 : Math.min(3, retainedSlides.length);
+  const preCorePattern = /project\s*\/\s*market context|market context|project context|project understanding|core problem|core challenge|key challenge|audience insight|target insight|strategic opportunity|strategic direction|experience strategy|시장|프로젝트 이해|문제|과제|관람객|타깃 인사이트|전략 기회|전략 방향|경험 전략/i;
+  const lastPreCoreIndex = retainedSlides.reduce((lastIndex, slide, index) => (preCorePattern.test(`${slide.slideType} ${slide.slideTitle}`) ? index : lastIndex), -1);
+  const targetIndex = lastPreCoreIndex >= 0 ? lastPreCoreIndex + 1 : Math.min(4, retainedSlides.length);
   return [...retainedSlides.slice(0, targetIndex), ...additions, ...retainedSlides.slice(targetIndex)];
 }
 

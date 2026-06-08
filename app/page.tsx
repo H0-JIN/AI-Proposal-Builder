@@ -709,6 +709,20 @@ function KeyValueList({ data, evidence }: { data: AnalysisResult; evidence?: Ret
 }
 
 
+
+function conceptRationaleRows(concept: ConceptCandidate) {
+  const rationale = concept.conceptRationale;
+  if (!rationale) return [];
+
+  return [
+    ['문제 인식', rationale.problemInsight],
+    ['발주처 니즈', rationale.clientNeed],
+    ['관람객 장벽', rationale.audienceBarrier],
+    ['전략적 전환', rationale.strategicShift],
+    ['컨셉 도출 이유', rationale.whyThisConcept],
+  ].filter(([, value]) => Boolean(value?.trim()));
+}
+
 function scoreSummary(concept: ConceptCandidate) {
   const scores = concept.evaluationScores;
   if (!scores) return '평가 점수 없음';
@@ -2329,6 +2343,19 @@ export default function Home() {
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
                     <h3 className="mt-2 text-2xl font-black text-slate-950">{getPresentationConceptName(concept)}</h3>
                     <p className="text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
+                    {conceptRationaleRows(concept).length > 0 && (
+                      <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm leading-6 text-blue-950">
+                        <p className="font-black text-blue-800">왜 이 컨셉인가</p>
+                        <dl className="mt-2 space-y-1">
+                          {conceptRationaleRows(concept).map(([label, value]) => (
+                            <div key={label}>
+                              <dt className="inline font-black">{label}: </dt>
+                              <dd className="inline">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
+                    )}
                     <p className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm font-semibold leading-6 text-slate-700">{getConceptDefinition(concept)}</p>
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
                       <div><dt className="font-black text-slate-950">핵심 메시지</dt><dd>{concept.coreMessage}</dd></div>
