@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { outlineJsonSchema } from '@/lib/schemas';
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ProjectInput, ProposalNarrative, SlideOutline } from '@/lib/types';
-import type { DocumentChunk } from '@/lib/rag';
+import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { assessInputQuality } from '@/lib/inputQuality';
@@ -10,7 +10,7 @@ import { removeInternalConceptComparisonSlides } from '@/lib/internalSlides';
 import { ensureRfpRequirementCoverage } from '@/lib/rfpRequirements';
 import { formatCategoryEvidenceGroupsForPrompt, retrieveCategoryEvidenceGroups } from '@/lib/rag';
 import { applyProposalStructureGuardToOutline, buildConstraintPriorityGuardInstruction, buildProposalStructureGuard, buildSelectedConceptDominanceInstruction, proposalScopeTypeLabels } from '@/lib/proposalStructureGuard';
-import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
+import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, isReferenceSlideExplicitlyRequested, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
 import { getPresentationConceptName } from '@/lib/conceptNamingGuard';
@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     const isEventOperationType = effectiveProposalType === 'mice_event_operation' || effectiveProposalType === 'conference_forum';
     const structureGuard = buildProposalStructureGuard(body.input, body.analysis);
     const scopeLabelText = structureGuard.proposalScopeTypes.map((scope) => proposalScopeTypeLabels[scope]).join(' + ') || '감지된 세부 범위 없음';
+    const allowReferenceSlides = isReferenceSlideExplicitlyRequested(body.input);
     const outlineEvidenceGroups = retrieveCategoryEvidenceGroups({
       stage: 'outline',
       proposalType: effectiveProposalType,
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
         { label: '실행 제약 (15)', categories: ['constraints'], description: 'proposal structure weighted retrieval 15: 제약 조건을 실행 가능성/운영 계획에 반영', limit: 3 },
         { label: '공간 전략 (10)', categories: ['venue'], description: 'proposal structure weighted retrieval 10: 공간 구성, 동선, 장소별 적용 장표에 사용', limit: 3 },
         { label: '제품 특징', categories: ['productFeature'], description: 'Q8/H8/B8 제품별 핵심 기능/가치 제안을 제품별 장표 구조에 반영', limit: 4 },
-        { label: '현재 프로젝트 참고 레퍼런스', categories: ['referenceOnly', 'designDirection'], description: '현재 업로드된 RFP/제안 자료에 명시된 레퍼런스만 reference insight로 반영하고, 근거 없는 프로젝트명은 제외', limit: 4 },
+        ...(allowReferenceSlides ? [{ label: '현재 프로젝트 참고 레퍼런스', categories: ['referenceOnly', 'designDirection'] as ChunkCategory[], description: '사용자 명시 요청 시에만 현재 업로드된 RFP/제안 자료에 명시된 레퍼런스를 reference insight로 반영하고, 근거 없는 프로젝트명은 제외', limit: 4 }] : []),
       ],
     });
     const retrievalContext = formatCategoryEvidenceGroupsForPrompt(outlineEvidenceGroups, 11000);
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
       system: [
         '너는 한국어 제안서 전체 구조를 설계하는 크리에이티브 디렉터다. 전시/브랜드 체험관과 MICE/컨퍼런스 운영 제안서를 RFP 유형에 따라 구분한다.',
         structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '이 단계는 콘텐츠 개발형 제안 생성 단계의 아웃라인 설계다. 기본 18~22장, 하드캡 24장 이내로 실제 제안 내용을 담는 슬라이드 구조를 만든다.' : '이 단계는 제안 생성 단계의 아웃라인 설계다. RFP 요약이나 확인 필요 장표가 아니라 실제 제안 내용을 담을 20~40장 슬라이드 구조를 만든다.',
-        isEventOperationType ? 'MICE/컨퍼런스 운영형 기본 흐름은 Cover, Project Understanding, Strategic Approach, Event Identity, Program Overview, Operation Framework, Registration & Entry Plan, Session System Operation, Partner Pavilion Plan, Networking / Catering Plan, Moving Line Plan, Setup / Conversion Plan, Staffing Plan, Risk Management, Schedule, Budget Summary, Portfolio / Organization, Closing이다.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') && structureGuard.proposalScopeTypes.includes('boothExhibition') ? '콘텐츠 개발 + 부스/전시형 기본 흐름은 Cover/Intro, Project Understanding, Approach, Main Theme, Strategy & Goals, Hero Content, Sub Content, Zoning & Flow, Content Scenario, Reference Direction, Schedule, Credential, Closing이다. 필요 시 과업 대응표를 1장 포함하되 일반 체험 마케팅 슬라이드로 확장하지 말라.' : '기본 흐름은 Cover, Project / Market Context, Core Problem or Challenge, Audience Insight, Strategic Opportunity / Strategic Direction, Concept Rationale, Core Concept, Key Experience Asset Concept, Visitor Journey, Spatial / Content Plan 복수 장표, Media / Interactive Plan 복수 장표, Viral / Communication Mechanism, Operation Plan, Expected Effect, Closing이다.',
+        isEventOperationType ? 'MICE/컨퍼런스 운영형 기본 흐름은 Cover, Project Understanding, Strategic Approach, Event Identity, Program Overview, Operation Framework, Registration & Entry Plan, Session System Operation, Partner Pavilion Plan, Networking / Catering Plan, Moving Line Plan, Setup / Conversion Plan, Staffing Plan, Risk Management, Schedule, Budget Summary, Portfolio / Organization, Closing이다.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') && structureGuard.proposalScopeTypes.includes('boothExhibition') ? '콘텐츠 개발 + 부스/전시형 기본 흐름은 Cover/Intro, Project Understanding, Approach, Main Theme, Strategy & Goals, Hero Content, Sub Content, Zoning & Flow, Content Scenario, Schedule, Credential, Closing이다. 필요 시 과업 대응표를 1장 포함하되 일반 체험 마케팅 슬라이드로 확장하지 말라.' : '기본 흐름은 Cover, Project / Market Context, Core Problem or Challenge, Audience Insight, Strategic Opportunity / Strategic Direction, Concept Rationale, Core Concept, Key Experience Asset Concept, Visitor Journey, Spatial / Content Plan 복수 장표, Media / Interactive Plan 복수 장표, Viral / Communication Mechanism, Operation Plan, Expected Effect, Closing이다.',
         '아웃라인은 Proposal Narrative의 5단계 구조를 최우선으로 따른다: Phase 1 Problem Definition(시장/산업 맥락, 프로젝트 배경, 클라이언트 과제, audience insight) → Phase 2 Strategic Declaration(전략 기회, proposal thesis, concept rationale, core concept) → Phase 3 Experience Strategy(경험 원칙, visitor journey, spatial strategy) → Phase 4 Content Proposal(hero experience, main experience, media/interactive content, key proof points) → Phase 5 Proof & Impact(expected impact, differentiation, feasibility, 필요한 경우에만 operation/RFP response table).',
         'Core Concept 이전에는 반드시 1) Project / Market Context 2) Core Problem or Challenge 3) Audience Insight 4) Strategic Opportunity / Strategic Direction 5) Concept Rationale 순서가 먼저 설명되어야 한다. Core Concept 장표는 왜 이 콘셉트가 필요한지 설명한 뒤에만 배치하고, Audience Insight 또는 Strategic Direction보다 앞에 두지 말라.',
         'Concept Rationale은 공간 제약에서 시작하지 말고 1) 관람객이 이해하기 어려운 것 2) 클라이언트가 관람객에게 믿게 해야 하는 것 3) 프로젝트의 전략적 기회 4) 간극을 해결하는 경험 원칙 5) 선택 콘셉트가 그 원칙을 가장 잘 표현하는 이유 순서로 작성하라. Hydrogen/HTWO 프로젝트는 수소가 보이지 않고 시스템 기반이라 어렵다는 점, 생산·저장·운송·사용으로 이어지는 value chain, Hyundai Motor Group의 통합 미래 에너지 시스템, HTWO의 hydrogen transition 리더십 신뢰, 연결된 시스템을 보이는 경험화에 집중하라.',
@@ -82,19 +83,19 @@ export async function POST(request: Request) {
         'analysis.requiredDeliverables와 requiredDeliverables category 근거는 우선 필수 목차로 반영하고 RFP Requirement Response / 과업 대응표 1~2장 및 관련 본문 섹션에 매핑하라. 각 항목을 Required Deliverable Response 또는 Scope Response 단독 장표로 무조건 생성하지 말고, 중요도가 높은 항목만 본문 장표로 확장하며 나머지는 과업 대응표 row로 처리하라.',
         'analysis.scopeOfWork의 주요 과업 범위도 반드시 반영하라. 단순 요약으로 끝내지 말고 운영 계획, 제작 범위, 공간 구성, 시스템 계획, 일정, 예산, 인력 운영 중 적절한 장표에서 실행 계획 또는 대응 방향으로 변환하라. 과업 범위가 많으면 Scope Response Matrix 또는 RFP Requirement Response / 과업 대응표 장표를 포함하라.',
         'requiredDeliverables 또는 scopeOfWork에 누락이 있으면 먼저 기존 장표의 mainCopy 또는 confirmNeededNote에 매핑하고, 불가능한 경우에만 Portfolio / Organization, Budget & Scope, System / Equipment, Setup / Dismantling, Content Production, Hospitality / Reception, Compliance / Exclusions 등 유사 항목 보완 섹션으로 묶어 생성하라.',
-        'referenceOnly가 현재 프로젝트 evidence에 명시되어 있을 때만 Reference Insight 또는 Design Reference Direction 장표를 선택적으로 포함해 referenceName, referenceType, whatToLearn, howToApply, caution, sourceEvidence, referenceAllowed 관점으로 정리하라. sourceEvidence가 없으면 Reference 장표를 만들지 말라.',
+        'Reference Insight, Design Reference Direction, 참고 방향 및 레퍼런스 인사이트 장표는 기본 목차에 포함하지 말라. 사용자가 레퍼런스 장표를 명시적으로 요청한 경우에만 현재 프로젝트 evidence에 명시된 reference를 referenceName, referenceType, whatToLearn, howToApply, caution, sourceEvidence, referenceAllowed 관점으로 정리하라. sourceEvidence가 없으면 Reference 장표를 만들지 말라.',
         referenceGuardInstruction,
         buildConstraintPriorityGuardInstruction(),
         buildSelectedConceptDominanceInstruction(),
-        'referenceOnly/doNotTreatAsScope 항목은 현재 RFP에 명시된 경우에도 신규 체험 상세나 제품 상세 장표로 생성하지 말고 참고 방향으로만 다루라. FF7/MDW/SFF/SAFE/Samsung Foundry/Galaxy/teamLab/Delight 등 현재 evidence에 없는 프로젝트명은 사용하지 말라.',
+        'referenceOnly/doNotTreatAsScope 항목은 현재 RFP에 명시된 경우에도 신규 체험 상세, 제품 상세 장표, 기본 참고 방향 장표로 생성하지 말고 배경 맥락으로만 다루라. FF7/MDW/SFF/SAFE/Samsung Foundry/Galaxy/teamLab/Delight 등 현재 evidence에 없는 프로젝트명은 사용하지 말라.',
         'Key Experience Asset은 프로젝트를 대표하는 1~3개 핵심 체험 자산만 압축해 보여주는 장표로 설계하라. 일반 assetType 후보 목록을 나열하지 말고, 각 자산의 이름/역할/방문객 행동/작동 방식/공간 배치/결과물을 중심으로 구성하라.',
         '모뉴먼트가 RFP에 명시되지 않았다면 Monument를 핵심 자산으로 고정하지 말라.',
         '확인 필요 사항은 confirmNeededNote에만 작게 넣고 slideTitle, slidePurpose, keyMessage의 중심은 실제 제안 내용으로 구성하라.',
-        '감지된 proposalScopeTypes와 proposalStructureGuard를 최우선 구조 가드로 적용하라. contentDevelopment + boothExhibition이면 Intro, Approach, Main Theme, Strategy & Goals, Hero Content, Sub Content, Zoning & Flow, Schedule, Credential을 우선하고, content concept, narrative, media mechanism, hero/sub content, scenario, reference, schedule, credential 중심의 문안으로 설계하라.',
+        '감지된 proposalScopeTypes와 proposalStructureGuard를 최우선 구조 가드로 적용하라. contentDevelopment + boothExhibition이면 Intro, Approach, Main Theme, Strategy & Goals, Hero Content, Sub Content, Zoning & Flow, Schedule, Credential을 우선하고, content concept, narrative, media mechanism, hero/sub content, scenario, schedule, credential 중심의 문안으로 설계하라.',
         'contentDevelopment + boothExhibition에서는 RFP에 명시되지 않은 Viral / Communication Strategy, KPI / Performance Goal, Operation Plan, Output & Share, Visitor Reward, SNS Sharing, Marketing Campaign을 만들지 말라. Interactive Flow, Content Mechanism, Output & Share, Visitor Journey 같은 일반 체험 슬라이드는 RFP 또는 선택 콘셉트가 직접 요구할 때만 1회 이하로 제한하라.',
         'KPI 장표는 analysis.numericInfo.targetKPI가 있거나 evaluationCriteria가 performance metrics를 명시적으로 요구할 때만 생성하라. RFP가 “이해도 제고” 또는 “브랜드 인지도 상승”만 말하면 Project Objective/Strategy & Goals 본문에 녹이고 별도 KPI 장표로 만들지 말라.',
         'Operation Plan 장표는 부스 운영 계획, staffing, onsite operation, visitor flow operation, maintenance, safety operation이 RFP에 명시된 경우에만 생성하라. 그 외에는 Schedule 장표만 포함하라.',
-        '근거 없는 정량 효과 예측을 금지한다. KPI/Expected Effect 장표에는 kpi category 근거와 analysis.numericInfo.targetKPI로 명확히 분류된 목표 KPI만 수치 목표로 사용하라. analysis.numericInfo.pastPerformance, lessonLearned, referenceMetric 수치는 목표처럼 표현하지 말고 Project Understanding, Key Challenge, Reference Insight의 배경/문제/인사이트 맥락으로만 사용하라. targetKPI가 비어 있으면 임의 수치를 만들지 말고 측정 항목 제안 장표로 구성하라.',
+        '근거 없는 정량 효과 예측을 금지한다. KPI/Expected Effect 장표에는 kpi category 근거와 analysis.numericInfo.targetKPI로 명확히 분류된 목표 KPI만 수치 목표로 사용하라. analysis.numericInfo.pastPerformance, lessonLearned, referenceMetric 수치는 목표처럼 표현하지 말고 Project Understanding 또는 Key Challenge의 배경/문제/인사이트 맥락으로만 사용하라. targetKPI가 비어 있으면 임의 수치를 만들지 말고 측정 항목 제안 장표로 구성하라.',
         isEventOperationType ? '행사 운영형에서는 Spatial / Content Plan, Main Experience Image, Media / Interactive Plan, Interactive Flow, Content Mechanism 등 체험관형 장표를 생성하지 말고 프로그램/등록/세션/부스/네트워킹/동선/설치전환/인력/리스크/예산 중심으로 구성하라.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '콘텐츠 개발형에서는 Spatial / Content Plan을 일반 체험 상세로 과확장하지 말고 Zoning & Flow, Hero Content, Sub Content, Content Scenario 중심으로 필요한 장표만 구성하라.' : 'Spatial / Content Plan은 절대 1장으로 요약하지 말고 최소 5장(Spatial Overview, Main Experience Image, 실제 체험명 기반 상세 장표, Experience Scenario)으로 구성하라. 동일 제품/동일 체험 상세 장표는 중복 생성하지 말고 제품당 1~2장으로 제한하라. Q8/H8/B8처럼 복수 제품이 있으면 제품별 상세 장표가 균형 있게 나오도록 배치하고, 포괄적인 폴더블 갤럭시 제품 체험 모듈 하나로 병합하지 말라. 같은 제품의 상세 장표가 여러 개 필요할 때는 Q8 체험 개요, Q8 체험 시나리오처럼 역할을 명확히 분리하라.',
         isEventOperationType ? '행사 운영형의 성과 장표는 운영 품질 관리 지표와 측정 체계를 중심으로 구성하고 체험 산출/공유 장표로 대체하지 말라.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '콘텐츠 개발형에서는 Media / Interactive Plan을 5장으로 강제 확장하지 말고 hero/sub content의 media mechanism과 scenario를 설명하는 범위로 제한하라. Output & Share는 RFP가 명시할 때만 생성하라.' : 'Media / Interactive Plan은 절대 1장으로 요약하지 말고 최소 5장(Media Experience Overview, Key Media Scene, Interactive Flow, Content Mechanism, Output & Share)으로 구성하라. Content Mechanism과 콘텐츠 작동 원리 및 메커니즘처럼 같은 의미의 장표를 중복 생성하지 말라. 미디어/인터랙션 요소가 많으면 핵심 체험 자산별 상세 장표를 추가하라.',
         '공간 구성과 콘텐츠 구성을 한 장에 뭉뚱그리지 말고 핵심 체험 단위별로 분리하라.',
@@ -142,7 +143,12 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
 
     const expandedSlides = expandExperiencePlanOutline(result.slides, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
     const coverageCheckedSlides = ensureRfpRequirementCoverage(removeInternalConceptComparisonSlides(expandedSlides), body.analysis, body.documentChunks ?? []);
-    const guardedSlides = applyReferenceGuardToOutline(applyProposalStructureGuardToOutline(coverageCheckedSlides, body.input, body.analysis, { selectedConcept: body.selectedConcept, proposalNarrative, conceptDevelopmentLogic: body.conceptDevelopmentLogic }), body.analysis, body.documentChunks ?? []);
+    const guardedSlides = applyReferenceGuardToOutline(
+      applyProposalStructureGuardToOutline(coverageCheckedSlides, body.input, body.analysis, { selectedConcept: body.selectedConcept, proposalNarrative, conceptDevelopmentLogic: body.conceptDevelopmentLogic }),
+      body.analysis,
+      body.documentChunks ?? [],
+      { allowReferenceSlides },
+    );
 
     return NextResponse.json(guardedSlides);
   } catch (error) {

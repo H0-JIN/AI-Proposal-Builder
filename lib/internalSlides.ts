@@ -1,6 +1,7 @@
 import type { SlideContent, SlideOutline } from '@/lib/types';
 
 const internalConceptComparisonPattern = /concept candidates|concept candidates comparison|콘셉트 후보|컨셉 후보|3개 콘셉트|3안 비교|콘셉트.*비교표|컨셉.*비교표|선택되지 않은 콘셉트|내부 평가|평가 점수표|why not others/i;
+const finalReferenceSlidePattern = /reference|benchmark|case\s*study|design\s*reference|reference\s*insight|레퍼런스|참고\s*사례|참고\s*방향\s*및\s*레퍼런스\s*인사이트|참고\s*방향|벤치마크|사례\s*분석|디자인\s*참고/i;
 const forbiddenFinalPptxPattern = /선택된 콘셉트|콘셉트 후보|콘셉트 도출 과정|후보 비교|추천 콘셉트|확정되지 않은 수치는 목표 KPI로 쓰지 않고 확인 필요 항목과 측정 체계로 분리합니다\.?|RFP에 명확히 targetKPI로 확정된 정량 목표는 현재 확인되지 않았습니다\.?|기존 성과와 레슨런드는 목표 KPI가 아니라 실행 기준을 보정하는 배경 인사이트로만 활용합니다\.?|\bC\s?[123]\b/gi;
 
 const internalFieldLabelMap: Record<string, string> = {
@@ -82,8 +83,16 @@ function sanitizeStringArray(values?: string[]) {
   return values?.map((value) => sanitizeFinalPptxText(value)).filter(Boolean) ?? [];
 }
 
+function isInvalidFinalReferenceSlide(slide: SlideContent) {
+  const slideText = [slide.slideType, slide.slideTitle, slide.slidePurpose, slide.keyMessage, slide.mainCopy].join(' ');
+  if (!finalReferenceSlidePattern.test(slideText)) return false;
+
+  const hasAllowedInsight = (slide.referenceInsights ?? []).some((reference) => reference.referenceAllowed && sanitizeFinalPptxText(reference.sourceEvidence));
+  return !slide.referenceAllowed || !sanitizeFinalPptxText(slide.sourceEvidence) || !hasAllowedInsight;
+}
+
 export function sanitizeFinalPptxSlides(slides: SlideContent[]) {
-  return slides.map((slide, index) => ({
+  return slides.filter((slide) => !isInvalidFinalReferenceSlide(slide)).map((slide, index) => ({
     ...slide,
     slideNumber: index + 1,
     slideType: sanitizeFinalPptxText(slide.slideType),

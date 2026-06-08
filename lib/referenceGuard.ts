@@ -1,9 +1,14 @@
-import type { AnalysisResult, ConceptDevelopmentLogic, ReferenceInsight, SlideContent, SlideOutline } from '@/lib/types';
+import type { AnalysisResult, ConceptDevelopmentLogic, ProjectInput, ReferenceInsight, SlideContent, SlideOutline } from '@/lib/types';
 import type { DocumentChunk } from '@/lib/rag';
 
 const referenceContextPattern = /참고|예시|사례|레퍼런스|벤치마크|reference|lesson\s*learned|기존|별첨|등/i;
-const referenceSlidePattern = /reference|benchmark|case\s*study|design\s*reference|reference\s*insight|레퍼런스|참고\s*사례|벤치마크|사례\s*분석|디자인\s*참고|참고\s*방향/i;
+const referenceSlidePattern = /reference|benchmark|case\s*study|design\s*reference|reference\s*insight|레퍼런스|참고\s*사례|참고\s*방향\s*및\s*레퍼런스\s*인사이트|참고\s*방향|벤치마크|사례\s*분석|디자인\s*참고/i;
 const blockedUnrelatedReferenceTerms = ['FF7', 'MDW', 'SFF', 'SAFE', 'Samsung Foundry', 'Galaxy', 'teamLab', 'Delight'];
+const explicitReferenceSlideRequestPattern = /(?:reference|benchmark|case\s*study|레퍼런스|참고\s*사례|벤치마크|사례\s*분석|디자인\s*참고)\s*(?:slide|page|deck|장표|페이지)|(?:slide|page|deck|장표|페이지)\s*(?:reference|benchmark|case\s*study|레퍼런스|참고\s*사례|벤치마크|사례\s*분석|디자인\s*참고)|레퍼런스\s*인사이트|reference\s*insight/i;
+
+type ReferenceGuardOptions = {
+  allowReferenceSlides?: boolean;
+};
 
 function normalizeText(value?: string) {
   return value?.trim().replace(/\s+/g, ' ') ?? '';
@@ -77,6 +82,10 @@ function hasCurrentReferenceEvidence(analysis: AnalysisResult, chunks: DocumentC
   return compactReferenceTerms(analysis).some((term) => termInEvidence(term, evidence));
 }
 
+export function isReferenceSlideExplicitlyRequested(input?: ProjectInput) {
+  return explicitReferenceSlideRequestPattern.test([input?.briefText, input?.projectName, input?.clientName].filter(Boolean).join(' '));
+}
+
 function blockedTermsNotInEvidence(analysis: AnalysisResult, chunks: DocumentChunk[] = []) {
   const evidence = currentEvidenceText(analysis, chunks);
   return blockedUnrelatedReferenceTerms.filter((term) => !termInEvidence(term, evidence));
@@ -121,30 +130,52 @@ export function buildReferenceGuardInstruction(analysis: AnalysisResult, chunks:
 
   return [
     `Reference Guard: only these current-project reference terms are allowed: ${referenceList}.`,
-    'Generate Reference slides only if the current uploaded RFP/proposal evidence explicitly contains reference material. Do not use previous projects, other RFPs, old test documents, generated memory, unrelated uploaded files, example prompts, or internal sample data.',
+    'Do not generate Reference slides by default. Do not create “참고 방향 및 레퍼런스 인사이트” unless the user explicitly asks for reference slides.',
+    'Treat referenceOnly chunks and RFP-provided references as background context only; do not use them as proposal slide content or default proposal pages.',
+    'Generate Reference slides only when the user explicitly requests reference slides, or when a proposed content/media mechanism/spatial experience truly needs additional explanation or validation from current-project evidence. Do not use previous projects, other RFPs, old test documents, generated memory, unrelated uploaded files, example prompts, or internal sample data.',
     `Blocked unless present in current evidence: ${blockedUnrelatedReferenceTerms.join(' / ')}${blockedTerms.length ? `. Currently blocked: ${blockedTerms.join(' / ')}` : ''}.`,
     'If no current-project reference evidence exists, remove Reference slides, do not invent reference names, do not create Reference Insight slides, and use a project-grounded proof slide only when needed.',
     'Every reference slide must carry sourceEvidence with exact current-project evidence and referenceAllowed true. If referenceAllowed is false, remove the slide before final output.',
+    'Every reference slide must answer: which proposed content it explains, what specific mechanism or experience principle is referenced, and how it strengthens the proposal.',
     'Reference Guard 항목을 requiredDeliverables, requiredScope, productInfo, Product Experience Detail, 신규 체험 모듈, Hero/Sub Content의 핵심 산출물, KPI 또는 운영 범위로 승격하지 말라.',
   ].join('\n');
 }
 
-export function applyReferenceGuardToOutline(slides: SlideOutline[], analysis: AnalysisResult, chunks: DocumentChunk[] = []) {
+export function applyReferenceGuardToOutline(slides: SlideOutline[], analysis: AnalysisResult, chunks: DocumentChunk[] = [], options: ReferenceGuardOptions = {}) {
   const terms = compactReferenceTerms(analysis);
   const evidenceText = currentEvidenceText(analysis, chunks);
   const allowedTerms = terms.filter((term) => termInEvidence(term, evidenceText));
   const blockedTerms = blockedTermsNotInEvidence(analysis, chunks);
   const hasReferenceEvidence = hasCurrentReferenceEvidence(analysis, chunks);
+  const allowReferenceSlides = Boolean(options.allowReferenceSlides) && hasReferenceEvidence;
 
   return slides
     .filter((slide) => !slideMentionsBlockedUnrelatedReference(slide, blockedTerms))
-    .filter((slide) => hasReferenceEvidence || !isReferenceSlide(slide))
+    .filter((slide) => !isReferenceSlide(slide) || (allowReferenceSlides && allowedTerms.some((term) => isReferenceTerm([slide.slideTitle, slide.slidePurpose, slide.keyMessage, slide.mainCopy].join(' '), [term]))))
     .map((slide) => {
       const matchedAllowedTerm = allowedTerms.find((term) => isReferenceTerm(slide.slideTitle, [term]) || isReferenceTerm(slide.keyMessage, [term]));
-      if (!slideHasExperienceDetailIntent(slide) || !matchedAllowedTerm) return slide;
+      if (!allowReferenceSlides || !slideHasExperienceDetailIntent(slide) || !matchedAllowedTerm) return slide;
       return asReferenceInsightTitle(slide, findSourceEvidence(matchedAllowedTerm, analysis, chunks)) as SlideOutline;
     })
     .map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
+}
+
+
+function referenceSlideHasCurrentEvidenceAndExplanation(slide: SlideContent) {
+  const hasAllowedInsightEvidence = (slide.referenceInsights ?? []).some((reference) => reference.referenceAllowed && normalizeText(reference.sourceEvidence));
+  const answersRequiredQuestions = (slide.referenceInsights ?? []).some((reference) =>
+    normalizeText(reference.whatToLearn) && normalizeText(reference.howToApply) && normalizeText(reference.caution)
+  );
+  const explainsProposedMechanism = /content|media|spatial|experience|mechanism|principle|콘텐츠|미디어|공간|체험|메커니즘|원리|원칙|강화|검증/i.test([
+    slide.slidePurpose,
+    slide.keyMessage,
+    slide.mainCopy,
+    slide.contentMechanism,
+    slide.spatialPlacement,
+    slide.mediaOrObject,
+  ].join(' '));
+
+  return hasAllowedInsightEvidence && answersRequiredQuestions && explainsProposedMechanism;
 }
 
 function guardReferenceInsights(insights: ReferenceInsight[] = [], analysis: AnalysisResult, chunks: DocumentChunk[] = []) {
@@ -160,21 +191,21 @@ function guardReferenceInsights(insights: ReferenceInsight[] = [], analysis: Ana
     .filter((insight) => insight.referenceAllowed);
 }
 
-export function applyReferenceGuardToSlides(slides: SlideContent[], analysis: AnalysisResult, chunks: DocumentChunk[] = []) {
+export function applyReferenceGuardToSlides(slides: SlideContent[], analysis: AnalysisResult, chunks: DocumentChunk[] = [], options: ReferenceGuardOptions = {}) {
   const terms = compactReferenceTerms(analysis);
   const evidenceText = currentEvidenceText(analysis, chunks);
   const allowedTerms = terms.filter((term) => termInEvidence(term, evidenceText));
   const blockedTerms = blockedTermsNotInEvidence(analysis, chunks);
   const hasReferenceEvidence = hasCurrentReferenceEvidence(analysis, chunks);
+  const allowReferenceSlides = Boolean(options.allowReferenceSlides) && hasReferenceEvidence;
 
   return slides
     .filter((slide) => !slideMentionsBlockedUnrelatedReference(slide, blockedTerms))
-    .filter((slide) => hasReferenceEvidence || !isReferenceSlide(slide))
     .map((slide) => {
       const guardedInsights = guardReferenceInsights(slide.referenceInsights, analysis, chunks);
       const matchedAllowedTerm = allowedTerms.find((term) => isReferenceTerm(slide.slideTitle, [term]) || isReferenceTerm(slide.keyMessage, [term]));
 
-      if (!slideHasExperienceDetailIntent(slide) || !matchedAllowedTerm) {
+      if (!allowReferenceSlides || !slideHasExperienceDetailIntent(slide) || !matchedAllowedTerm) {
         return { ...slide, referenceInsights: guardedInsights };
       }
 
@@ -188,14 +219,15 @@ export function applyReferenceGuardToSlides(slides: SlideContent[], analysis: An
         referenceInsights: guardedInsights.length ? guardedInsights : [{
           referenceName: matchedAllowedTerm,
           referenceType: '현재 RFP 명시 참고 사례 / 기존 자산',
-          whatToLearn: '현재 프로젝트 자료에 언급된 레퍼런스의 강점과 시각적·경험적 원칙을 학습합니다.',
-          howToApply: '신규 과업 범위가 아니라 콘셉트 톤, 공간 연출 방향, 콘텐츠 완성도 기준에만 반영합니다.',
+          whatToLearn: '현재 프로젝트 자료에 언급된 레퍼런스가 어떤 제안 콘텐츠를 설명하는지와 시각적·경험적 원칙을 학습합니다.',
+          howToApply: '신규 과업 범위가 아니라 제안 콘텐츠의 미디어 메커니즘, 공간 연출 원리, 완성도 검증 기준에만 반영해 제안 설득력을 강화합니다.',
           caution: '참고 사례명을 신규 체험 모듈명, 제품 단위, 필수 제작 범위로 사용하지 않습니다.',
           sourceEvidence,
           referenceAllowed: true,
         }],
       };
     })
+    .filter((slide) => !isReferenceSlide(slide) || (allowReferenceSlides && referenceSlideHasCurrentEvidenceAndExplanation(slide)) || referenceSlideHasCurrentEvidenceAndExplanation(slide))
     .map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
 }
 
