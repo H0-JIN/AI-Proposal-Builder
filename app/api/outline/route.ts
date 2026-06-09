@@ -14,6 +14,7 @@ import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, isReferen
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
 import { getPresentationConceptName } from '@/lib/conceptNamingGuard';
+import { formatProposalPatternsForOutlinePrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
 
 
 function normalizeOutlineSourceEvidence(value: unknown) {
@@ -79,6 +80,8 @@ export async function POST(request: Request) {
     const strategyLayerMetadata = buildStrategyLayerMetadata({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic, conceptGenerationResult: body.conceptGenerationResult });
     const strategicMessageSummary = strategicMessageFieldsFromLogic(body.conceptDevelopmentLogic);
     const proposalNarrative = ensureProposalNarrative(body.proposalNarrative, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, documentText: body.input.briefText });
+    const outlineProposalPatterns = await retrieveProposalPatternsForOutline({ limit: 16 });
+    const proposalPatternContext = formatProposalPatternsForOutlinePrompt(outlineProposalPatterns);
 
     const result = await createStructuredJson<{ slides: SlideOutline[] }>({
       schemaName: 'proposal_outline',
@@ -88,6 +91,8 @@ export async function POST(request: Request) {
         structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '이 단계는 콘텐츠 개발형 제안 생성 단계의 아웃라인 설계다. 기본 18~22장, 하드캡 24장 이내로 실제 제안 내용을 담는 슬라이드 구조를 만든다.' : '이 단계는 제안 생성 단계의 아웃라인 설계다. RFP 요약이나 확인 필요 장표가 아니라 실제 제안 내용을 담을 20~40장 슬라이드 구조를 만든다.',
         isEventOperationType ? 'MICE/컨퍼런스 운영형 기본 흐름은 Cover, Project Understanding, Strategic Approach, Event Identity, Program Overview, Operation Framework, Registration & Entry Plan, Session System Operation, Partner Pavilion Plan, Networking / Catering Plan, Moving Line Plan, Setup / Conversion Plan, Staffing Plan, Risk Management, Schedule, Budget Summary, Portfolio / Organization, Closing이다.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') && structureGuard.proposalScopeTypes.includes('boothExhibition') ? '콘텐츠 개발 + 부스/전시형 기본 흐름은 Cover/Intro, Project Understanding, Approach, Main Theme, Strategy & Goals, Hero Content, Sub Content, Zoning & Flow, Content Scenario, Schedule, Credential, Closing이다. 필요 시 과업 대응표를 1장 포함하되 일반 체험 마케팅 슬라이드로 확장하지 말라.' : '기본 흐름은 Cover, Project / Market Context, Core Problem or Challenge, Audience Insight, Strategic Opportunity / Strategic Direction, Concept Rationale, Core Concept, Key Experience Asset Concept, Visitor Journey, Spatial / Content Plan 복수 장표, Media / Interactive Plan 복수 장표, Viral / Communication Mechanism, Operation Plan, Expected Effect, Closing이다.',
         '아웃라인은 Proposal Narrative의 5단계 구조를 최우선으로 따른다: Phase 1 Problem Definition(시장/산업 맥락, 프로젝트 배경, 클라이언트 과제, audience insight) → Phase 2 Strategic Declaration(전략 기회, proposal thesis, concept rationale, core concept) → Phase 3 Experience Strategy(경험 원칙, visitor journey, spatial strategy) → Phase 4 Content Proposal(hero experience, main experience, media/interactive content, key proof points) → Phase 5 Proof & Impact(expected impact, differentiation, feasibility, 필요한 경우에만 operation/RFP response table).',
+        'Proposal patterns are structure references only. Do not reuse old proposal copy, project names, client names, slogans, filenames, or proprietary content. Translate the pattern into a new outline suited to the current RFP.',
+        'proposal_patterns는 수주 제안서의 구조적 흐름만 참고한다. 현재 RFP 분석을 최우선 원천으로 삼고, 패턴은 slide order, concept buildup, core concept 선언 타이밍, problem→insight→strategy→concept→content→proof→operation 관계, 각 장표의 존재 이유, operation/credential 장표 배치를 개선하는 보조 가이드로만 사용하라.',
         'Cover 다음 첫 전략 섹션은 반드시 1) Project / Market Context 2) Core Problem / Challenge 3) Audience Insight 4) Strategic Opportunity 5) Concept Rationale 6) Core Concept 7) Experience Principle / Visitor Journey 순서로 배치하라. Strategic Opportunity, Experience Principle, Visitor Journey, Media Overview, Spatial Overview, Content Mechanism은 Project / Market Context와 Core Problem보다 앞에 절대 두지 말라. Core Concept는 Project / Market Context, Core Problem, Audience Insight, Strategic Opportunity, Concept Rationale이 모두 설명된 뒤에만 배치하라.',
         'Concept Rationale은 공간 제약에서 시작하지 말고 1) hydrogen처럼 보이지 않는 시스템 기반 가치 2) HTWO/hydrogen value chain의 복잡성 3) B2B와 public audience의 다른 이해 수준 4) Hyundai Motor Group hydrogen leadership을 신뢰 가능하고 체험 가능하게 만들어야 하는 필요 5) 선택 콘셉트가 그 간극을 가장 잘 표현하는 이유 순서로 작성하라. Case Insight가 유용할 때는 Concept Rationale의 전략 근거로만 활용하고 콘텐츠 제안 섹션 뒤에 두지 말라. Columns, booth constraints, venue limitations, layout constraints는 Spatial Strategy 이전에 한 번의 supporting challenge로만 언급할 수 있으며 early slide title이나 Concept Rationale의 주된 근거가 되어서는 안 된다.',
         '각 outline slide는 slidePurpose를 Problem, Insight, Strategy, Concept, Experience, Content, Proof, Impact 중 하나로만 지정하고 slideRole, relationToThesis, whyThisSlideExists를 반드시 작성하라. sourceEvidence는 문자열 배열로 작성하고, 현재 프로젝트 근거가 없으면 반드시 빈 배열 []을 넣어라. referenceAllowed는 Reference Guard가 허용한 현재 프로젝트 레퍼런스 근거가 있을 때만 true이고 기본값은 false다.',
@@ -130,6 +135,11 @@ RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}
 
 검색된 category별 구조 근거 chunk:
 ${retrievalContext || '검색된 chunk 없음'}
+
+참고한 구조 패턴: ${outlineProposalPatterns.length}개
+수주 제안서 패턴 우선 반영: ${outlineProposalPatterns.some((pattern) => pattern.outcome === 'won') ? '예' : '아니오'}
+proposal_patterns 구조 참고 JSON(허용된 구조 필드만 포함, 원문/제목/요약 제외):
+${proposalPatternContext}
 
 분석 결과 JSON:
 ${JSON.stringify(body.analysis, null, 2)}
