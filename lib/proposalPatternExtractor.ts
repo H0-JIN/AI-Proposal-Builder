@@ -1,0 +1,212 @@
+import type { ChunkRecord, ProposalPatternInput } from './dbTypes';
+
+const maxSourceTextLength = 3000;
+
+const narrativeStageByRole: Record<string, string> = {
+  cover: 'context',
+  project_context: 'context',
+  core_problem: 'problem',
+  audience_insight: 'insight',
+  case_insight: 'proof',
+  strategic_opportunity: 'strategy',
+  concept_rationale: 'strategy',
+  core_concept: 'concept',
+  visitor_journey: 'experience',
+  spatial_strategy: 'experience',
+  hero_experience: 'experience',
+  key_media_scene: 'content',
+  content_detail: 'content',
+  execution_plan: 'proof',
+  impact_summary: 'closing',
+  closing: 'closing',
+};
+
+const patternTypeByRole: Record<string, string> = {
+  cover: 'proposal_flow',
+  project_context: 'opening_context',
+  core_problem: 'core_problem',
+  audience_insight: 'audience_insight',
+  case_insight: 'audience_insight',
+  strategic_opportunity: 'strategic_opportunity',
+  concept_rationale: 'concept_rationale',
+  core_concept: 'core_concept',
+  visitor_journey: 'visitor_journey',
+  spatial_strategy: 'spatial_strategy',
+  hero_experience: 'hero_experience',
+  key_media_scene: 'media_scene',
+  content_detail: 'content_detail',
+  execution_plan: 'execution_plan',
+  impact_summary: 'impact_summary',
+  closing: 'closing_summary',
+};
+
+const roleLabelByRole: Record<string, string> = {
+  cover: 'Cover',
+  project_context: 'Project Context',
+  core_problem: 'Core Problem',
+  audience_insight: 'Audience Insight',
+  case_insight: 'Case Insight',
+  strategic_opportunity: 'Strategic Opportunity',
+  concept_rationale: 'Concept Rationale',
+  core_concept: 'Core Concept',
+  visitor_journey: 'Visitor Journey',
+  spatial_strategy: 'Spatial Strategy',
+  hero_experience: 'Hero Experience',
+  key_media_scene: 'Key Media Scene',
+  content_detail: 'Content Detail',
+  execution_plan: 'Execution Plan',
+  impact_summary: 'Impact Summary',
+  closing: 'Closing',
+};
+
+const reusablePrincipleByRole: Record<string, string> = {
+  cover: 'Open with a clear project identity so the reader immediately understands the proposal frame and client context.',
+  project_context: 'Establish project context before proposing solutions so every later recommendation feels grounded in the brief.',
+  core_problem: 'Name the core problem early so the proposal has a clear reason for the concept and execution plan to exist.',
+  audience_insight: 'Introduce audience insight after the problem so the strategy is rooted in the people the experience must move.',
+  case_insight: 'Use precedent or case insight as proof before the strategy so the recommendation feels learned rather than assumed.',
+  strategic_opportunity: 'Translate context, problem, and audience insight into a strategic opportunity before declaring the concept.',
+  concept_rationale: 'Explain why the concept direction is right before naming the concept so the idea feels inevitable.',
+  core_concept: 'Declare the core concept only after project context, problem, audience insight, and strategic opportunity have been established.',
+  visitor_journey: 'Map the visitor journey after the concept so the reader can see how the idea unfolds over time.',
+  spatial_strategy: 'Connect the concept to spatial strategy after the journey so the proposal shows how the experience becomes a place.',
+  hero_experience: 'Introduce the representative experience immediately after the concept or journey to make the strategy tangible.',
+  key_media_scene: 'Use key media scenes to translate the hero experience into memorable content moments.',
+  content_detail: 'Add content details after the major experience beats so the proposal proves the idea can be executed with substance.',
+  execution_plan: 'Place execution planning after the concept and experience logic so operational detail supports rather than distracts from the idea.',
+  impact_summary: 'Summarize expected impact near the end so the reader can connect the proposed work to business and audience outcomes.',
+  closing: 'Close by reinforcing the thesis and next step so the proposal ends with confidence and momentum.',
+};
+
+const whyItMattersByRole: Record<string, string> = {
+  cover: 'It frames the document and sets professional credibility before details begin.',
+  project_context: 'It shows the team understands the assignment and constraints.',
+  core_problem: 'It creates urgency and gives the evaluator a shared standard for judging the solution.',
+  audience_insight: 'It makes the proposal customer-centered rather than supplier-centered.',
+  case_insight: 'It adds evidence and reduces perceived risk.',
+  strategic_opportunity: 'It bridges diagnosis and solution, making the recommendation feel strategic.',
+  concept_rationale: 'It prevents the concept from feeling arbitrary.',
+  core_concept: 'It gives the proposal a memorable organizing idea.',
+  visitor_journey: 'It helps evaluators imagine the experience from the visitor point of view.',
+  spatial_strategy: 'It demonstrates that the idea can guide layout, movement, and environment decisions.',
+  hero_experience: 'It makes the abstract strategy vivid and easy to remember.',
+  key_media_scene: 'It clarifies how content moments produce attention, emotion, or participation.',
+  content_detail: 'It shows depth, feasibility, and readiness to execute.',
+  execution_plan: 'It builds confidence that the team can deliver the proposed idea.',
+  impact_summary: 'It reminds evaluators why the recommendation is valuable.',
+  closing: 'It leaves the evaluator with a concise decision-making takeaway.',
+};
+
+function normalize(value: string) {
+  return value.toLowerCase().replace(/[\s_-]+/g, ' ').trim();
+}
+
+function includesAny(text: string, patterns: RegExp[]) {
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function cleanTitle(value?: string | null) {
+  const title = value?.replace(/^#+\s*/, '').replace(/^slide\s*\d+\s*[:.-]?\s*/i, '').trim();
+  return title || null;
+}
+
+function inferTitleFromText(text: string) {
+  const firstLine = text.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+  if (!firstLine) return null;
+  return cleanTitle(firstLine.length <= 90 ? firstLine : firstLine.slice(0, 90));
+}
+
+function inferSlideRole(chunk: ChunkRecord, index: number, total: number) {
+  const title = normalize(cleanTitle(chunk.section_title) ?? '');
+  const text = normalize(`${chunk.section_title ?? ''}\n${chunk.chunk_text}`);
+
+  if (index === 0 && includesAny(text, [/\bcover\b|표지|제안서|proposal/])) return 'cover';
+  if (index >= total - 1 && includesAny(text, [/closing|thank you|감사|next step|마무리|결론/])) return 'closing';
+  if (includesAny(title, [/core concept|big idea|creative concept|핵심 컨셉|콘셉트|컨셉/]) || includesAny(text, [/core concept|big idea|creative concept|핵심 컨셉|콘셉트|컨셉/])) return 'core_concept';
+  if (includesAny(text, [/hero experience|signature experience|대표 경험|히어로|시그니처/])) return 'hero_experience';
+  if (includesAny(text, [/visitor journey|customer journey|experience journey|동선|여정|journey/])) return 'visitor_journey';
+  if (includesAny(text, [/spatial strategy|space strategy|zoning|공간 전략|공간 구성|조닝|레이아웃/])) return 'spatial_strategy';
+  if (includesAny(text, [/media scene|key scene|content scene|미디어 씬|미디어 장면|콘텐츠 씬/])) return 'key_media_scene';
+  if (includesAny(text, [/execution plan|operation plan|production plan|timeline|schedule|실행 계획|운영 계획|제작 계획|일정/])) return 'execution_plan';
+  if (includesAny(text, [/impact|expected effect|kpi|outcome|성과|효과|기대효과|임팩트/])) return 'impact_summary';
+  if (includesAny(text, [/strategic opportunity|opportunity|전략적 기회|기회|방향성/])) return 'strategic_opportunity';
+  if (includesAny(text, [/concept rationale|why this concept|rationale|컨셉 근거|콘셉트 근거|제안 근거/])) return 'concept_rationale';
+  if (includesAny(text, [/audience|target|visitor insight|customer insight|타깃|고객|방문객|인사이트/])) return 'audience_insight';
+  if (includesAny(text, [/case study|benchmark|reference|precedent|사례|레퍼런스|벤치마크/])) return 'case_insight';
+  if (includesAny(text, [/problem|challenge|pain point|issue|과제|문제|핵심 문제|도전/])) return 'core_problem';
+  if (includesAny(text, [/background|context|overview|project|brief|배경|프로젝트|개요|상황/])) return 'project_context';
+  if (includesAny(text, [/content|program|detail|콘텐츠|프로그램|세부/])) return 'content_detail';
+  if (index === 0) return 'project_context';
+  if (index >= total - 1) return 'closing';
+  return index < total * 0.25 ? 'project_context' : index < total * 0.45 ? 'strategic_opportunity' : index < total * 0.7 ? 'visitor_journey' : 'content_detail';
+}
+
+function summarize(text: string, title: string | null, role: string) {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  const excerpt = compact.length > 220 ? `${compact.slice(0, 220).trim()}…` : compact;
+  return excerpt || `${roleLabelByRole[role]} slide${title ? `: ${title}` : ''}.`;
+}
+
+function relationToConcept(role: string) {
+  if (['core_concept', 'concept_rationale', 'strategic_opportunity'].includes(role)) return 'Directly shapes or explains the concept direction.';
+  if (['visitor_journey', 'spatial_strategy', 'hero_experience', 'key_media_scene', 'content_detail'].includes(role)) return 'Translates the concept into tangible experience, space, or content decisions.';
+  if (['execution_plan', 'impact_summary', 'closing'].includes(role)) return 'Supports confidence that the concept can be delivered and will create value.';
+  return 'Builds the evidence and context the concept depends on.';
+}
+
+function relationToThesis(role: string) {
+  if (role === 'core_concept') return 'States the central proposal thesis as a memorable organizing idea.';
+  if (['project_context', 'core_problem', 'audience_insight', 'strategic_opportunity', 'concept_rationale'].includes(role)) return 'Builds the logical argument that makes the proposal thesis feel necessary.';
+  if (['visitor_journey', 'spatial_strategy', 'hero_experience', 'key_media_scene', 'content_detail'].includes(role)) return 'Demonstrates how the thesis becomes a concrete audience experience.';
+  if (role === 'execution_plan') return 'Shows the thesis is feasible to produce and operate.';
+  return 'Reinforces the thesis as the final takeaway for evaluators.';
+}
+
+function inferTags(role: string, stage: string, chunk: ChunkRecord) {
+  return Array.from(new Set([role, stage, ...(chunk.categories ?? []), ...(chunk.tags ?? [])].filter(Boolean))).slice(0, 12);
+}
+
+export function extractProposalPatternsFromChunks(chunks: ChunkRecord[]): ProposalPatternInput[] {
+  const orderedChunks = [...chunks]
+    .filter((chunk) => chunk.chunk_text?.trim())
+    .sort((a, b) => (a.slide_number ?? Number.MAX_SAFE_INTEGER) - (b.slide_number ?? Number.MAX_SAFE_INTEGER) || a.chunk_index - b.chunk_index);
+
+  const roles = orderedChunks.map((chunk, index) => inferSlideRole(chunk, index, orderedChunks.length));
+
+  return orderedChunks.map((chunk, index) => {
+    const role = roles[index];
+    const beforeRole = index > 0 ? roles[index - 1] : null;
+    const afterRole = index < roles.length - 1 ? roles[index + 1] : null;
+    const slideTitle = cleanTitle(chunk.section_title) ?? inferTitleFromText(chunk.chunk_text) ?? roleLabelByRole[role];
+    const narrativeStage = narrativeStageByRole[role] ?? 'strategy';
+
+    return {
+      project_id: chunk.project_id,
+      document_id: chunk.document_id,
+      chunk_id: chunk.id,
+      pattern_type: patternTypeByRole[role] ?? 'proposal_flow',
+      pattern_name: `${roleLabelByRole[role] ?? 'Proposal Pattern'}${slideTitle ? `: ${slideTitle}` : ''}`,
+      slide_number: chunk.slide_number ?? null,
+      slide_title: slideTitle,
+      slide_role: role,
+      section_order: index + 1,
+      summary: summarize(chunk.chunk_text, slideTitle, role),
+      reusable_principle: reusablePrincipleByRole[role] ?? 'Sequence this slide where it best advances the proposal argument from context to decision.',
+      why_it_matters: whyItMattersByRole[role] ?? 'It helps the evaluator understand the proposal logic.',
+      relation_to_concept: relationToConcept(role),
+      relation_to_proposal_thesis: relationToThesis(role),
+      before_slide_role: beforeRole,
+      after_slide_role: afterRole,
+      narrative_stage: narrativeStage,
+      source_text: chunk.chunk_text.slice(0, maxSourceTextLength),
+      source_type: chunk.source_type ?? 'text_extracted',
+      confidence: cleanTitle(chunk.section_title) || chunk.slide_number ? 'high' : 'medium',
+      tags: inferTags(role, narrativeStage, chunk),
+      metadata: {
+        chunkIndex: chunk.chunk_index,
+        originalChunkMetadata: chunk.metadata ?? null,
+        extractionMethod: 'heuristic_text_structure_v1',
+      },
+    };
+  });
+}

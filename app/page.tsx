@@ -76,6 +76,8 @@ type PersistDocumentResponse = {
   documentId?: string;
   chunkCount?: number;
   role?: 'rfp' | 'proposal' | 'reference' | 'memo';
+  proposalPatternStatus?: 'extracted' | 'skipped' | 'failed';
+  proposalPatternCount?: number;
 };
 
 type PersistAnalysisResponse = {
@@ -304,6 +306,16 @@ function DbSaveStatusIndicator({ status }: { status: DbSaveStatus }) {
 }
 
 
+function getProposalPatternStatusLabel(status?: UploadedDocument['proposalPatternStatus']) {
+  const statusConfig: Record<NonNullable<UploadedDocument['proposalPatternStatus']>, { label: string; tone: string }> = {
+    extracted: { label: 'Proposal patterns extracted', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    skipped: { label: 'Proposal pattern extraction skipped', tone: 'border-slate-200 bg-slate-50 text-slate-600' },
+    failed: { label: 'Proposal pattern extraction failed, document still saved', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+  };
+
+  return status ? statusConfig[status] : null;
+}
+
 function getDocumentDbSaveStatusLabel(status?: UploadedDocument['dbSaveStatus']) {
   const statusConfig: Record<Exclude<DbSaveStatus, 'idle'>, { label: string; tone: string }> = {
     disabled: { label: 'DB upload disabled', tone: 'border-slate-200 bg-slate-50 text-slate-600' },
@@ -440,6 +452,14 @@ function UploadedDocumentsList({
                   <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-[11px] font-black ${dbStatus.tone}`}>
                     {document.dbSaveStatus === 'saving' && <span className="mr-2 h-1.5 w-1.5 animate-pulse self-center rounded-full bg-current" />}
                     {dbStatus.label}{document.dbChunkCount !== undefined ? ` · ${document.dbChunkCount} chunks` : ''}
+                  </span>
+                ) : null;
+              })()}
+              {(() => {
+                const patternStatus = getProposalPatternStatusLabel(document.proposalPatternStatus);
+                return patternStatus ? (
+                  <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-[11px] font-black ${patternStatus.tone}`}>
+                    {patternStatus.label}{document.proposalPatternCount ? ` · ${document.proposalPatternCount} patterns` : ''}
                   </span>
                 ) : null;
               })()}
@@ -1380,6 +1400,8 @@ export default function Home() {
         dbProjectId: response.projectId,
         dbDocumentId: response.documentId,
         dbChunkCount: response.chunkCount,
+        proposalPatternStatus: response.proposalPatternStatus,
+        proposalPatternCount: response.proposalPatternCount,
       });
     } catch {
       updateUploadedDocument(enrichedDocument.id, { dbSaveStatus: 'failed' });
@@ -1424,10 +1446,16 @@ export default function Home() {
         dbProjectId: response.projectId,
         dbDocumentId: response.documentId,
         dbChunkCount: response.chunkCount,
+        proposalPatternStatus: response.proposalPatternStatus,
+        proposalPatternCount: response.proposalPatternCount,
       });
       setDbUploadNotice({
         type: savedStatus === 'saved' ? 'success' : savedStatus === 'partial' ? 'warning' : savedStatus === 'disabled' ? 'warning' : 'error',
-        message: getDocumentDbSaveStatusLabel(savedStatus)?.label ?? 'DB upload failed',
+        message: response.proposalPatternStatus === 'extracted'
+          ? 'Proposal patterns extracted'
+          : response.proposalPatternStatus === 'failed'
+            ? 'Proposal pattern extraction failed, document still saved'
+            : getDocumentDbSaveStatusLabel(savedStatus)?.label ?? 'DB upload failed',
       });
     } catch (err) {
       console.error('DB upload persist request failed; uploaded file remains separate from RFP analysis.', err);
@@ -1442,7 +1470,7 @@ export default function Home() {
     extractionStatus: ExtractionStatus,
     extractedText = '',
     warningMessage?: string,
-    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'pageTextSources' | 'textExtractionPageNumbers' | 'visionPageNumbers' | 'failedChunks' | 'failedPages' | 'needsReview' | 'errorMessage' | 'documentRole' | 'dbSaveStatus'> = {},
+    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'pageTextSources' | 'textExtractionPageNumbers' | 'visionPageNumbers' | 'failedChunks' | 'failedPages' | 'needsReview' | 'errorMessage' | 'documentRole' | 'dbSaveStatus' | 'proposalPatternStatus' | 'proposalPatternCount'> = {},
   ): UploadedDocument => {
     const documentRole = options.documentRole ?? inferUploadedDocumentRole(file.name, options.documentAnalysisText || extractedText);
 
@@ -1473,6 +1501,8 @@ export default function Home() {
       warningMessage,
       errorMessage: options.errorMessage,
       dbSaveStatus: options.dbSaveStatus ?? 'idle',
+      proposalPatternStatus: options.proposalPatternStatus,
+      proposalPatternCount: options.proposalPatternCount,
     });
   };
 
@@ -2532,12 +2562,21 @@ export default function Home() {
               <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm leading-6 text-slate-700">
                 <p className="font-black text-emerald-900">업로드 상태</p>
                 <p className="mt-1 font-semibold">DB upload disabled · Uploading to DB · Saved to DB · DB upload failed · Partial text saved</p>
+                <p className="mt-1 font-semibold text-emerald-800">Proposal patterns extracted · Proposal pattern extraction skipped · Proposal pattern extraction failed, document still saved</p>
                 {latestDbUploadStatus && (
                   <span className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-black ${latestDbUploadStatus.tone}`} role="status" aria-live="polite">
                     {latestDbUploadedDocument?.dbSaveStatus === 'saving' && <span className="mr-2 h-1.5 w-1.5 animate-pulse self-center rounded-full bg-current" />}
                     {latestDbUploadStatus.label}{latestDbUploadedDocument?.dbChunkCount !== undefined ? ` · ${latestDbUploadedDocument.dbChunkCount} chunks` : ''}
                   </span>
                 )}
+                {(() => {
+                  const patternStatus = getProposalPatternStatusLabel(latestDbUploadedDocument?.proposalPatternStatus);
+                  return patternStatus ? (
+                    <span className={`mt-3 ml-2 inline-flex rounded-full border px-3 py-1 text-xs font-black ${patternStatus.tone}`} role="status" aria-live="polite">
+                      {patternStatus.label}{latestDbUploadedDocument?.proposalPatternCount ? ` · ${latestDbUploadedDocument.proposalPatternCount} patterns` : ''}
+                    </span>
+                  ) : null;
+                })()}
               </div>
 
               <UploadedDocumentsList documents={dbUploadedDocuments} />

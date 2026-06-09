@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { getSupabaseConfigState } from './supabase';
-import type { ChunkImportance, ChunkRecord, DocumentRecord, DocumentRole, JsonValue, ProjectRecord, SlideVisualPatternInput, SlideVisualPatternRecord } from './dbTypes';
+import type { ChunkImportance, ChunkRecord, DocumentRecord, DocumentRole, JsonValue, ProjectRecord, ProposalPatternInput, ProposalPatternRecord, SlideVisualPatternInput, SlideVisualPatternRecord } from './dbTypes';
 
 export interface CreateProjectInput {
   name: string;
@@ -45,6 +45,10 @@ export interface SaveChunksInput {
 
 export interface SaveSlideVisualPatternsInput {
   patterns: SlideVisualPatternInput[];
+}
+
+export interface SaveProposalPatternsInput {
+  patterns: ProposalPatternInput[];
 }
 
 function logRagStorageError(operation: string, error: unknown) {
@@ -158,6 +162,111 @@ export async function saveChunks(input: SaveChunksInput): Promise<ChunkRecord[]>
     return data ?? [];
   } catch (error) {
     logRagStorageError('saveChunks', error);
+    return [];
+  }
+}
+
+
+export async function saveProposalPatterns(input: SaveProposalPatternsInput): Promise<ProposalPatternRecord[]> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client || input.patterns.length === 0) {
+    return [];
+  }
+
+  try {
+    const rows = input.patterns.map((pattern) => ({
+      project_id: pattern.project_id,
+      document_id: pattern.document_id,
+      chunk_id: pattern.chunk_id ?? null,
+      pattern_type: pattern.pattern_type ?? null,
+      pattern_name: pattern.pattern_name ?? null,
+      slide_number: pattern.slide_number ?? null,
+      slide_title: pattern.slide_title ?? null,
+      slide_role: pattern.slide_role ?? null,
+      section_order: pattern.section_order ?? null,
+      summary: pattern.summary ?? null,
+      reusable_principle: pattern.reusable_principle ?? null,
+      why_it_matters: pattern.why_it_matters ?? null,
+      relation_to_concept: pattern.relation_to_concept ?? null,
+      relation_to_proposal_thesis: pattern.relation_to_proposal_thesis ?? null,
+      before_slide_role: pattern.before_slide_role ?? null,
+      after_slide_role: pattern.after_slide_role ?? null,
+      narrative_stage: pattern.narrative_stage ?? null,
+      source_text: pattern.source_text ?? null,
+      source_type: pattern.source_type ?? 'text_extracted',
+      confidence: pattern.confidence ?? 'medium',
+      tags: pattern.tags ?? [],
+      metadata: pattern.metadata ?? {},
+    }));
+
+    const { data, error } = await client.from('proposal_patterns').insert(rows).select('*');
+
+    if (error) {
+      logRagStorageError('saveProposalPatterns', error);
+      return [];
+    }
+
+    return data ?? [];
+  } catch (error) {
+    logRagStorageError('saveProposalPatterns', error);
+    return [];
+  }
+}
+
+export async function getProposalPatternsByDocument(documentId: string): Promise<ProposalPatternRecord[]> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await client
+      .from('proposal_patterns')
+      .select('*')
+      .eq('document_id', documentId)
+      .order('section_order', { ascending: true, nullsFirst: false })
+      .order('slide_number', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      logRagStorageError('getProposalPatternsByDocument', error);
+      return [];
+    }
+
+    return data ?? [];
+  } catch (error) {
+    logRagStorageError('getProposalPatternsByDocument', error);
+    return [];
+  }
+}
+
+export async function getProposalPatternsByProject(projectId: string): Promise<ProposalPatternRecord[]> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await client
+      .from('proposal_patterns')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('document_id', { ascending: true, nullsFirst: false })
+      .order('section_order', { ascending: true, nullsFirst: false })
+      .order('slide_number', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      logRagStorageError('getProposalPatternsByProject', error);
+      return [];
+    }
+
+    return data ?? [];
+  } catch (error) {
+    logRagStorageError('getProposalPatternsByProject', error);
     return [];
   }
 }

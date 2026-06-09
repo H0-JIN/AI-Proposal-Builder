@@ -1,12 +1,14 @@
 import 'server-only';
 
-import { createDocument, createProject, isSupabaseConfigured, saveChunks } from './ragStorage';
+import { createDocument, createProject, isSupabaseConfigured, saveChunks, saveProposalPatterns } from './ragStorage';
+import { extractProposalPatternsFromChunks } from './proposalPatternExtractor';
 import { inferUploadedDocumentRole } from './documentRoles';
 import type { JsonValue } from './dbTypes';
 import type { DocumentChunk } from './rag';
 import type { ProjectInput, UploadedDocument } from './types';
 
 export type DocumentDbSaveStatus = 'disabled' | 'saved' | 'failed';
+export type ProposalPatternExtractionStatus = 'extracted' | 'skipped' | 'failed';
 
 export interface PersistUploadedDocumentInput {
   input: ProjectInput;
@@ -20,6 +22,8 @@ export interface PersistUploadedDocumentResult {
   documentId?: string;
   chunkCount?: number;
   role?: 'rfp' | 'proposal' | 'reference' | 'memo';
+  proposalPatternStatus?: ProposalPatternExtractionStatus;
+  proposalPatternCount?: number;
 }
 
 function stripFileExtension(fileName: string) {
@@ -39,11 +43,40 @@ function logDocumentPersistenceError(operation: string, error: unknown) {
   console.error(`[documentPersistence] ${operation} failed: ${message}`);
 }
 
+async function extractAndSaveProposalPatterns(role: PersistUploadedDocumentResult['role'], savedChunks: Awaited<ReturnType<typeof saveChunks>>) {
+  if (role !== 'proposal' && role !== 'reference') {
+    return { proposalPatternStatus: 'skipped' as const, proposalPatternCount: 0 };
+  }
+
+  if (!savedChunks.length) {
+    return { proposalPatternStatus: 'skipped' as const, proposalPatternCount: 0 };
+  }
+
+  try {
+    const patterns = extractProposalPatternsFromChunks(savedChunks);
+
+    if (!patterns.length) {
+      return { proposalPatternStatus: 'skipped' as const, proposalPatternCount: 0 };
+    }
+
+    const savedPatterns = await saveProposalPatterns({ patterns });
+
+    if (!savedPatterns.length) {
+      return { proposalPatternStatus: 'failed' as const, proposalPatternCount: 0 };
+    }
+
+    return { proposalPatternStatus: 'extracted' as const, proposalPatternCount: savedPatterns.length };
+  } catch (error) {
+    logDocumentPersistenceError('extractAndSaveProposalPatterns', error);
+    return { proposalPatternStatus: 'failed' as const, proposalPatternCount: 0 };
+  }
+}
+
 export async function persistUploadedDocumentToSupabase({ input, document, documentChunks = [] }: PersistUploadedDocumentInput): Promise<PersistUploadedDocumentResult> {
   const role = document.documentRole ?? inferUploadedDocumentRole(document.fileName, document.documentAnalysisText || document.extractedText);
 
   if (!isSupabaseConfigured()) {
-    return { status: 'disabled', chunkCount: documentChunks.length, role };
+    return { status: 'disabled', chunkCount: documentChunks.length, role, proposalPatternStatus: 'skipped', proposalPatternCount: 0 };
   }
 
   try {
@@ -58,7 +91,7 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
       }),
     });
 
-    if (!project) return { status: 'failed', chunkCount: documentChunks.length, role };
+    if (!project) return { status: 'failed', chunkCount: documentChunks.length, role, proposalPatternStatus: 'skipped', proposalPatternCount: 0 };
 
     const documentRecord = await createDocument({
       projectId: project.id,
@@ -79,7 +112,7 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
       }),
     });
 
-    if (!documentRecord) return { status: 'failed', projectId: project.id, chunkCount: documentChunks.length, role };
+    if (!documentRecord) return { status: 'failed', projectId: project.id, chunkCount: documentChunks.length, role, proposalPatternStatus: 'skipped', proposalPatternCount: 0 };
 
     const savedChunks = await saveChunks({
       projectId: project.id,
@@ -110,9 +143,11 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
       })),
     });
 
-    return { status: 'saved', projectId: project.id, documentId: documentRecord.id, chunkCount: savedChunks.length, role };
+    const patternResult = await extractAndSaveProposalPatterns(role, savedChunks);
+
+    return { status: 'saved', projectId: project.id, documentId: documentRecord.id, chunkCount: savedChunks.length, role, ...patternResult };
   } catch (error) {
     logDocumentPersistenceError('persistUploadedDocumentToSupabase', error);
-    return { status: 'failed', chunkCount: documentChunks.length, role };
+    return { status: 'failed', chunkCount: documentChunks.length, role, proposalPatternStatus: 'skipped', proposalPatternCount: 0 };
   }
 }
