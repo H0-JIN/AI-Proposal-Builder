@@ -19,13 +19,16 @@ create table if not exists public.documents (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
   file_name text not null,
-  role text not null default 'other',
+  role text not null default 'memo',
+  document_role text,
   mime_type text,
   source_type text,
   metadata jsonb,
   status text,
   file_size bigint,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint documents_role_check check (role in ('rfp', 'proposal', 'reference', 'memo')),
+  constraint documents_document_role_check check (document_role is null or document_role in ('rfp', 'proposal', 'reference', 'memo'))
 );
 
 create table if not exists public.chunks (

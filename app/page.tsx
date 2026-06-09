@@ -89,7 +89,7 @@ type ExtractFromStorageResponse = {
   projectId?: string;
   documentId?: string;
   chunkCount?: number;
-  role?: 'proposal' | 'reference' | 'memo';
+  role?: 'rfp' | 'proposal' | 'reference' | 'memo';
   warning?: string;
   extractionStatus?: ExtractionStatus;
   detail?: string;
@@ -154,7 +154,8 @@ const DB_STORAGE_EXTRACTION_TIMEOUT_DETAIL = '파일 원본은 Storage에 저장
 const clientReadableExtensions = ['txt', 'md'];
 const serverReadableExtensions = ['pdf', 'docx', 'pptx'];
 
-const dbDocumentRoleLabels: Record<'proposal' | 'reference' | 'memo', string> = {
+const dbDocumentRoleLabels: Record<'rfp' | 'proposal' | 'reference' | 'memo', string> = {
+  rfp: 'RFP / 제안요청서',
   proposal: '기존 제안서 / Proposal',
   reference: '레퍼런스 / Reference',
   memo: '메모 / Memo',
@@ -601,7 +602,7 @@ function DbLibraryUploadedDocumentsList({
           return (
             <div key={document.id || `${document.fileName}-${index}`} className="grid grid-cols-12 gap-3 px-4 py-4 text-sm text-slate-700">
               <div className="col-span-12 font-bold text-slate-950 md:col-span-3">{document.fileName}</div>
-              <div className="col-span-4 text-xs font-bold md:col-span-2">{dbDocumentRoleLabels[role as 'proposal' | 'reference' | 'memo'] ?? role}</div>
+              <div className="col-span-4 text-xs font-bold md:col-span-2">{dbDocumentRoleLabels[role as 'rfp' | 'proposal' | 'reference' | 'memo'] ?? role}</div>
               <div className="col-span-3 text-xs font-bold md:col-span-1">{outcome ? proposalOutcomeLabels[outcome] : '-'}</div>
               <div className="col-span-9 text-xs leading-5 text-slate-600 md:col-span-2">{outcomeReason || '-'}</div>
               <div className="col-span-12 md:col-span-2">
@@ -1469,7 +1470,7 @@ export default function Home() {
   const [error, setError] = useState<string>('');
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
   const [dbSaveStatus, setDbSaveStatus] = useState<DbSaveStatus>('idle');
-  const [dbUploadRole, setDbUploadRole] = useState<'proposal' | 'reference' | 'memo'>('proposal');
+  const [dbUploadRole, setDbUploadRole] = useState<'rfp' | 'proposal' | 'reference' | 'memo'>('proposal');
   const [dbUploadFile, setDbUploadFile] = useState<File | null>(null);
   const [dbUploadOutcome, setDbUploadOutcome] = useState<ProposalOutcome>('unknown');
   const [dbUploadOutcomeReason, setDbUploadOutcomeReason] = useState('');
@@ -2913,7 +2914,7 @@ export default function Home() {
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-700">Library upload</p>
                   <h2 id="db-upload-title" className="mt-2 text-2xl font-black text-slate-950">기존 제안서 / 레퍼런스 DB 업로드</h2>
-                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-600">기존 제안서, 레퍼런스, 메모를 내부 RAG 자료로 저장합니다. 수주/미수주 사유 유형은 제안서 구조 학습과 회피 규칙에 반영됩니다.</p>
+                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-600">RFP, 기존 제안서, 레퍼런스, 메모를 내부 RAG 자료로 저장합니다. 수주/미수주 사유 유형은 제안서 구조 학습과 회피 규칙에 반영됩니다.</p>
                   <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, PPTX, DOCX, TXT, MD · 최대 100MB</p>
                   <p className="mt-1 text-xs font-bold leading-5 text-amber-700">{DB_UPLOAD_SIZE_GUIDANCE}</p>
                 </div>
@@ -2942,9 +2943,10 @@ export default function Home() {
                   <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">문서 유형</span>
                   <select
                     value={dbUploadRole}
-                    onChange={(event) => setDbUploadRole(event.target.value as 'proposal' | 'reference' | 'memo')}
+                    onChange={(event) => setDbUploadRole(event.target.value as 'rfp' | 'proposal' | 'reference' | 'memo')}
                     className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
                   >
+                    <option value="rfp">RFP / 제안요청서</option>
                     <option value="proposal">기존 제안서 / Proposal</option>
                     <option value="reference">레퍼런스 / Reference</option>
                     <option value="memo">메모 / Memo</option>

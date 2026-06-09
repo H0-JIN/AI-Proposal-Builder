@@ -1,7 +1,8 @@
 import 'server-only';
 
 import { getSupabaseConfigState } from './supabase';
-import type { ChunkImportance, ChunkRecord, DocumentRecord, DocumentRole, JsonValue, ProjectRecord, ProposalPatternInput, ProposalPatternRecord, SlideVisualPatternInput, SlideVisualPatternRecord } from './dbTypes';
+import { getDocumentRole, type CanonicalDocumentRole } from './documentRoles';
+import type { ChunkImportance, ChunkRecord, DocumentRecord, JsonValue, ProjectRecord, ProposalPatternInput, ProposalPatternRecord, SlideVisualPatternInput, SlideVisualPatternRecord } from './dbTypes';
 
 export interface CreateProjectInput {
   name: string;
@@ -14,7 +15,7 @@ export interface CreateProjectInput {
 export interface CreateDocumentInput {
   projectId: string;
   fileName: string;
-  role: DocumentRole;
+  role: CanonicalDocumentRole;
   mimeType?: string | null;
   sourceType?: string | null;
   metadata?: JsonValue | null;
@@ -62,9 +63,60 @@ function logRagStorageError(operation: string, error: unknown) {
 }
 
 
-function isOutcomeReasonTypeColumnError(error: unknown) {
+function isColumnError(error: unknown, columnName: string) {
   const text = error instanceof Error ? error.message : typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error);
-  return /outcome_reason_type|Could not find.*column|schema cache|column .* does not exist/i.test(text);
+  return new RegExp(`${columnName}|Could not find.*column|schema cache|column .* does not exist`, 'i').test(text);
+}
+
+function isOutcomeReasonTypeColumnError(error: unknown) {
+  return isColumnError(error, 'outcome_reason_type');
+}
+
+function isDocumentRoleColumnError(error: unknown) {
+  return isColumnError(error, 'document_role');
+}
+
+export function normalizeProjectMatchText(value: string | null | undefined) {
+  return (value ?? '')
+    .trim()
+    .replace(/_/g, ' ')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function hasMatchingClientName(existingClientName: string | null | undefined, inputClientName: string | null | undefined) {
+  const normalizedInput = normalizeProjectMatchText(inputClientName);
+  if (!normalizedInput) return true;
+  return normalizeProjectMatchText(existingClientName) === normalizedInput;
+}
+
+async function findMatchingProject(input: CreateProjectInput): Promise<ProjectRecord | null> {
+  const { client } = getSupabaseConfigState();
+  const normalizedName = normalizeProjectMatchText(input.name);
+
+  if (!client || !normalizedName) return null;
+
+  try {
+    const { data, error } = await client
+      .from('projects')
+      .select('*')
+      .order('created_at', { ascending: true })
+      .limit(500);
+
+    if (error) {
+      logRagStorageError('findMatchingProject', error);
+      return null;
+    }
+
+    return (data ?? []).find((project) => (
+      normalizeProjectMatchText(project.name) === normalizedName &&
+      hasMatchingClientName(project.client_name, input.clientName)
+    )) ?? null;
+  } catch (error) {
+    logRagStorageError('findMatchingProject', error);
+    return null;
+  }
 }
 
 function getJsonObject(value: JsonValue | null | undefined): Record<string, JsonValue | undefined> {
@@ -115,6 +167,9 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectR
     return null;
   }
 
+  const matchingProject = await findMatchingProject(input);
+  if (matchingProject) return matchingProject;
+
   try {
     const { data, error } = await client
       .from('projects')
@@ -147,19 +202,29 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
     return null;
   }
 
+  const row = {
+    project_id: input.projectId,
+    file_name: input.fileName,
+    role: input.role,
+    document_role: input.role,
+    mime_type: input.mimeType ?? null,
+    source_type: input.sourceType ?? null,
+    metadata: input.metadata ?? null,
+  };
+
+  const insertDocument = (includeLegacyDocumentRole: boolean) => client
+    .from('documents')
+    .insert(includeLegacyDocumentRole ? row : (({ document_role: _documentRole, ...fallbackRow }) => fallbackRow)(row))
+    .select('*')
+    .single();
+
   try {
-    const { data, error } = await client
-      .from('documents')
-      .insert({
-        project_id: input.projectId,
-        file_name: input.fileName,
-        role: input.role,
-        mime_type: input.mimeType ?? null,
-        source_type: input.sourceType ?? null,
-        metadata: input.metadata ?? null,
-      })
-      .select('*')
-      .single();
+    let { data, error } = await insertDocument(true);
+
+    if (error && isDocumentRoleColumnError(error)) {
+      console.warn('[ragStorage] createDocument retrying without documents.document_role legacy column.');
+      ({ data, error } = await insertDocument(false));
+    }
 
     if (error) {
       logRagStorageError('createDocument', error);
@@ -278,7 +343,7 @@ export async function updateProposalPatternOutcomeReasonTypeByDocument(documentI
   try {
     const { data, error } = await client
       .from('proposal_patterns')
-      .select('*')
+      .select('*, documents(role, document_role)')
       .eq('document_id', documentId);
 
     if (error) {
@@ -414,7 +479,6 @@ export async function getProposalDocumentsForPatternBackfill(options: { document
     let query = client
       .from('documents')
       .select('*, chunks(id), proposal_patterns(id)')
-      .eq('role', 'proposal')
       .order('created_at', { ascending: true });
 
     if (options.documentId) {
@@ -442,7 +506,7 @@ export async function getProposalDocumentsForPatternBackfill(options: { document
           proposalPatternCount: _patterns?.length ?? 0,
         } as ProposalPatternBackfillDocument;
       })
-      .filter((document) => document.chunkCount > 0);
+      .filter((document) => getDocumentRole(document) === 'proposal' && document.chunkCount > 0);
   } catch (error) {
     logRagStorageError('getProposalDocumentsForPatternBackfill', error);
     return [];
@@ -459,7 +523,7 @@ export async function getProposalPatternsByDocument(documentId: string): Promise
   try {
     const { data, error } = await client
       .from('proposal_patterns')
-      .select('*')
+      .select('*, documents(role, document_role)')
       .eq('document_id', documentId)
       .order('section_order', { ascending: true, nullsFirst: false })
       .order('slide_number', { ascending: true, nullsFirst: false })
@@ -470,7 +534,7 @@ export async function getProposalPatternsByDocument(documentId: string): Promise
       return [];
     }
 
-    return data ?? [];
+    return (data ?? []).filter((pattern) => getDocumentRole((pattern as ProposalPatternRecord & { documents?: { role?: unknown; document_role?: unknown } }).documents) === 'proposal');
   } catch (error) {
     logRagStorageError('getProposalPatternsByDocument', error);
     return [];
@@ -487,7 +551,7 @@ export async function getProposalPatternsByProject(projectId: string): Promise<P
   try {
     const { data, error } = await client
       .from('proposal_patterns')
-      .select('*')
+      .select('*, documents(role, document_role)')
       .eq('project_id', projectId)
       .order('document_id', { ascending: true, nullsFirst: false })
       .order('section_order', { ascending: true, nullsFirst: false })
@@ -499,7 +563,7 @@ export async function getProposalPatternsByProject(projectId: string): Promise<P
       return [];
     }
 
-    return data ?? [];
+    return (data ?? []).filter((pattern) => getDocumentRole((pattern as ProposalPatternRecord & { documents?: { role?: unknown; document_role?: unknown } }).documents) === 'proposal');
   } catch (error) {
     logRagStorageError('getProposalPatternsByProject', error);
     return [];

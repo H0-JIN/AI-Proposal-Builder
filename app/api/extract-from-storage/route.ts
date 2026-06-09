@@ -13,7 +13,7 @@ const DB_STORAGE_EXTRACTION_TIMEOUT_DETAIL = '파일 원본은 Storage에 저장
 
 const supportedStorageExtensions = new Set(['pdf', 'docx', 'pptx', 'txt', 'md']);
 
-type StorageDocumentRole = Extract<DocumentRole, 'proposal' | 'reference' | 'memo'>;
+type StorageDocumentRole = Extract<DocumentRole, 'rfp' | 'proposal' | 'reference' | 'memo'>;
 
 interface ExtractFromStoragePayload {
   input?: ProjectInput;
@@ -27,7 +27,7 @@ interface ExtractFromStoragePayload {
 }
 
 function isStorageDocumentRole(value: unknown): value is StorageDocumentRole {
-  return value === 'proposal' || value === 'reference' || value === 'memo';
+  return value === 'rfp' || value === 'proposal' || value === 'reference' || value === 'memo';
 }
 
 function createFallbackInput(fileName: string): ProjectInput {

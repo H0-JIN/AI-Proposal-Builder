@@ -9,7 +9,8 @@ alter table if exists public.projects
 
 alter table if exists public.documents
   add column if not exists mime_type text,
-  add column if not exists role text not null default 'other',
+  add column if not exists role text not null default 'memo',
+  add column if not exists document_role text,
   add column if not exists source_type text,
   add column if not exists status text,
   add column if not exists metadata jsonb,
