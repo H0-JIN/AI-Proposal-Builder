@@ -86,11 +86,13 @@ export interface DocumentPageTextSource {
 
 export type ProposalOutcome = 'won' | 'lost' | 'unknown';
 export type OutcomeReasonType = 'external' | 'quality' | 'mixed' | 'unknown';
+export type FailureArea = 'concept' | 'strategy' | 'structure' | 'content' | 'design' | 'execution' | 'operation' | 'differentiation' | 'budget_external' | 'schedule_external' | 'procurement_external' | 'unknown';
 
 export interface DbLibraryDocumentMetadata {
   outcome?: ProposalOutcome;
   outcomeReason?: string;
   outcomeReasonType?: OutcomeReasonType;
+  failureAreas?: FailureArea[];
   originalFileName?: string;
   uploadedVia?: 'db_library_upload';
 }

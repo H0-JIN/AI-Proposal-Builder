@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { getSupabaseConfigState } from './supabase';
-import { buildAvoidanceRuleFromOutcomeReason, classifyOutcomeReason, getOutcomeReasonTypeFromMetadata, type OutcomeReasonType } from './outcomeReasonClassifier';
+import { buildAvoidanceRuleFromOutcomeReason, classifyFailureAreas, classifyOutcomeReason, getOutcomeReasonTypeFromMetadata, resolveFailureAreasFromMetadata, type FailureArea, type OutcomeReasonType } from './outcomeReasonClassifier';
 import type { JsonValue, ProposalPatternRecord } from './dbTypes';
 
 export interface OutlineProposalPattern {
@@ -17,6 +17,8 @@ export interface OutlineProposalPattern {
   outcome: string | null;
   outcome_reason: string | null;
   outcome_reason_type: OutcomeReasonType;
+  failure_areas: FailureArea[];
+  can_use_for_structure: boolean;
   pattern_reference_type: 'positive' | 'neutral' | 'caution' | 'anti_pattern';
 }
 
@@ -26,6 +28,7 @@ export interface ProposalPatternRetrievalSummary {
   unknownStructureCount: number;
   lostMixedCautionCount: number;
   lostQualityAvoidanceRuleCount: number;
+  lostUsableStructureCount: number;
 }
 
 export interface RetrievedProposalPatternGuidance {
@@ -155,11 +158,42 @@ function outcomeReasonType(pattern: ProposalPatternWithSourceMetadata): OutcomeR
   return classifyOutcomeReason(resolvedOutcome(pattern), resolvedOutcomeReason(pattern), columnType || patternMetadataType || documentMetadataType);
 }
 
-function patternReferenceType(outcome: string | null | undefined, type: OutcomeReasonType): OutlineProposalPattern['pattern_reference_type'] {
+
+function resolvedFailureAreas(pattern: ProposalPatternWithSourceMetadata): FailureArea[] {
+  if (Array.isArray(pattern.failure_areas) && pattern.failure_areas.every((area) => typeof area === 'string')) {
+    return pattern.failure_areas as FailureArea[];
+  }
+  const patternMetadataAreas = resolveFailureAreasFromMetadata(pattern.metadata);
+  if (patternMetadataAreas.length) return patternMetadataAreas;
+  const documentMetadataAreas = resolveFailureAreasFromMetadata(pattern.documents?.metadata);
+  if (documentMetadataAreas.length) return documentMetadataAreas;
+  return classifyFailureAreas(resolvedOutcome(pattern), resolvedOutcomeReason(pattern));
+}
+
+function getMetadataBoolean(value: JsonValue | null | undefined, keys: string[]) {
+  const object = getJsonObject(value);
+  if (!object) return null;
+  for (const key of keys) {
+    const item = object[key];
+    if (typeof item === 'boolean') return item;
+  }
+  return null;
+}
+
+function canUsePatternForStructure(pattern: ProposalPatternWithSourceMetadata) {
+  if (typeof pattern.can_use_for_structure === 'boolean') return pattern.can_use_for_structure;
+  const metadataValue = getMetadataBoolean(pattern.metadata, ['canUseForStructure', 'can_use_for_structure']);
+  if (metadataValue !== null) return metadataValue;
+  const outcome = resolvedOutcome(pattern);
+  if (outcome !== 'lost') return true;
+  return !resolvedFailureAreas(pattern).includes('structure');
+}
+
+function patternReferenceType(outcome: string | null | undefined, type: OutcomeReasonType, canUseForStructure = true): OutlineProposalPattern['pattern_reference_type'] {
   if (outcome === 'won') return 'positive';
   if (outcome === 'lost' && type === 'external') return 'positive';
-  if (outcome === 'lost' && type === 'mixed') return 'caution';
-  if (outcome === 'lost' && type === 'quality') return 'anti_pattern';
+  if (outcome === 'lost' && type === 'mixed') return canUseForStructure ? 'caution' : 'anti_pattern';
+  if (outcome === 'lost' && type === 'quality') return canUseForStructure ? 'caution' : 'anti_pattern';
   return 'neutral';
 }
 
@@ -169,8 +203,8 @@ function retrievalPriority(pattern: ProposalPatternWithSourceMetadata) {
   if (outcome === 'won') return 5;
   if (outcome === 'lost' && type === 'external') return 4;
   if (outcome === 'unknown' || !outcome) return 3;
-  if (outcome === 'lost' && type === 'mixed') return 2;
-  if (outcome === 'lost' && type === 'quality') return 0;
+  if (outcome === 'lost' && type === 'mixed') return canUsePatternForStructure(pattern) ? 2 : 0;
+  if (outcome === 'lost' && type === 'quality') return canUsePatternForStructure(pattern) ? 2 : 0;
   return 1;
 }
 
@@ -182,7 +216,8 @@ export function filterProposalPatternsForOutline(patterns: ProposalPatternRecord
     const type = outcomeReasonType(pattern);
     const outcome = resolvedOutcome(pattern);
     const reason = resolvedOutcomeReason(pattern);
-    if (outcome === 'lost' && type === 'quality') continue;
+    const canUseForStructure = canUsePatternForStructure(pattern);
+    if (outcome === 'lost' && !canUseForStructure) continue;
 
     const sourceNames = collectSourceNames(pattern);
     const reusablePrinciple = normalizeText(pattern.reusable_principle);
@@ -203,7 +238,9 @@ export function filterProposalPatternsForOutline(patterns: ProposalPatternRecord
       outcome: sanitizeField(outcome, sourceNames),
       outcome_reason: sanitizeField(reason, sourceNames),
       outcome_reason_type: type,
-      pattern_reference_type: patternReferenceType(outcome, type),
+      failure_areas: resolvedFailureAreas(pattern),
+      can_use_for_structure: canUseForStructure,
+      pattern_reference_type: patternReferenceType(outcome, type, canUseForStructure),
     };
 
     const groupKey = `${retrievalPriority(pattern)}:${safePattern.narrative_stage || safePattern.slide_role || 'other'}`;
@@ -230,7 +267,7 @@ function extractAvoidanceRules(patterns: ProposalPatternRecord[] = [], limit = d
     if (outcome !== 'lost' || (type !== 'quality' && type !== 'mixed')) continue;
     const sourceNames = collectSourceNames(pattern);
     const reason = sanitizeField(resolvedOutcomeReason(pattern), sourceNames);
-    const rule = buildAvoidanceRuleFromOutcomeReason(reason, type);
+    const rule = buildAvoidanceRuleFromOutcomeReason(reason, type, resolvedFailureAreas(pattern));
     if (rule) rules.add(rule);
     if (rules.size >= limit) break;
   }
@@ -254,6 +291,7 @@ function summarize(patterns: OutlineProposalPattern[], avoidanceRules: string[])
     unknownStructureCount: patterns.filter((pattern) => pattern.outcome === 'unknown' || !pattern.outcome).length,
     lostMixedCautionCount: patterns.filter((pattern) => pattern.outcome === 'lost' && pattern.outcome_reason_type === 'mixed').length,
     lostQualityAvoidanceRuleCount: avoidanceRules.length,
+    lostUsableStructureCount: patterns.filter((pattern) => pattern.outcome === 'lost' && pattern.can_use_for_structure).length,
   };
 }
 
@@ -310,6 +348,8 @@ export function formatProposalPatternsForOutlinePrompt(patterns: OutlineProposal
       outcome: pattern.outcome,
       outcome_reason: pattern.outcome_reason,
       outcome_reason_type: pattern.outcome_reason_type,
+      failure_areas: pattern.failure_areas,
+      can_use_for_structure: pattern.can_use_for_structure,
     })),
     null,
     2,
@@ -326,6 +366,7 @@ export function formatProposalPatternDiagnostics(summary: ProposalPatternRetriev
     `참고한 수주 구조 패턴: ${summary.wonStructureCount}개`,
     `참고한 외부요인 미수주 구조 패턴: ${summary.lostExternalStructureCount}개`,
     `참고한 미수주 회피 규칙: ${summary.lostQualityAvoidanceRuleCount}개`,
+    `부분 사용 가능한 미수주 구조 패턴: ${summary.lostUsableStructureCount}개`,
     `다중 요소 차별화 감지: ${hasMultipleEntities ? '있음' : '없음'}`,
   ].join('\n');
 }

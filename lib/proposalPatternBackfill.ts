@@ -8,10 +8,10 @@ import {
   isSupabaseConfigured,
   saveProposalPatterns,
   updateDocumentMetadata,
-  updateProposalPatternOutcomeReasonTypeByDocument,
+  updateProposalPatternOutcomeMetadataByDocument,
 } from './ragStorage';
 import { extractProposalPatternsFromChunks } from './proposalPatternExtractor';
-import { classifyOutcomeReason } from './outcomeReasonClassifier';
+import { classifyFailureAreas, classifyOutcomeReason, getProposalPatternUsabilityFlags } from './outcomeReasonClassifier';
 import type { JsonValue, ProposalPatternInput } from './dbTypes';
 
 export interface BackfillProposalPatternsInput {
@@ -78,33 +78,45 @@ function applyOutcomeMetadata(patterns: ProposalPatternInput[], metadata: JsonVa
   const outcome = normalizeOutcome(getMetadataString(metadata, 'outcome'));
   const outcomeReason = getMetadataString(metadata, 'outcomeReason');
   const outcomeReasonType = getOutcomeReasonType(metadata);
+  const failureAreas = classifyFailureAreas(outcome, outcomeReason);
+  const usabilityFlags = getProposalPatternUsabilityFlags(failureAreas);
 
   return patterns.map((pattern) => ({
     ...pattern,
     outcome,
     outcome_reason: outcomeReason,
     outcome_reason_type: outcomeReasonType,
+    failure_areas: failureAreas,
+    ...usabilityFlags,
     metadata: toJsonValue({
       ...(pattern.metadata && typeof pattern.metadata === 'object' && !Array.isArray(pattern.metadata) ? pattern.metadata : {}),
       proposalOutcome: outcome,
       proposalOutcomeReason: outcomeReason,
       proposalOutcomeReasonType: outcomeReasonType,
       outcomeReasonType,
+      failureAreas,
       extractionMethod: 'proposal_pattern_backfill_v1',
     }),
   }));
 }
 
-async function backfillOutcomeReasonType(documentId: string, metadata: JsonValue | null | undefined) {
+async function backfillOutcomeMetadata(documentId: string, metadata: JsonValue | null | undefined) {
+  const outcome = normalizeOutcome(getMetadataString(metadata, 'outcome'));
+  const outcomeReason = getMetadataString(metadata, 'outcomeReason');
   const outcomeReasonType = getOutcomeReasonType(metadata);
+  const failureAreas = classifyFailureAreas(outcome, outcomeReason);
+  const usabilityFlags = getProposalPatternUsabilityFlags(failureAreas);
   const currentMetadataType = getMetadataString(metadata, 'outcomeReasonType');
+  const currentFailureAreas = getJsonObject(metadata).failureAreas;
   const nextMetadata = toJsonValue({
     ...getJsonObject(metadata),
     outcomeReasonType,
+    failureAreas,
   });
 
-  const documentUpdated = currentMetadataType === outcomeReasonType ? true : await updateDocumentMetadata(documentId, nextMetadata);
-  const patternsUpdated = await updateProposalPatternOutcomeReasonTypeByDocument(documentId, outcomeReasonType);
+  const metadataChanged = currentMetadataType !== outcomeReasonType || JSON.stringify(currentFailureAreas ?? null) !== JSON.stringify(failureAreas);
+  const documentUpdated = metadataChanged ? await updateDocumentMetadata(documentId, nextMetadata) : true;
+  const patternsUpdated = await updateProposalPatternOutcomeMetadataByDocument(documentId, { outcomeReasonType, failureAreas, usabilityFlags });
 
   return { metadata: nextMetadata, documentUpdated, patternsUpdated };
 }
@@ -134,7 +146,7 @@ export async function backfillProposalPatterns(input: BackfillProposalPatternsIn
   const results: BackfillProposalPatternDocumentResult[] = [];
 
   for (const document of documents) {
-    const outcomeBackfill = await backfillOutcomeReasonType(document.id, document.metadata);
+    const outcomeBackfill = await backfillOutcomeMetadata(document.id, document.metadata);
     const currentPatternCount = await getProposalPatternCountByDocument(document.id);
     const documentMetadata = outcomeBackfill.metadata ?? document.metadata;
 

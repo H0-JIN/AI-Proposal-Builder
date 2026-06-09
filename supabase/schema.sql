@@ -76,6 +76,14 @@ create table if not exists public.proposal_patterns (
   outcome text,
   outcome_reason text,
   outcome_reason_type text,
+  failure_areas text[],
+  can_use_for_structure boolean default true,
+  can_use_for_concept boolean default true,
+  can_use_for_strategy boolean default true,
+  can_use_for_content boolean default true,
+  can_use_for_design boolean default true,
+  can_use_for_execution boolean default true,
+  can_use_for_operation boolean default true,
   source_text text,
   source_type text default 'text_extracted',
   confidence text default 'medium',
@@ -119,6 +127,7 @@ create index if not exists proposal_patterns_chunk_id_idx on public.proposal_pat
 create index if not exists proposal_patterns_slide_role_idx on public.proposal_patterns(slide_role);
 create index if not exists proposal_patterns_narrative_stage_idx on public.proposal_patterns(narrative_stage);
 create index if not exists proposal_patterns_outcome_reason_type_idx on public.proposal_patterns(outcome_reason_type);
+create index if not exists proposal_patterns_failure_areas_gin_idx on public.proposal_patterns using gin(failure_areas);
 create index if not exists proposal_patterns_tags_gin_idx on public.proposal_patterns using gin(tags);
 create index if not exists slide_visual_patterns_project_id_idx on public.slide_visual_patterns(project_id);
 create index if not exists slide_visual_patterns_document_id_idx on public.slide_visual_patterns(document_id);

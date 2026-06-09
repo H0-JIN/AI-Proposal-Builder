@@ -78,6 +78,14 @@ export interface ProposalPatternRecord {
   outcome: string | null;
   outcome_reason: string | null;
   outcome_reason_type: string | null;
+  failure_areas: string[] | null;
+  can_use_for_structure: boolean | null;
+  can_use_for_concept: boolean | null;
+  can_use_for_strategy: boolean | null;
+  can_use_for_content: boolean | null;
+  can_use_for_design: boolean | null;
+  can_use_for_execution: boolean | null;
+  can_use_for_operation: boolean | null;
   source_text: string | null;
   source_type: string | null;
   confidence: string | null;
@@ -86,7 +94,7 @@ export interface ProposalPatternRecord {
   created_at: string;
 }
 
-export type ProposalPatternInput = Partial<Pick<ProposalPatternRecord, 'id' | 'chunk_id' | 'pattern_type' | 'pattern_name' | 'slide_number' | 'slide_title' | 'slide_role' | 'section_order' | 'summary' | 'reusable_principle' | 'why_it_matters' | 'relation_to_concept' | 'relation_to_proposal_thesis' | 'before_slide_role' | 'after_slide_role' | 'narrative_stage' | 'outcome' | 'outcome_reason' | 'outcome_reason_type' | 'source_text' | 'source_type' | 'confidence' | 'tags' | 'metadata' | 'created_at'>> &
+export type ProposalPatternInput = Partial<Pick<ProposalPatternRecord, 'id' | 'chunk_id' | 'pattern_type' | 'pattern_name' | 'slide_number' | 'slide_title' | 'slide_role' | 'section_order' | 'summary' | 'reusable_principle' | 'why_it_matters' | 'relation_to_concept' | 'relation_to_proposal_thesis' | 'before_slide_role' | 'after_slide_role' | 'narrative_stage' | 'outcome' | 'outcome_reason' | 'outcome_reason_type' | 'failure_areas' | 'can_use_for_structure' | 'can_use_for_concept' | 'can_use_for_strategy' | 'can_use_for_content' | 'can_use_for_design' | 'can_use_for_execution' | 'can_use_for_operation' | 'source_text' | 'source_type' | 'confidence' | 'tags' | 'metadata' | 'created_at'>> &
   Pick<ProposalPatternRecord, 'project_id' | 'document_id'>;
 
 export interface SlideVisualPatternRecord {

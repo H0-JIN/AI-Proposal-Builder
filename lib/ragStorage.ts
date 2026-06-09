@@ -3,6 +3,7 @@ import 'server-only';
 import { getSupabaseConfigState } from './supabase';
 import { getDocumentRole, type CanonicalDocumentRole } from './documentRoles';
 import type { ChunkImportance, ChunkRecord, DocumentRecord, JsonValue, ProjectRecord, ProposalPatternInput, ProposalPatternRecord, SlideVisualPatternInput, SlideVisualPatternRecord } from './dbTypes';
+import type { FailureArea, ProposalPatternUsabilityFlags } from './outcomeReasonClassifier';
 
 export interface CreateProjectInput {
   name: string;
@@ -72,6 +73,10 @@ function isOutcomeReasonTypeColumnError(error: unknown) {
   return isColumnError(error, 'outcome_reason_type');
 }
 
+function isProposalPatternUsabilityColumnError(error: unknown) {
+  return /failure_areas|can_use_for_/i.test(error instanceof Error ? error.message : typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error));
+}
+
 function isDocumentRoleColumnError(error: unknown) {
   return isColumnError(error, 'document_role');
 }
@@ -123,7 +128,7 @@ function getJsonObject(value: JsonValue | null | undefined): Record<string, Json
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
-function buildProposalPatternRows(patterns: ProposalPatternInput[], includeOutcomeReasonType: boolean) {
+function buildProposalPatternRows(patterns: ProposalPatternInput[], includeOutcomeReasonType: boolean, includeUsabilityColumns = true) {
   return patterns.map((pattern) => {
     const row = {
       project_id: pattern.project_id,
@@ -145,6 +150,16 @@ function buildProposalPatternRows(patterns: ProposalPatternInput[], includeOutco
       narrative_stage: pattern.narrative_stage ?? null,
       outcome: pattern.outcome ?? null,
       outcome_reason: pattern.outcome_reason ?? null,
+      ...(includeUsabilityColumns ? {
+        failure_areas: pattern.failure_areas ?? [],
+        can_use_for_structure: pattern.can_use_for_structure ?? true,
+        can_use_for_concept: pattern.can_use_for_concept ?? true,
+        can_use_for_strategy: pattern.can_use_for_strategy ?? true,
+        can_use_for_content: pattern.can_use_for_content ?? true,
+        can_use_for_design: pattern.can_use_for_design ?? true,
+        can_use_for_execution: pattern.can_use_for_execution ?? true,
+        can_use_for_operation: pattern.can_use_for_operation ?? true,
+      } : {}),
       source_text: pattern.source_text ?? null,
       source_type: pattern.source_type ?? 'text_extracted',
       confidence: pattern.confidence ?? 'medium',
@@ -288,16 +303,23 @@ export async function saveProposalPatterns(input: SaveProposalPatternsInput): Pr
   }
 
   try {
-    const insertRows = async (includeOutcomeReasonType: boolean) => client
+    const insertRows = async (includeOutcomeReasonType: boolean, includeUsabilityColumns = true) => client
       .from('proposal_patterns')
-      .insert(buildProposalPatternRows(input.patterns, includeOutcomeReasonType))
+      .insert(buildProposalPatternRows(input.patterns, includeOutcomeReasonType, includeUsabilityColumns))
       .select('*');
 
-    let { data, error } = await insertRows(true);
+    let includeUsabilityColumns = true;
+    let { data, error } = await insertRows(true, includeUsabilityColumns);
+
+    if (error && isProposalPatternUsabilityColumnError(error)) {
+      includeUsabilityColumns = false;
+      console.warn('[ragStorage] saveProposalPatterns retrying without proposal pattern usability columns; metadata.failureAreas will remain available.');
+      ({ data, error } = await insertRows(true, includeUsabilityColumns));
+    }
 
     if (error && isOutcomeReasonTypeColumnError(error)) {
       console.warn('[ragStorage] saveProposalPatterns retrying without proposal_patterns.outcome_reason_type column; metadata.outcomeReasonType will remain available.');
-      ({ data, error } = await insertRows(false));
+      ({ data, error } = await insertRows(false, includeUsabilityColumns));
     }
 
     if (error) {
@@ -335,7 +357,7 @@ export async function updateDocumentMetadata(documentId: string, metadata: JsonV
   }
 }
 
-export async function updateProposalPatternOutcomeReasonTypeByDocument(documentId: string, outcomeReasonType: string): Promise<boolean> {
+export async function updateProposalPatternOutcomeMetadataByDocument(documentId: string, input: { outcomeReasonType: string; failureAreas: FailureArea[]; usabilityFlags: ProposalPatternUsabilityFlags }): Promise<boolean> {
   const { client } = getSupabaseConfigState();
 
   if (!client) return false;
@@ -347,7 +369,7 @@ export async function updateProposalPatternOutcomeReasonTypeByDocument(documentI
       .eq('document_id', documentId);
 
     if (error) {
-      logRagStorageError('updateProposalPatternOutcomeReasonTypeByDocument.select', error);
+      logRagStorageError('updateProposalPatternOutcomeMetadataByDocument.select', error);
       return false;
     }
 
@@ -355,11 +377,19 @@ export async function updateProposalPatternOutcomeReasonTypeByDocument(documentI
     for (const pattern of (data ?? []) as ProposalPatternRecord[]) {
       const metadata = {
         ...getJsonObject(pattern.metadata),
-        proposalOutcomeReasonType: outcomeReasonType,
-        outcomeReasonType,
+        proposalOutcomeReasonType: input.outcomeReasonType,
+        outcomeReasonType: input.outcomeReasonType,
+        failureAreas: input.failureAreas,
       } as JsonValue;
       const updateWithColumn = {
-        outcome_reason_type: outcomeReasonType,
+        outcome_reason_type: input.outcomeReasonType,
+        failure_areas: input.failureAreas,
+        ...input.usabilityFlags,
+        metadata,
+      };
+      const updateWithoutOutcomeReasonTypeColumn = {
+        failure_areas: input.failureAreas,
+        ...input.usabilityFlags,
         metadata,
       };
       const updateWithoutColumn = { metadata };
@@ -370,7 +400,15 @@ export async function updateProposalPatternOutcomeReasonTypeByDocument(documentI
         .eq('id', pattern.id);
 
       if (updateError && isOutcomeReasonTypeColumnError(updateError)) {
-        console.warn('[ragStorage] updateProposalPatternOutcomeReasonTypeByDocument retrying without proposal_patterns.outcome_reason_type column; metadata.outcomeReasonType will remain available.');
+        console.warn('[ragStorage] updateProposalPatternOutcomeMetadataByDocument retrying without proposal_patterns.outcome_reason_type column; metadata.outcomeReasonType will remain available.');
+        ({ error: updateError } = await client
+          .from('proposal_patterns')
+          .update(updateWithoutOutcomeReasonTypeColumn)
+          .eq('id', pattern.id));
+      }
+
+      if (updateError && isProposalPatternUsabilityColumnError(updateError)) {
+        console.warn('[ragStorage] updateProposalPatternOutcomeMetadataByDocument retrying without proposal pattern usability columns; metadata.failureAreas will remain available.');
         ({ error: updateError } = await client
           .from('proposal_patterns')
           .update(updateWithoutColumn)
@@ -379,13 +417,13 @@ export async function updateProposalPatternOutcomeReasonTypeByDocument(documentI
 
       if (updateError) {
         ok = false;
-        logRagStorageError('updateProposalPatternOutcomeReasonTypeByDocument.update', updateError);
+        logRagStorageError('updateProposalPatternOutcomeMetadataByDocument.update', updateError);
       }
     }
 
     return ok;
   } catch (error) {
-    logRagStorageError('updateProposalPatternOutcomeReasonTypeByDocument', error);
+    logRagStorageError('updateProposalPatternOutcomeMetadataByDocument', error);
     return false;
   }
 }
