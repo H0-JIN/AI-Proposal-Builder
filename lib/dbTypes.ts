@@ -64,6 +64,38 @@ export interface ChunkRecord {
   created_at: string;
 }
 
+
+export interface ProposalPatternRecord {
+  [key: string]: unknown;
+  id: string;
+  project_id: string | null;
+  document_id: string | null;
+  chunk_id: string | null;
+  pattern_type: string | null;
+  pattern_name: string | null;
+  slide_number: number | null;
+  slide_title: string | null;
+  slide_role: string | null;
+  section_order: number | null;
+  summary: string | null;
+  reusable_principle: string | null;
+  why_it_matters: string | null;
+  relation_to_concept: string | null;
+  relation_to_proposal_thesis: string | null;
+  before_slide_role: string | null;
+  after_slide_role: string | null;
+  narrative_stage: string | null;
+  source_text: string | null;
+  source_type: string | null;
+  confidence: string | null;
+  tags: string[] | null;
+  metadata: JsonValue | null;
+  created_at: string;
+}
+
+export type ProposalPatternInput = Partial<Pick<ProposalPatternRecord, 'id' | 'chunk_id' | 'pattern_type' | 'pattern_name' | 'slide_number' | 'slide_title' | 'slide_role' | 'section_order' | 'summary' | 'reusable_principle' | 'why_it_matters' | 'relation_to_concept' | 'relation_to_proposal_thesis' | 'before_slide_role' | 'after_slide_role' | 'narrative_stage' | 'source_text' | 'source_type' | 'confidence' | 'tags' | 'metadata' | 'created_at'>> &
+  Pick<ProposalPatternRecord, 'project_id' | 'document_id'>;
+
 export interface SlideVisualPatternRecord {
   [key: string]: unknown;
   id: string;
@@ -132,6 +164,35 @@ export interface Database {
             columns: ['document_id'];
             isOneToOne: false;
             referencedRelation: 'documents';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+
+      proposal_patterns: {
+        Row: ProposalPatternRecord;
+        Insert: ProposalPatternInput;
+        Update: Partial<Omit<ProposalPatternRecord, 'id' | 'created_at'>>;
+        Relationships: [
+          {
+            foreignKeyName: 'proposal_patterns_project_id_fkey';
+            columns: ['project_id'];
+            isOneToOne: false;
+            referencedRelation: 'projects';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'proposal_patterns_document_id_fkey';
+            columns: ['document_id'];
+            isOneToOne: false;
+            referencedRelation: 'documents';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'proposal_patterns_chunk_id_fkey';
+            columns: ['chunk_id'];
+            isOneToOne: false;
+            referencedRelation: 'chunks';
             referencedColumns: ['id'];
           },
         ];
