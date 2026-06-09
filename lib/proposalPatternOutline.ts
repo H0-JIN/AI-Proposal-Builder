@@ -129,9 +129,30 @@ function sanitizeField(value: string | null | undefined, sourceNames: string[]) 
   return text;
 }
 
+function getMetadataString(value: JsonValue | null | undefined, keys: string[]) {
+  const object = getJsonObject(value);
+  if (!object) return '';
+  for (const key of keys) {
+    const item = object[key];
+    if (typeof item === 'string' && item.trim()) return item.trim();
+  }
+  return '';
+}
+
+function resolvedOutcome(pattern: ProposalPatternWithSourceMetadata) {
+  const outcome = normalizeText(pattern.outcome) || getMetadataString(pattern.metadata, ['outcome', 'proposalOutcome']) || getMetadataString(pattern.documents?.metadata, ['outcome', 'proposalOutcome']);
+  return outcome === 'won' || outcome === 'lost' || outcome === 'unknown' ? outcome : outcome ? 'unknown' : null;
+}
+
+function resolvedOutcomeReason(pattern: ProposalPatternWithSourceMetadata) {
+  return normalizeText(pattern.outcome_reason) || getMetadataString(pattern.metadata, ['outcomeReason', 'proposalOutcomeReason']) || getMetadataString(pattern.documents?.metadata, ['outcomeReason', 'proposalOutcomeReason']);
+}
+
 function outcomeReasonType(pattern: ProposalPatternWithSourceMetadata): OutcomeReasonType {
-  const metadataType = getOutcomeReasonTypeFromMetadata(pattern.metadata) ?? getOutcomeReasonTypeFromMetadata(pattern.documents?.metadata);
-  return classifyOutcomeReason(pattern.outcome, pattern.outcome_reason, normalizeText(pattern.outcome_reason_type) || metadataType);
+  const columnType = normalizeText(pattern.outcome_reason_type);
+  const patternMetadataType = getOutcomeReasonTypeFromMetadata(pattern.metadata);
+  const documentMetadataType = getOutcomeReasonTypeFromMetadata(pattern.documents?.metadata);
+  return classifyOutcomeReason(resolvedOutcome(pattern), resolvedOutcomeReason(pattern), columnType || patternMetadataType || documentMetadataType);
 }
 
 function patternReferenceType(outcome: string | null | undefined, type: OutcomeReasonType): OutlineProposalPattern['pattern_reference_type'] {
@@ -144,11 +165,12 @@ function patternReferenceType(outcome: string | null | undefined, type: OutcomeR
 
 function retrievalPriority(pattern: ProposalPatternWithSourceMetadata) {
   const type = outcomeReasonType(pattern);
-  if (pattern.outcome === 'won') return 5;
-  if (pattern.outcome === 'lost' && type === 'external') return 4;
-  if (pattern.outcome === 'unknown' || !pattern.outcome) return 3;
-  if (pattern.outcome === 'lost' && type === 'mixed') return 2;
-  if (pattern.outcome === 'lost' && type === 'quality') return 0;
+  const outcome = resolvedOutcome(pattern);
+  if (outcome === 'won') return 5;
+  if (outcome === 'lost' && type === 'external') return 4;
+  if (outcome === 'unknown' || !outcome) return 3;
+  if (outcome === 'lost' && type === 'mixed') return 2;
+  if (outcome === 'lost' && type === 'quality') return 0;
   return 1;
 }
 
@@ -158,7 +180,9 @@ export function filterProposalPatternsForOutline(patterns: ProposalPatternRecord
 
   for (const pattern of patterns as ProposalPatternWithSourceMetadata[]) {
     const type = outcomeReasonType(pattern);
-    if (pattern.outcome === 'lost' && type === 'quality') continue;
+    const outcome = resolvedOutcome(pattern);
+    const reason = resolvedOutcomeReason(pattern);
+    if (outcome === 'lost' && type === 'quality') continue;
 
     const sourceNames = collectSourceNames(pattern);
     const reusablePrinciple = normalizeText(pattern.reusable_principle);
@@ -176,10 +200,10 @@ export function filterProposalPatternsForOutline(patterns: ProposalPatternRecord
       relation_to_proposal_thesis: sanitizeField(pattern.relation_to_proposal_thesis, sourceNames),
       before_slide_role: sanitizeField(pattern.before_slide_role, sourceNames),
       after_slide_role: sanitizeField(pattern.after_slide_role, sourceNames),
-      outcome: sanitizeField(pattern.outcome, sourceNames),
-      outcome_reason: sanitizeField(pattern.outcome_reason, sourceNames),
+      outcome: sanitizeField(outcome, sourceNames),
+      outcome_reason: sanitizeField(reason, sourceNames),
       outcome_reason_type: type,
-      pattern_reference_type: patternReferenceType(pattern.outcome, type),
+      pattern_reference_type: patternReferenceType(outcome, type),
     };
 
     const groupKey = `${retrievalPriority(pattern)}:${safePattern.narrative_stage || safePattern.slide_role || 'other'}`;
@@ -202,9 +226,10 @@ function extractAvoidanceRules(patterns: ProposalPatternRecord[] = [], limit = d
   const rules = new Set<string>();
   for (const pattern of patterns as ProposalPatternWithSourceMetadata[]) {
     const type = outcomeReasonType(pattern);
-    if (pattern.outcome !== 'lost' || (type !== 'quality' && type !== 'mixed')) continue;
+    const outcome = resolvedOutcome(pattern);
+    if (outcome !== 'lost' || (type !== 'quality' && type !== 'mixed')) continue;
     const sourceNames = collectSourceNames(pattern);
-    const reason = sanitizeField(pattern.outcome_reason, sourceNames);
+    const reason = sanitizeField(resolvedOutcomeReason(pattern), sourceNames);
     const rule = buildAvoidanceRuleFromOutcomeReason(reason, type);
     if (rule) rules.add(rule);
     if (rules.size >= limit) break;

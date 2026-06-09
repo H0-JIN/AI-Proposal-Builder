@@ -3,12 +3,12 @@ import type { JsonValue } from './dbTypes';
 export type OutcomeReasonType = 'external' | 'quality' | 'mixed' | 'unknown';
 
 const externalPatterns = [
-  /budget|price|cost|fee|commercial|procurement|purchasing|tender condition|internal decision|incumbent|timeline|schedule|contract scope|relationship|politic|evaluation outside proposal/i,
+  /budget|price|cost|fee|commercial|procurement|purchasing|tender condition|client internal decision|internal decision|incumbent agency|incumbent|timeline|schedule mismatch|schedule|contract scope|relationship factor|relationship|political factor|politic|evaluation outside proposal quality|evaluation outside proposal/i,
   /예산|가격|비용|견적|단가|조달|구매|입찰 조건|내부 결정|내부 사정|기존 업체|기존 대행사|인컴번트|일정|스케줄|기간|계약 범위|관계|정치|외부 요인|외부요인|발주처 사정/u,
 ];
 
 const qualityPatterns = [
-  /weak concept|weak differentiation|unclear strategy|generic content|weak feasibility|missing operation|requirements not addressed|poor design|weak storytelling|insufficient evidence|unclear distinction|proposal quality/i,
+  /weak concept|weak differentiation|generic content|unclear strategy|weak feasibility|missing operation plan|missing operation|rfp mismatch|requirements not addressed|poor design direction|poor design|weak storytelling|insufficient evidence|unclear company\/product distinction|unclear distinction|proposal quality/i,
   /콘셉트.*약|컨셉.*약|차별.*부족|차별.*약|구분.*되지|구분.*부족|전략.*불명확|전략.*약|일반적|평범|실행력.*부족|실행 가능.*부족|운영.*부족|요구.*미반영|디자인.*약|스토리.*약|근거.*부족|증빙.*부족|품질|완성도|설득.*부족/u,
 ];
 

@@ -61,6 +61,49 @@ function logRagStorageError(operation: string, error: unknown) {
   console.error(`[ragStorage] ${operation} failed: ${message}`);
 }
 
+
+function isOutcomeReasonTypeColumnError(error: unknown) {
+  const text = error instanceof Error ? error.message : typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error);
+  return /outcome_reason_type|Could not find.*column|schema cache|column .* does not exist/i.test(text);
+}
+
+function getJsonObject(value: JsonValue | null | undefined): Record<string, JsonValue | undefined> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function buildProposalPatternRows(patterns: ProposalPatternInput[], includeOutcomeReasonType: boolean) {
+  return patterns.map((pattern) => {
+    const row = {
+      project_id: pattern.project_id,
+      document_id: pattern.document_id,
+      chunk_id: pattern.chunk_id ?? null,
+      pattern_type: pattern.pattern_type ?? null,
+      pattern_name: pattern.pattern_name ?? null,
+      slide_number: pattern.slide_number ?? null,
+      slide_title: pattern.slide_title ?? null,
+      slide_role: pattern.slide_role ?? null,
+      section_order: pattern.section_order ?? null,
+      summary: pattern.summary ?? null,
+      reusable_principle: pattern.reusable_principle ?? null,
+      why_it_matters: pattern.why_it_matters ?? null,
+      relation_to_concept: pattern.relation_to_concept ?? null,
+      relation_to_proposal_thesis: pattern.relation_to_proposal_thesis ?? null,
+      before_slide_role: pattern.before_slide_role ?? null,
+      after_slide_role: pattern.after_slide_role ?? null,
+      narrative_stage: pattern.narrative_stage ?? null,
+      outcome: pattern.outcome ?? null,
+      outcome_reason: pattern.outcome_reason ?? null,
+      source_text: pattern.source_text ?? null,
+      source_type: pattern.source_type ?? 'text_extracted',
+      confidence: pattern.confidence ?? 'medium',
+      tags: pattern.tags ?? [],
+      metadata: pattern.metadata ?? {},
+    };
+
+    return includeOutcomeReasonType ? { ...row, outcome_reason_type: pattern.outcome_reason_type ?? null } : row;
+  });
+}
+
 export function isSupabaseConfigured() {
   return getSupabaseConfigState().configured;
 }
@@ -180,35 +223,17 @@ export async function saveProposalPatterns(input: SaveProposalPatternsInput): Pr
   }
 
   try {
-    const rows = input.patterns.map((pattern) => ({
-      project_id: pattern.project_id,
-      document_id: pattern.document_id,
-      chunk_id: pattern.chunk_id ?? null,
-      pattern_type: pattern.pattern_type ?? null,
-      pattern_name: pattern.pattern_name ?? null,
-      slide_number: pattern.slide_number ?? null,
-      slide_title: pattern.slide_title ?? null,
-      slide_role: pattern.slide_role ?? null,
-      section_order: pattern.section_order ?? null,
-      summary: pattern.summary ?? null,
-      reusable_principle: pattern.reusable_principle ?? null,
-      why_it_matters: pattern.why_it_matters ?? null,
-      relation_to_concept: pattern.relation_to_concept ?? null,
-      relation_to_proposal_thesis: pattern.relation_to_proposal_thesis ?? null,
-      before_slide_role: pattern.before_slide_role ?? null,
-      after_slide_role: pattern.after_slide_role ?? null,
-      narrative_stage: pattern.narrative_stage ?? null,
-      outcome: pattern.outcome ?? null,
-      outcome_reason: pattern.outcome_reason ?? null,
-      outcome_reason_type: pattern.outcome_reason_type ?? null,
-      source_text: pattern.source_text ?? null,
-      source_type: pattern.source_type ?? 'text_extracted',
-      confidence: pattern.confidence ?? 'medium',
-      tags: pattern.tags ?? [],
-      metadata: pattern.metadata ?? {},
-    }));
+    const insertRows = async (includeOutcomeReasonType: boolean) => client
+      .from('proposal_patterns')
+      .insert(buildProposalPatternRows(input.patterns, includeOutcomeReasonType))
+      .select('*');
 
-    const { data, error } = await client.from('proposal_patterns').insert(rows).select('*');
+    let { data, error } = await insertRows(true);
+
+    if (error && isOutcomeReasonTypeColumnError(error)) {
+      console.warn('[ragStorage] saveProposalPatterns retrying without proposal_patterns.outcome_reason_type column; metadata.outcomeReasonType will remain available.');
+      ({ data, error } = await insertRows(false));
+    }
 
     if (error) {
       logRagStorageError('saveProposalPatterns', error);
@@ -219,6 +244,84 @@ export async function saveProposalPatterns(input: SaveProposalPatternsInput): Pr
   } catch (error) {
     logRagStorageError('saveProposalPatterns', error);
     return [];
+  }
+}
+
+export async function updateDocumentMetadata(documentId: string, metadata: JsonValue | null): Promise<boolean> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) return false;
+
+  try {
+    const { error } = await client
+      .from('documents')
+      .update({ metadata })
+      .eq('id', documentId);
+
+    if (error) {
+      logRagStorageError('updateDocumentMetadata', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logRagStorageError('updateDocumentMetadata', error);
+    return false;
+  }
+}
+
+export async function updateProposalPatternOutcomeReasonTypeByDocument(documentId: string, outcomeReasonType: string): Promise<boolean> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) return false;
+
+  try {
+    const { data, error } = await client
+      .from('proposal_patterns')
+      .select('*')
+      .eq('document_id', documentId);
+
+    if (error) {
+      logRagStorageError('updateProposalPatternOutcomeReasonTypeByDocument.select', error);
+      return false;
+    }
+
+    let ok = true;
+    for (const pattern of (data ?? []) as ProposalPatternRecord[]) {
+      const metadata = {
+        ...getJsonObject(pattern.metadata),
+        proposalOutcomeReasonType: outcomeReasonType,
+        outcomeReasonType,
+      } as JsonValue;
+      const updateWithColumn = {
+        outcome_reason_type: outcomeReasonType,
+        metadata,
+      };
+      const updateWithoutColumn = { metadata };
+
+      let { error: updateError } = await client
+        .from('proposal_patterns')
+        .update(updateWithColumn)
+        .eq('id', pattern.id);
+
+      if (updateError && isOutcomeReasonTypeColumnError(updateError)) {
+        console.warn('[ragStorage] updateProposalPatternOutcomeReasonTypeByDocument retrying without proposal_patterns.outcome_reason_type column; metadata.outcomeReasonType will remain available.');
+        ({ error: updateError } = await client
+          .from('proposal_patterns')
+          .update(updateWithoutColumn)
+          .eq('id', pattern.id));
+      }
+
+      if (updateError) {
+        ok = false;
+        logRagStorageError('updateProposalPatternOutcomeReasonTypeByDocument.update', updateError);
+      }
+    }
+
+    return ok;
+  } catch (error) {
+    logRagStorageError('updateProposalPatternOutcomeReasonTypeByDocument', error);
+    return false;
   }
 }
 
