@@ -193,6 +193,8 @@ export async function saveProposalPatterns(input: SaveProposalPatternsInput): Pr
       before_slide_role: pattern.before_slide_role ?? null,
       after_slide_role: pattern.after_slide_role ?? null,
       narrative_stage: pattern.narrative_stage ?? null,
+      outcome: pattern.outcome ?? null,
+      outcome_reason: pattern.outcome_reason ?? null,
       source_text: pattern.source_text ?? null,
       source_type: pattern.source_type ?? 'text_extracted',
       confidence: pattern.confidence ?? 'medium',

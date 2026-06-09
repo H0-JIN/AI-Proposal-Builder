@@ -20,6 +20,8 @@ create table if not exists public.proposal_patterns (
   before_slide_role text,
   after_slide_role text,
   narrative_stage text,
+  outcome text,
+  outcome_reason text,
   source_text text,
   source_type text default 'text_extracted',
   confidence text default 'medium',
@@ -27,6 +29,10 @@ create table if not exists public.proposal_patterns (
   metadata jsonb default '{}'::jsonb,
   created_at timestamptz default now()
 );
+
+alter table if exists public.proposal_patterns
+  add column if not exists outcome text,
+  add column if not exists outcome_reason text;
 
 create index if not exists proposal_patterns_project_id_idx on public.proposal_patterns(project_id);
 create index if not exists proposal_patterns_document_id_idx on public.proposal_patterns(document_id);

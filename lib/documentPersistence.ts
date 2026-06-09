@@ -3,7 +3,7 @@ import 'server-only';
 import { createDocument, createProject, isSupabaseConfigured, saveChunks, saveProposalPatterns } from './ragStorage';
 import { extractProposalPatternsFromChunks } from './proposalPatternExtractor';
 import { inferUploadedDocumentRole } from './documentRoles';
-import type { JsonValue } from './dbTypes';
+import type { JsonValue, ProposalPatternInput } from './dbTypes';
 import type { DocumentChunk } from './rag';
 import type { ProjectInput, UploadedDocument } from './types';
 
@@ -43,8 +43,35 @@ function logDocumentPersistenceError(operation: string, error: unknown) {
   console.error(`[documentPersistence] ${operation} failed: ${message}`);
 }
 
-async function extractAndSaveProposalPatterns(role: PersistUploadedDocumentResult['role'], savedChunks: Awaited<ReturnType<typeof saveChunks>>) {
-  if (role !== 'proposal' && role !== 'reference') {
+function getMetadataString(metadata: JsonValue | null | undefined, key: string) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function normalizeOutcome(value: string | null) {
+  if (value === 'won' || value === 'lost' || value === 'unknown') return value;
+  return value ? 'unknown' : null;
+}
+
+function applyOutcomeMetadata(patterns: ProposalPatternInput[], metadata: JsonValue | null | undefined) {
+  const outcome = normalizeOutcome(getMetadataString(metadata, 'outcome'));
+  const outcomeReason = getMetadataString(metadata, 'outcomeReason');
+
+  return patterns.map((pattern) => ({
+    ...pattern,
+    outcome,
+    outcome_reason: outcomeReason,
+    metadata: toJsonValue({
+      ...(pattern.metadata && typeof pattern.metadata === 'object' && !Array.isArray(pattern.metadata) ? pattern.metadata : {}),
+      proposalOutcome: outcome,
+      proposalOutcomeReason: outcomeReason,
+    }),
+  }));
+}
+
+async function extractAndSaveProposalPatterns(role: PersistUploadedDocumentResult['role'], savedChunks: Awaited<ReturnType<typeof saveChunks>>, documentMetadata: JsonValue | null | undefined) {
+  if (role !== 'proposal') {
     return { proposalPatternStatus: 'skipped' as const, proposalPatternCount: 0 };
   }
 
@@ -53,7 +80,7 @@ async function extractAndSaveProposalPatterns(role: PersistUploadedDocumentResul
   }
 
   try {
-    const patterns = extractProposalPatternsFromChunks(savedChunks);
+    const patterns = applyOutcomeMetadata(extractProposalPatternsFromChunks(savedChunks), documentMetadata);
 
     if (!patterns.length) {
       return { proposalPatternStatus: 'skipped' as const, proposalPatternCount: 0 };
@@ -144,7 +171,7 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
       })),
     });
 
-    const patternResult = await extractAndSaveProposalPatterns(role, savedChunks);
+    const patternResult = await extractAndSaveProposalPatterns(role, savedChunks, documentRecord.metadata);
 
     return { status: 'saved', projectId: project.id, documentId: documentRecord.id, chunkCount: savedChunks.length, role, ...patternResult };
   } catch (error) {
