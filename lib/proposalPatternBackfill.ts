@@ -7,8 +7,11 @@ import {
   getProposalPatternCountByDocument,
   isSupabaseConfigured,
   saveProposalPatterns,
+  updateDocumentMetadata,
+  updateProposalPatternOutcomeReasonTypeByDocument,
 } from './ragStorage';
 import { extractProposalPatternsFromChunks } from './proposalPatternExtractor';
+import { classifyOutcomeReason } from './outcomeReasonClassifier';
 import type { JsonValue, ProposalPatternInput } from './dbTypes';
 
 export interface BackfillProposalPatternsInput {
@@ -60,21 +63,50 @@ function normalizeOutcome(value: string | null) {
   return value ? 'unknown' : null;
 }
 
+function getJsonObject(value: JsonValue | null | undefined): Record<string, JsonValue | undefined> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function getOutcomeReasonType(metadata: JsonValue | null | undefined) {
+  const outcome = normalizeOutcome(getMetadataString(metadata, 'outcome'));
+  const outcomeReason = getMetadataString(metadata, 'outcomeReason');
+  const explicitOutcomeReasonType = getMetadataString(metadata, 'outcomeReasonType');
+  return classifyOutcomeReason(outcome, outcomeReason, explicitOutcomeReasonType);
+}
+
 function applyOutcomeMetadata(patterns: ProposalPatternInput[], metadata: JsonValue | null | undefined) {
   const outcome = normalizeOutcome(getMetadataString(metadata, 'outcome'));
   const outcomeReason = getMetadataString(metadata, 'outcomeReason');
+  const outcomeReasonType = getOutcomeReasonType(metadata);
 
   return patterns.map((pattern) => ({
     ...pattern,
     outcome,
     outcome_reason: outcomeReason,
+    outcome_reason_type: outcomeReasonType,
     metadata: toJsonValue({
       ...(pattern.metadata && typeof pattern.metadata === 'object' && !Array.isArray(pattern.metadata) ? pattern.metadata : {}),
       proposalOutcome: outcome,
       proposalOutcomeReason: outcomeReason,
+      proposalOutcomeReasonType: outcomeReasonType,
+      outcomeReasonType,
       extractionMethod: 'proposal_pattern_backfill_v1',
     }),
   }));
+}
+
+async function backfillOutcomeReasonType(documentId: string, metadata: JsonValue | null | undefined) {
+  const outcomeReasonType = getOutcomeReasonType(metadata);
+  const currentMetadataType = getMetadataString(metadata, 'outcomeReasonType');
+  const nextMetadata = toJsonValue({
+    ...getJsonObject(metadata),
+    outcomeReasonType,
+  });
+
+  const documentUpdated = currentMetadataType === outcomeReasonType ? true : await updateDocumentMetadata(documentId, nextMetadata);
+  const patternsUpdated = await updateProposalPatternOutcomeReasonTypeByDocument(documentId, outcomeReasonType);
+
+  return { metadata: nextMetadata, documentUpdated, patternsUpdated };
 }
 
 function summarize(results: BackfillProposalPatternDocumentResult[], force: boolean): BackfillProposalPatternsResult {
@@ -102,7 +134,9 @@ export async function backfillProposalPatterns(input: BackfillProposalPatternsIn
   const results: BackfillProposalPatternDocumentResult[] = [];
 
   for (const document of documents) {
+    const outcomeBackfill = await backfillOutcomeReasonType(document.id, document.metadata);
     const currentPatternCount = await getProposalPatternCountByDocument(document.id);
+    const documentMetadata = outcomeBackfill.metadata ?? document.metadata;
 
     if (currentPatternCount > 0 && !force) {
       results.push({
@@ -153,7 +187,7 @@ export async function backfillProposalPatterns(input: BackfillProposalPatternsIn
         }
       }
 
-      const patterns = applyOutcomeMetadata(extractProposalPatternsFromChunks(textChunks), document.metadata);
+      const patterns = applyOutcomeMetadata(extractProposalPatternsFromChunks(textChunks), documentMetadata);
 
       if (!patterns.length) {
         results.push({

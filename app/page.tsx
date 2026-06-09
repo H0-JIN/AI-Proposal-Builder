@@ -2913,7 +2913,7 @@ export default function Home() {
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-700">Library upload</p>
                   <h2 id="db-upload-title" className="mt-2 text-2xl font-black text-slate-950">기존 제안서 / 레퍼런스 DB 업로드</h2>
-                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-600">기존 제안서, 레퍼런스, 메모를 내부 RAG 자료로 저장합니다. 제안서 생성에는 아직 자동 반영되지 않습니다.</p>
+                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-600">기존 제안서, 레퍼런스, 메모를 내부 RAG 자료로 저장합니다. 수주/미수주 사유 유형은 제안서 구조 학습과 회피 규칙에 반영됩니다.</p>
                   <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, PPTX, DOCX, TXT, MD · 최대 100MB</p>
                   <p className="mt-1 text-xs font-bold leading-5 text-amber-700">{DB_UPLOAD_SIZE_GUIDANCE}</p>
                 </div>
