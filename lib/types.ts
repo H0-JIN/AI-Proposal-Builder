@@ -43,7 +43,8 @@ export type ExtractionStatus =
   | 'Vision 분석 실패'
   | '추가 메모 입력 필요'
   | '이미지 중심 문서 / OCR 필요'
-  | '추출 실패';
+  | '추출 실패'
+  | '원본 저장 / 텍스트 추출 실패';
 
 export interface VisionPageAnalysis {
   pageNumber: number;
@@ -83,6 +84,15 @@ export interface DocumentPageTextSource {
   visualSummary?: string;
 }
 
+export type ProposalOutcome = 'won' | 'lost' | 'unknown';
+
+export interface DbLibraryDocumentMetadata {
+  outcome?: ProposalOutcome;
+  outcomeReason?: string;
+  originalFileName?: string;
+  uploadedVia?: 'db_library_upload';
+}
+
 export interface UploadedDocument {
   id: string;
   fileName: string;
@@ -95,6 +105,7 @@ export interface UploadedDocument {
   dbChunkCount?: number;
   proposalPatternStatus?: 'extracted' | 'skipped' | 'failed';
   proposalPatternCount?: number;
+  dbLibraryMetadata?: DbLibraryDocumentMetadata;
   extractionStatus: ExtractionStatus;
   extractedText: string;
   documentAnalysisText?: string;
