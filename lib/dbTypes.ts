@@ -85,6 +85,8 @@ export interface ProposalPatternRecord {
   before_slide_role: string | null;
   after_slide_role: string | null;
   narrative_stage: string | null;
+  outcome: string | null;
+  outcome_reason: string | null;
   source_text: string | null;
   source_type: string | null;
   confidence: string | null;
@@ -93,7 +95,7 @@ export interface ProposalPatternRecord {
   created_at: string;
 }
 
-export type ProposalPatternInput = Partial<Pick<ProposalPatternRecord, 'id' | 'chunk_id' | 'pattern_type' | 'pattern_name' | 'slide_number' | 'slide_title' | 'slide_role' | 'section_order' | 'summary' | 'reusable_principle' | 'why_it_matters' | 'relation_to_concept' | 'relation_to_proposal_thesis' | 'before_slide_role' | 'after_slide_role' | 'narrative_stage' | 'source_text' | 'source_type' | 'confidence' | 'tags' | 'metadata' | 'created_at'>> &
+export type ProposalPatternInput = Partial<Pick<ProposalPatternRecord, 'id' | 'chunk_id' | 'pattern_type' | 'pattern_name' | 'slide_number' | 'slide_title' | 'slide_role' | 'section_order' | 'summary' | 'reusable_principle' | 'why_it_matters' | 'relation_to_concept' | 'relation_to_proposal_thesis' | 'before_slide_role' | 'after_slide_role' | 'narrative_stage' | 'outcome' | 'outcome_reason' | 'source_text' | 'source_type' | 'confidence' | 'tags' | 'metadata' | 'created_at'>> &
   Pick<ProposalPatternRecord, 'project_id' | 'document_id'>;
 
 export interface SlideVisualPatternRecord {

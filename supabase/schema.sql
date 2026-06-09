@@ -70,6 +70,8 @@ create table if not exists public.proposal_patterns (
   before_slide_role text,
   after_slide_role text,
   narrative_stage text,
+  outcome text,
+  outcome_reason text,
   source_text text,
   source_type text default 'text_extracted',
   confidence text default 'medium',
