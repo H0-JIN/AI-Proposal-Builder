@@ -3,7 +3,7 @@ import 'server-only';
 import { createDocument, createProject, isSupabaseConfigured, saveChunks, saveProposalPatterns } from './ragStorage';
 import { extractProposalPatternsFromChunks } from './proposalPatternExtractor';
 import { inferUploadedDocumentRole } from './documentRoles';
-import { classifyOutcomeReason } from './outcomeReasonClassifier';
+import { classifyFailureAreas, classifyOutcomeReason, getProposalPatternUsabilityFlags } from './outcomeReasonClassifier';
 import type { JsonValue, ProposalPatternInput } from './dbTypes';
 import type { DocumentChunk } from './rag';
 import type { ProjectInput, UploadedDocument } from './types';
@@ -60,18 +60,23 @@ function applyOutcomeMetadata(patterns: ProposalPatternInput[], metadata: JsonVa
   const outcomeReason = getMetadataString(metadata, 'outcomeReason');
   const explicitOutcomeReasonType = getMetadataString(metadata, 'outcomeReasonType');
   const outcomeReasonType = classifyOutcomeReason(outcome, outcomeReason, explicitOutcomeReasonType);
+  const failureAreas = classifyFailureAreas(outcome, outcomeReason);
+  const usabilityFlags = getProposalPatternUsabilityFlags(failureAreas);
 
   return patterns.map((pattern) => ({
     ...pattern,
     outcome,
     outcome_reason: outcomeReason,
     outcome_reason_type: outcomeReasonType,
+    failure_areas: failureAreas,
+    ...usabilityFlags,
     metadata: toJsonValue({
       ...(pattern.metadata && typeof pattern.metadata === 'object' && !Array.isArray(pattern.metadata) ? pattern.metadata : {}),
       proposalOutcome: outcome,
       proposalOutcomeReason: outcomeReason,
       proposalOutcomeReasonType: outcomeReasonType,
       outcomeReasonType,
+      failureAreas,
     }),
   }));
 }
@@ -129,6 +134,7 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
     const normalizedOutcome = document.dbLibraryMetadata?.outcome;
     const normalizedOutcomeReason = document.dbLibraryMetadata?.outcomeReason;
     const outcomeReasonType = classifyOutcomeReason(normalizedOutcome, normalizedOutcomeReason, document.dbLibraryMetadata?.outcomeReasonType);
+    const failureAreas = classifyFailureAreas(normalizedOutcome, normalizedOutcomeReason);
 
     const documentRecord = await createDocument({
       projectId: project.id,
@@ -138,7 +144,7 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
       sourceType: document.visionUsed ? 'visionAnalysis' : 'textExtraction',
       metadata: toJsonValue({
         ...(document.dbLibraryMetadata ?? {}),
-        ...(role === 'proposal' ? { outcomeReasonType } : {}),
+        ...(role === 'proposal' ? { outcomeReasonType, failureAreas } : {}),
         originalDocumentId: document.id,
         documentRole: role,
         documentType: document.documentType ?? null,
