@@ -26,6 +26,7 @@ import { DEFAULT_VISION_CHUNK_SIZE, DEFAULT_VISION_MODE } from '@/lib/visionConf
 import { getConceptDefinition, getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
 import { createDocumentChunks, inferDocumentType } from '@/lib/rag';
 import { inferUploadedDocumentRole, mapStorageRoleToDocumentType } from '@/lib/documentRoles';
+import { uploadDbLibraryFileToStorage, type UploadedDbLibraryStorageFile } from '@/lib/supabaseStorageUpload';
 
 type Step = 'home' | 'create' | 'analysis' | 'concepts' | 'outline' | 'slides';
 
@@ -80,6 +81,23 @@ type PersistDocumentResponse = {
   proposalPatternCount?: number;
 };
 
+type ExtractFromStorageResponse = {
+  status?: 'saved' | 'partial' | 'failed';
+  message?: string;
+  error?: string;
+  projectId?: string;
+  documentId?: string;
+  chunkCount?: number;
+  role?: 'proposal' | 'reference' | 'memo';
+  warning?: string;
+  pageCount?: number;
+  extractedPageCount?: number;
+  bucket?: string;
+  storagePath?: string;
+  proposalPatternStatus?: 'extracted' | 'skipped' | 'failed';
+  proposalPatternCount?: number;
+};
+
 type PersistAnalysisResponse = {
   status?: 'disabled' | 'saved' | 'failed';
   projectId?: string;
@@ -106,8 +124,9 @@ type VisionPdfResponse = {
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_DB_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
-const LARGE_FILE_UPLOAD_GUIDANCE = '파일 용량이 커서 서버 업로드 제한에 걸렸습니다. PDF/PPTX 원본 대신 텍스트를 추출한 MD 또는 TXT 파일로 업로드하면 안정적으로 저장할 수 있습니다.';
-const DB_UPLOAD_SIZE_GUIDANCE = '대용량 PDF/PPTX는 서버 제한으로 실패할 수 있습니다. 안정적인 저장은 MD/TXT 권장.';
+const LARGE_FILE_UPLOAD_GUIDANCE = '파일 용량이 커서 직접 업로드 방식에 실패했습니다. Storage 업로드 방식으로 다시 시도해 주세요.';
+const DB_STORAGE_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024;
+const DB_UPLOAD_SIZE_GUIDANCE = '대용량 PDF/PPTX는 Supabase Storage에 먼저 업로드한 뒤 서버에서 추출/저장합니다.';
 const clientReadableExtensions = ['txt', 'md'];
 const serverReadableExtensions = ['pdf', 'docx', 'pptx'];
 
@@ -319,7 +338,7 @@ function getProposalPatternStatusLabel(status?: UploadedDocument['proposalPatter
 function getDocumentDbSaveStatusLabel(status?: UploadedDocument['dbSaveStatus']) {
   const statusConfig: Record<Exclude<DbSaveStatus, 'idle'>, { label: string; tone: string }> = {
     disabled: { label: 'DB upload disabled', tone: 'border-slate-200 bg-slate-50 text-slate-600' },
-    saving: { label: 'Uploading to DB', tone: 'border-blue-200 bg-blue-50 text-blue-700' },
+    saving: { label: 'Saving to DB', tone: 'border-blue-200 bg-blue-50 text-blue-700' },
     saved: { label: 'Saved to DB', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
     failed: { label: 'DB upload failed', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
     partial: { label: 'Partial text saved', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
@@ -2081,6 +2100,78 @@ export default function Home() {
     }
   };
 
+  const shouldUseStorageForDbUpload = (file: File, extension: string) => (
+    file.size > DB_STORAGE_UPLOAD_THRESHOLD_BYTES && ['pdf', 'pptx', 'docx'].includes(extension)
+  );
+
+  const uploadDbFileThroughStorage = async (file: File, extension: string) => {
+    setLoading('Uploading file to storage');
+    setDbUploadNotice({ type: 'warning', message: 'Uploading file to storage' });
+    const storageFile: UploadedDbLibraryStorageFile = await uploadDbLibraryFileToStorage({ file, role: dbUploadRole });
+
+    const pendingDocument = createUploadedDocument(
+      file,
+      '텍스트 추출 중',
+      '',
+      'Extracting text',
+      { documentRole: dbUploadRole, dbSaveStatus: 'saving' },
+    );
+    addDbUploadedDocument(pendingDocument);
+
+    setLoading('Extracting text');
+    setDbUploadNotice({ type: 'warning', message: 'Extracting text' });
+
+    const storageResponse = await fetch('/api/extract-from-storage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: state.input,
+        ...storageFile,
+      }),
+    });
+    const response = await parseJsonResponse<ExtractFromStorageResponse>(storageResponse, 'Storage DB 업로드 API');
+
+    const savedStatus = storageResponse.ok && response.status === 'saved' ? 'saved' : storageResponse.ok && response.status === 'partial' ? 'partial' : 'failed';
+    updateDbUploadedDocument(pendingDocument.id, {
+      documentRole: response.role ?? dbUploadRole,
+      extractionStatus: savedStatus === 'failed' ? '추출 실패' : savedStatus === 'partial' ? '일부 텍스트만 추출' : '텍스트 추출 완료',
+      warningMessage: savedStatus === 'partial' ? response.warning || response.message || 'Partial text saved' : undefined,
+      errorMessage: savedStatus === 'failed' ? response.error || response.message || 'DB upload failed' : undefined,
+      dbSaveStatus: savedStatus,
+      dbProjectId: response.projectId,
+      dbDocumentId: response.documentId,
+      dbChunkCount: response.chunkCount,
+      totalPageCount: response.pageCount,
+      proposalPatternStatus: response.proposalPatternStatus,
+      proposalPatternCount: response.proposalPatternCount,
+    });
+
+    setLoading('Saving to DB');
+    setDbUploadNotice({
+      type: savedStatus === 'saved' ? 'success' : savedStatus === 'partial' ? 'warning' : 'error',
+      message: savedStatus === 'saved' ? 'Saved to DB' : savedStatus === 'partial' ? 'Partial text saved' : 'DB upload failed',
+    });
+
+    if (savedStatus === 'failed') {
+      console.error('DB storage upload failed', {
+        fileName: file.name,
+        status: storageResponse.status,
+        error: response.error || response.message,
+        bucket: storageFile.bucket,
+        storagePath: storageFile.storagePath,
+      });
+      return;
+    }
+
+    console.info('DB storage upload completed', {
+      fileName: file.name,
+      extension,
+      bucket: storageFile.bucket,
+      storagePath: storageFile.storagePath,
+      sentRawFileBodyToApi: false,
+    });
+  };
+
   const handleDbFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -2103,6 +2194,11 @@ export default function Home() {
     setLoading('DB 업로드 저장 중...');
 
     try {
+      if (shouldUseStorageForDbUpload(file, extension)) {
+        await uploadDbFileThroughStorage(file, extension);
+        return;
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('mode', 'db');
@@ -2113,7 +2209,11 @@ export default function Home() {
       if (!response.ok) {
         const message = data.error || data.warning || data.message || TEXT_EXTRACTION_FAILED_MESSAGE;
         console.error('DB upload text extraction failed.', { status: response.status, message });
-        throw new Error(isLargePayloadError(message, response.status) ? LARGE_FILE_UPLOAD_GUIDANCE : message);
+        if (isLargePayloadError(message, response.status)) {
+          await uploadDbFileThroughStorage(file, extension);
+          return;
+        }
+        throw new Error(message);
       }
 
       const text = (data.text ?? '').trim();
@@ -2146,6 +2246,20 @@ export default function Home() {
       setDbUploadNotice({ type: 'warning', message: 'Uploading to DB' });
       await persistDbUploadedDocumentSafely(document, isPartial);
     } catch (err) {
+      if (isLargePayloadError(err)) {
+        try {
+          await uploadDbFileThroughStorage(file, extension);
+          return;
+        } catch (storageErr) {
+          console.error('DB upload Storage retry failed.', storageErr);
+          const message = getUploadErrorMessage(storageErr, LARGE_FILE_UPLOAD_GUIDANCE);
+          const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed', errorMessage: message });
+          addDbUploadedDocument(failedDocument);
+          setDbUploadNotice({ type: 'error', message });
+          return;
+        }
+      }
+
       console.error('DB upload extract/upload failed.', err);
       const message = getUploadErrorMessage(err, TEXT_EXTRACTION_FAILED_MESSAGE);
       const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed', errorMessage: message });
@@ -2561,22 +2675,13 @@ export default function Home() {
 
               <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm leading-6 text-slate-700">
                 <p className="font-black text-emerald-900">업로드 상태</p>
-                <p className="mt-1 font-semibold">DB upload disabled · Uploading to DB · Saved to DB · DB upload failed · Partial text saved</p>
-                <p className="mt-1 font-semibold text-emerald-800">Proposal patterns extracted · Proposal pattern extraction skipped · Proposal pattern extraction failed, document still saved</p>
+                <p className="mt-1 font-semibold">Uploading file to storage · Extracting text · Saving to DB · Saved to DB · Partial text saved · DB upload failed</p>
                 {latestDbUploadStatus && (
                   <span className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-black ${latestDbUploadStatus.tone}`} role="status" aria-live="polite">
                     {latestDbUploadedDocument?.dbSaveStatus === 'saving' && <span className="mr-2 h-1.5 w-1.5 animate-pulse self-center rounded-full bg-current" />}
                     {latestDbUploadStatus.label}{latestDbUploadedDocument?.dbChunkCount !== undefined ? ` · ${latestDbUploadedDocument.dbChunkCount} chunks` : ''}
                   </span>
                 )}
-                {(() => {
-                  const patternStatus = getProposalPatternStatusLabel(latestDbUploadedDocument?.proposalPatternStatus);
-                  return patternStatus ? (
-                    <span className={`mt-3 ml-2 inline-flex rounded-full border px-3 py-1 text-xs font-black ${patternStatus.tone}`} role="status" aria-live="polite">
-                      {patternStatus.label}{latestDbUploadedDocument?.proposalPatternCount ? ` · ${latestDbUploadedDocument.proposalPatternCount} patterns` : ''}
-                    </span>
-                  ) : null;
-                })()}
               </div>
 
               <UploadedDocumentsList documents={dbUploadedDocuments} />

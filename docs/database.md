@@ -8,12 +8,30 @@ Add these server/runtime variables when you want to enable persistent storage:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
 
-- `NEXT_PUBLIC_SUPABASE_URL` is the Supabase project URL.
-- `SUPABASE_SERVICE_ROLE_KEY` is used only by server-side helpers and must never be exposed to browser/client code.
-- If either value is missing, the Supabase client is disabled and database helper functions return safe empty results instead of throwing.
+- `NEXT_PUBLIC_SUPABASE_URL` is the Supabase project URL and is used by both browser Storage uploads and server-side database helpers.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` is used by the browser to upload DB library files directly to Supabase Storage. Configure Storage policies so this key can insert into the `proposal-library` bucket path used below.
+- `SUPABASE_SERVICE_ROLE_KEY` is used only by server-side helpers to download private Storage objects and persist database rows. It must never be exposed to browser/client code.
+- If the server-side Supabase values are missing, database helper functions return safe empty results instead of throwing. Large DB uploads that require Storage also need the public Supabase URL/anon key in the browser.
+
+
+## Supabase Storage bucket for DB library uploads
+
+Large existing proposal/reference/memo uploads avoid Vercel/serverless request payload limits by sending the original file directly from the browser to Supabase Storage first. Create this bucket before using large DB library upload:
+
+| Setting | Value |
+| --- | --- |
+| Bucket name | `proposal-library` |
+| Access | Private is supported and recommended |
+| Upload path | `project-documents/{timestamp}-{safeFileName}` |
+| Expected extensions | `pdf`, `pptx`, `docx`, `md`, `txt` |
+
+The browser uploads with `NEXT_PUBLIC_SUPABASE_ANON_KEY`, then `/api/extract-from-storage` downloads the private object with `SUPABASE_SERVICE_ROLE_KEY`, extracts text, saves `documents`/`chunks`, and leaves chunk embeddings as `null`.
+
+Example Storage policy direction for authenticated or otherwise trusted clients: allow `insert` into `storage.objects` where `bucket_id = 'proposal-library'` and `name` starts with `project-documents/`. Keep read access private; server-side extraction uses the service role key.
 
 ## Applying the schema
 
