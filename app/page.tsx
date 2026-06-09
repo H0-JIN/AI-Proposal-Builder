@@ -77,7 +77,7 @@ type PersistDocumentResponse = {
   documentId?: string;
   chunkCount?: number;
   role?: 'rfp' | 'proposal' | 'reference' | 'memo';
-  proposalPatternStatus?: 'extracted' | 'skipped' | 'failed';
+  proposalPatternStatus?: 'extracting' | 'extracted' | 'skipped' | 'failed';
   proposalPatternCount?: number;
   dbLibraryMetadata?: UploadedDocument['dbLibraryMetadata'];
 };
@@ -97,7 +97,7 @@ type ExtractFromStorageResponse = {
   extractedPageCount?: number;
   bucket?: string;
   storagePath?: string;
-  proposalPatternStatus?: 'extracted' | 'skipped' | 'failed';
+  proposalPatternStatus?: 'extracting' | 'extracted' | 'skipped' | 'failed';
   proposalPatternCount?: number;
   dbLibraryMetadata?: UploadedDocument['dbLibraryMetadata'];
 };
@@ -107,6 +107,25 @@ type PersistAnalysisResponse = {
   projectId?: string;
   documentCount?: number;
   chunkCount?: number;
+};
+
+type BackfillProposalPatternsResponse = {
+  status?: 'disabled' | 'completed' | 'failed';
+  force?: boolean;
+  processedCount?: number;
+  extractedCount?: number;
+  skippedCount?: number;
+  failedCount?: number;
+  results?: Array<{
+    documentId: string;
+    projectId: string;
+    fileName: string;
+    status: 'extracted' | 'skipped' | 'failed';
+    reason?: string;
+    chunkCount: number;
+    previousPatternCount: number;
+    proposalPatternCount: number;
+  }>;
 };
 
 type VisionPdfResponse = {
@@ -342,14 +361,15 @@ function DbSaveStatusIndicator({ status }: { status: DbSaveStatus }) {
 }
 
 
-function getProposalPatternStatusLabel(status?: UploadedDocument['proposalPatternStatus']) {
+function getProposalPatternStatusLabel(status?: UploadedDocument['proposalPatternStatus'], count = 0) {
   const statusConfig: Record<NonNullable<UploadedDocument['proposalPatternStatus']>, { label: string; tone: string }> = {
-    extracted: { label: 'Proposal patterns extracted', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-    skipped: { label: 'Proposal pattern extraction skipped', tone: 'border-slate-200 bg-slate-50 text-slate-600' },
-    failed: { label: 'Proposal pattern extraction failed, document still saved', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+    extracting: { label: '패턴 추출 중', tone: 'border-blue-200 bg-blue-50 text-blue-700' },
+    extracted: { label: '패턴 추출 완료', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    skipped: { label: count > 0 ? '패턴 추출 완료' : '패턴 없음', tone: count > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600' },
+    failed: { label: '패턴 추출 실패', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
   };
 
-  return status ? statusConfig[status] : null;
+  return status ? statusConfig[status] : count > 0 ? statusConfig.extracted : null;
 }
 
 function getDocumentDbSaveStatusLabel(status?: UploadedDocument['dbSaveStatus']) {
@@ -493,7 +513,7 @@ function UploadedDocumentsList({
                 ) : null;
               })()}
               {(() => {
-                const patternStatus = getProposalPatternStatusLabel(document.proposalPatternStatus);
+                const patternStatus = getProposalPatternStatusLabel(document.proposalPatternStatus, document.proposalPatternCount ?? 0);
                 return patternStatus ? (
                   <span className={`mt-2 inline-flex rounded-full border px-3 py-1 text-[11px] font-black ${patternStatus.tone}`}>
                     {patternStatus.label}{document.proposalPatternCount ? ` · ${document.proposalPatternCount} patterns` : ''}
@@ -520,8 +540,10 @@ function UploadedDocumentsList({
 
 function DbLibraryUploadedDocumentsList({
   documents,
+  onBackfillDocument,
 }: {
   documents: UploadedDocument[];
+  onBackfillDocument?: (document: UploadedDocument, force: boolean) => void;
 }) {
   const statusTone: Record<ExtractionStatus, string> = {
     '텍스트 추출 중': 'bg-blue-50 text-blue-700 ring-blue-200',
@@ -562,11 +584,12 @@ function DbLibraryUploadedDocumentsList({
   return (
     <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-100 bg-white">
       <div className="grid grid-cols-12 gap-3 border-b border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-emerald-700">
-        <span className="col-span-4">파일명</span>
+        <span className="col-span-3">파일명</span>
         <span className="col-span-2">문서 유형</span>
         <span className="col-span-1">결과</span>
         <span className="col-span-2">이유</span>
-        <span className="col-span-3">상태</span>
+        <span className="col-span-2">상태</span>
+        <span className="col-span-2 text-right">패턴</span>
       </div>
       <div className="divide-y divide-slate-100">
         {documents.map((document, index) => {
@@ -577,11 +600,11 @@ function DbLibraryUploadedDocumentsList({
 
           return (
             <div key={document.id || `${document.fileName}-${index}`} className="grid grid-cols-12 gap-3 px-4 py-4 text-sm text-slate-700">
-              <div className="col-span-12 font-bold text-slate-950 md:col-span-4">{document.fileName}</div>
+              <div className="col-span-12 font-bold text-slate-950 md:col-span-3">{document.fileName}</div>
               <div className="col-span-4 text-xs font-bold md:col-span-2">{dbDocumentRoleLabels[role as 'proposal' | 'reference' | 'memo'] ?? role}</div>
               <div className="col-span-3 text-xs font-bold md:col-span-1">{outcome ? proposalOutcomeLabels[outcome] : '-'}</div>
               <div className="col-span-9 text-xs leading-5 text-slate-600 md:col-span-2">{outcomeReason || '-'}</div>
-              <div className="col-span-12 md:col-span-3">
+              <div className="col-span-12 md:col-span-2">
                 <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusTone[document.extractionStatus]}`}>
                   {document.extractionStatus}
                 </span>
@@ -593,6 +616,32 @@ function DbLibraryUploadedDocumentsList({
                 ) : null}
                 {document.warningMessage && <p className="mt-2 text-xs leading-5 text-slate-500">{document.warningMessage}</p>}
                 {document.errorMessage && document.errorMessage !== document.warningMessage && <p className="mt-2 text-xs font-semibold leading-5 text-red-600">{document.errorMessage}</p>}
+              </div>
+              <div className="col-span-12 flex flex-col items-start gap-2 md:col-span-2 md:items-end">
+                {(() => {
+                  const hasChunks = (document.dbChunkCount ?? (document.chunks ?? []).length) > 0;
+                  const hasPatterns = (document.proposalPatternCount ?? 0) > 0;
+                  const patternStatus = getProposalPatternStatusLabel(document.proposalPatternStatus, document.proposalPatternCount ?? 0);
+                  const canExtract = role === 'proposal' && Boolean(document.dbDocumentId) && hasChunks && document.proposalPatternStatus !== 'extracting';
+
+                  if (role !== 'proposal') return <span className="text-xs font-bold text-slate-400">-</span>;
+
+                  return (
+                    <>
+                      <span className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-black ${!hasChunks ? 'border-slate-200 bg-slate-50 text-slate-500' : patternStatus?.tone ?? 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                        {!hasChunks ? '텍스트 없음' : patternStatus?.label ?? '패턴 없음'}{hasChunks && document.proposalPatternCount ? ` · ${document.proposalPatternCount}개` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={!canExtract}
+                        onClick={() => onBackfillDocument?.(document, hasPatterns)}
+                        className="rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        {document.proposalPatternStatus === 'extracting' ? '패턴 추출 중' : hasPatterns ? '패턴 재추출' : '패턴 추출'}
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           );
@@ -1583,6 +1632,85 @@ export default function Home() {
       const message = getUploadErrorMessage(err, '저장 실패');
       updateDbUploadedDocument(enrichedDocument.id, { dbSaveStatus: 'failed', errorMessage: message });
       setDbUploadNotice({ type: 'error', message: isLargePayloadError(err) ? message : '저장 실패' });
+    }
+  };
+
+  const applyBackfillResultsToDbDocuments = (results: BackfillProposalPatternsResponse['results'] = []) => {
+    if (!results.length) return;
+    setState((current) => ({
+      ...current,
+      dbUploadedDocuments: (current.dbUploadedDocuments ?? []).map((document) => {
+        const result = results.find((item) => item.documentId === document.dbDocumentId);
+        if (!result) return document;
+
+        return {
+          ...document,
+          proposalPatternStatus: result.status === 'extracted' ? 'extracted' : result.status === 'failed' ? 'failed' : 'skipped',
+          proposalPatternCount: result.proposalPatternCount,
+          dbChunkCount: result.chunkCount,
+        };
+      }),
+    }));
+  };
+
+  const handleBackfillProposalPatternsForDocument = async (document: UploadedDocument, force: boolean) => {
+    if (!document.dbDocumentId) {
+      setDbUploadNotice({ type: 'warning', message: 'DB에 저장된 문서만 패턴을 추출할 수 있습니다.' });
+      return;
+    }
+
+    updateDbUploadedDocument(document.id, { proposalPatternStatus: 'extracting', errorMessage: undefined });
+    setDbUploadNotice({ type: 'warning', message: '패턴 추출 중' });
+
+    try {
+      const response = await postJson<BackfillProposalPatternsResponse>('/api/backfill-proposal-patterns', {
+        documentId: document.dbDocumentId,
+        force,
+      });
+      applyBackfillResultsToDbDocuments(response.results);
+      const result = response.results?.find((item) => item.documentId === document.dbDocumentId);
+      const status = result?.status === 'extracted' ? '패턴 추출 완료' : result?.status === 'failed' ? '패턴 추출 실패' : '패턴 없음';
+      setDbUploadNotice({ type: result?.status === 'failed' ? 'error' : result?.status === 'skipped' ? 'warning' : 'success', message: `${status}${result ? ` · ${result.proposalPatternCount}개` : ''}` });
+    } catch (err) {
+      console.error('Proposal pattern backfill failed.', err);
+      updateDbUploadedDocument(document.id, { proposalPatternStatus: 'failed', errorMessage: getUploadErrorMessage(err, '패턴 추출 실패') });
+      setDbUploadNotice({ type: 'error', message: '패턴 추출 실패' });
+    }
+  };
+
+  const handleBackfillAllProposalPatterns = async () => {
+    const eligibleDocuments = dbUploadedDocuments.filter((document) => {
+      const role = document.documentRole ?? inferUploadedDocumentRole(document.fileName, document.documentAnalysisText || document.extractedText);
+      const hasChunks = (document.dbChunkCount ?? (document.chunks ?? []).length) > 0;
+      return role === 'proposal' && Boolean(document.dbDocumentId) && hasChunks;
+    });
+
+    setState((current) => ({
+      ...current,
+      dbUploadedDocuments: (current.dbUploadedDocuments ?? []).map((document) => (
+        eligibleDocuments.some((item) => item.id === document.id)
+          ? { ...document, proposalPatternStatus: 'extracting' }
+          : document
+      )),
+    }));
+    setDbUploadNotice({ type: 'warning', message: '기존 제안서 패턴 일괄 추출 중' });
+
+    try {
+      const response = await postJson<BackfillProposalPatternsResponse>('/api/backfill-proposal-patterns', { force: false });
+      applyBackfillResultsToDbDocuments(response.results);
+      setDbUploadNotice({
+        type: response.failedCount ? 'warning' : 'success',
+        message: `기존 제안서 패턴 일괄 추출 완료 · 추출 ${response.extractedCount ?? 0}건 · 건너뜀 ${response.skippedCount ?? 0}건 · 실패 ${response.failedCount ?? 0}건`,
+      });
+    } catch (err) {
+      console.error('Proposal pattern bulk backfill failed.', err);
+      setState((current) => ({
+        ...current,
+        dbUploadedDocuments: (current.dbUploadedDocuments ?? []).map((document) => (
+          document.proposalPatternStatus === 'extracting' ? { ...document, proposalPatternStatus: 'failed' } : document
+        )),
+      }));
+      setDbUploadNotice({ type: 'error', message: '패턴 추출 실패' });
     }
   };
 
@@ -2788,14 +2916,24 @@ export default function Home() {
                   <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, PPTX, DOCX, TXT, MD · 최대 100MB</p>
                   <p className="mt-1 text-xs font-bold leading-5 text-amber-700">{DB_UPLOAD_SIZE_GUIDANCE}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsDbUploadModalOpen(false)}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-600 transition hover:bg-slate-50"
-                  aria-label="DB 업로드 창 닫기"
-                >
-                  닫기
-                </button>
+                <div className="flex flex-col gap-2 md:items-end">
+                  <button
+                    type="button"
+                    onClick={handleBackfillAllProposalPatterns}
+                    disabled={Boolean(loading) || dbUploadedDocuments.some((document) => document.proposalPatternStatus === 'extracting')}
+                    className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-black text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    기존 제안서 패턴 일괄 추출
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsDbUploadModalOpen(false)}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-600 transition hover:bg-slate-50"
+                    aria-label="DB 업로드 창 닫기"
+                  >
+                    닫기
+                  </button>
+                </div>
               </div>
 
               <form className="mt-6 space-y-5" onSubmit={handleDbUploadSubmit}>
@@ -2885,7 +3023,7 @@ export default function Home() {
                 )}
               </div>
 
-              <DbLibraryUploadedDocumentsList documents={dbUploadedDocuments} />
+              <DbLibraryUploadedDocumentsList documents={dbUploadedDocuments} onBackfillDocument={handleBackfillProposalPatternsForDocument} />
               {dbUploadNotice && (
                 <div
                   className={`mt-4 rounded-2xl border p-4 text-sm font-semibold leading-6 ${
