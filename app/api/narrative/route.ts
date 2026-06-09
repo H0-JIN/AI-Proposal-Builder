@@ -5,6 +5,7 @@ import type { DocumentChunk } from '@/lib/rag';
 import { createStructuredJson } from '@/lib/openai';
 import { formatCategoryEvidenceGroupsForPrompt, retrieveCategoryEvidenceGroups } from '@/lib/rag';
 import { buildFallbackProposalNarrative, ensureProposalNarrative } from '@/lib/proposalNarrative';
+import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
 import { proposalTypeLabels } from '@/lib/types';
 
 export async function POST(request: Request) {
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
       ],
     });
     const retrievalContext = formatCategoryEvidenceGroupsForPrompt(evidenceGroups, 9000);
+    const differentiationStrategy = buildRfpDifferentiationStrategy(body.analysis);
 
     const generated = await createStructuredJson<ProposalNarrative>({
       schemaName: 'proposal_narrative',
@@ -50,6 +52,10 @@ export async function POST(request: Request) {
         '이 단계는 RFP 분석과 콘셉트 후보 생성 사이에 위치하는 Proposal Narrative 생성 단계다.',
         '전시 실행 항목 목록을 만들지 말고 Problem Definition → Strategic Declaration → Experience Strategy → Content Proposal → Proof & Impact로 이어지는 제안서 내러티브를 설계하라.',
         'marketContext, coreProblem, strategicOpportunity, proposalThesis, whyNow, whyUs, whyThisConcept, narrativeFlow를 모두 작성하라.',
+        'Proposal Narrative에는 unifyingFrame, differentiationPrinciple, entityDifferentiationMatrix, riskOfOverIntegration, howToAvoidSimilarity, currentRfpSpecificity를 반드시 포함하라.',
+        'If the RFP contains multiple entities, do not solve the proposal only with unity. Define what is unified and what remains distinct.',
+        '제안 명제는 무엇을 통합해야 하는지, 무엇은 구분되어야 하는지, 왜 그 구분이 평가에 중요한지, 그 차이가 audience에게 어떻게 보이는지를 답해야 한다.',
+        '다중 회사뿐 아니라 브랜드, 제품/서비스, 존, 타깃, 방문객 유형, 콘텐츠 카테고리, 이해관계자, 평가 우선순위에도 같은 차별화 원칙을 적용하라. 단순 RFP라면 불필요한 차별화를 강제하지 말라.',
         'proposalThesis는 이후 콘셉트 후보가 증명해야 하는 제안서 전체의 핵심 주장으로 작성하라.',
         'whyThisConcept는 아직 특정 콘셉트가 선택되지 않았더라도 어떤 방향의 콘셉트가 이 명제를 증명해야 하는지 설명하라.',
         'narrativeFlow는 최소 5개 단계로 작성하고 반드시 Problem Definition, Strategic Declaration, Experience Strategy, Content Proposal, Proof & Impact 순서를 우선하라.',
@@ -64,6 +70,9 @@ ${retrievalContext || '검색된 chunk 없음'}
 
 분석 결과 JSON:
 ${JSON.stringify(body.analysis, null, 2)}
+
+감지된 RFP 다중 요소 차별화 전략(현재 RFP evidence만 사용):
+${summarizeDifferentiationStrategy(differentiationStrategy)}
 
 사용자 추가 메모:
 ${body.input.briefText || '없음'}`,

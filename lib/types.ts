@@ -85,10 +85,12 @@ export interface DocumentPageTextSource {
 }
 
 export type ProposalOutcome = 'won' | 'lost' | 'unknown';
+export type OutcomeReasonType = 'external' | 'quality' | 'mixed' | 'unknown';
 
 export interface DbLibraryDocumentMetadata {
   outcome?: ProposalOutcome;
   outcomeReason?: string;
+  outcomeReasonType?: OutcomeReasonType;
   originalFileName?: string;
   uploadedVia?: 'db_library_upload';
 }
@@ -195,6 +197,20 @@ export interface ProposalNarrativeFlowStage {
   purpose: string;
 }
 
+export interface EntityDifferentiationItem {
+  entityName: string;
+  entityType: string;
+  roleInProject: string;
+  keyOffering: string;
+  audienceTakeaway: string;
+  distinctMessage: string;
+  proofPoint: string;
+  spatialOrContentRole: string;
+  visualOrToneCue: string;
+  relationshipToOtherEntities: string;
+  riskIfUndifferentiated: string;
+}
+
 export interface ProposalNarrative {
   marketContext: string;
   coreProblem: string;
@@ -204,6 +220,12 @@ export interface ProposalNarrative {
   whyUs: string;
   whyThisConcept: string;
   narrativeFlow: ProposalNarrativeFlowStage[];
+  unifyingFrame?: string;
+  differentiationPrinciple?: string;
+  entityDifferentiationMatrix?: EntityDifferentiationItem[];
+  riskOfOverIntegration?: string;
+  howToAvoidSimilarity?: string;
+  currentRfpSpecificity?: string;
 }
 
 export type SlidePurpose = 'Problem' | 'Insight' | 'Strategy' | 'Concept' | 'Experience' | 'Content' | 'Proof' | 'Impact';

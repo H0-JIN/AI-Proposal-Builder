@@ -1,3 +1,4 @@
+import { buildRfpDifferentiationStrategy } from './rfpDifferentiation';
 import type { AnalysisResult, ConceptCandidate, ProjectInput, ProposalNarrative, UploadedDocument } from './types';
 
 const defaultFlow = [
@@ -70,6 +71,8 @@ export function buildFallbackProposalNarrative({
     `${input.projectName || '본 프로젝트'}는 문제 정의, 전략 선언, 경험 실행, 증명 가능한 임팩트가 하나로 이어질 때 경쟁력 있는 제안이 됩니다.`,
   )!;
 
+  const differentiation = analysis ? buildRfpDifferentiationStrategy(analysis) : null;
+
   return {
     marketContext: context,
     coreProblem: challenge,
@@ -85,16 +88,37 @@ export function buildFallbackProposalNarrative({
       '이 콘셉트는 RFP 요구를 방문객 의미와 클라이언트 역량 증명의 경험 구조로 전환합니다.',
     )!,
     narrativeFlow: defaultFlow,
+    unifyingFrame: differentiation?.unifyingFrame ?? thesis,
+    differentiationPrinciple: differentiation?.differentiationPrinciple ?? '현재 RFP 근거를 기준으로 통합할 요소와 구분할 요소를 판단합니다.',
+    entityDifferentiationMatrix: differentiation?.entityDifferentiationMatrix ?? [],
+    riskOfOverIntegration: differentiation?.riskOfOverIntegration ?? '현재 RFP 근거 없이 과도한 통합 또는 분리를 강제하지 않습니다.',
+    howToAvoidSimilarity: differentiation?.howToAvoidSimilarity ?? '현재 RFP의 과제, 평가 기준, audience takeaway에 맞춰 장표별 역할을 구분합니다.',
+    currentRfpSpecificity: differentiation?.currentRfpSpecificity ?? joinText([analysis?.clientChallenge, analysis?.evaluationCriteria], '현재 RFP 분석 결과를 1차 근거로 사용합니다.'),
   };
 }
 
 export function ensureProposalNarrative(narrative: ProposalNarrative | undefined, fallbackInput: BuildNarrativeFallbackInput) {
   const fallback = buildFallbackProposalNarrative(fallbackInput);
-  return {
+  const merged = {
     ...fallback,
     ...narrative,
     narrativeFlow: narrative?.narrativeFlow?.length ? narrative.narrativeFlow : fallback.narrativeFlow,
   };
+
+  if (fallbackInput.analysis) {
+    const differentiation = buildRfpDifferentiationStrategy(fallbackInput.analysis, merged);
+    return {
+      ...merged,
+      unifyingFrame: narrative?.unifyingFrame || differentiation.unifyingFrame,
+      differentiationPrinciple: narrative?.differentiationPrinciple || differentiation.differentiationPrinciple,
+      entityDifferentiationMatrix: narrative?.entityDifferentiationMatrix?.length ? narrative.entityDifferentiationMatrix : differentiation.entityDifferentiationMatrix,
+      riskOfOverIntegration: narrative?.riskOfOverIntegration || differentiation.riskOfOverIntegration,
+      howToAvoidSimilarity: narrative?.howToAvoidSimilarity || differentiation.howToAvoidSimilarity,
+      currentRfpSpecificity: narrative?.currentRfpSpecificity || differentiation.currentRfpSpecificity,
+    };
+  }
+
+  return merged;
 }
 
 export function summarizeProposalNarrative(narrative: ProposalNarrative) {
@@ -107,5 +131,11 @@ export function summarizeProposalNarrative(narrative: ProposalNarrative) {
     `Why Us: ${narrative.whyUs}`,
     `Why This Concept: ${narrative.whyThisConcept}`,
     `Narrative Flow: ${narrative.narrativeFlow.map((flow) => `${flow.stage}=${flow.purpose}`).join(' / ')}`,
+    `Unifying Frame: ${narrative.unifyingFrame ?? ''}`,
+    `Differentiation Principle: ${narrative.differentiationPrinciple ?? ''}`,
+    `Entity Differentiation Matrix: ${JSON.stringify(narrative.entityDifferentiationMatrix ?? [])}`,
+    `Risk Of Over-Integration: ${narrative.riskOfOverIntegration ?? ''}`,
+    `How To Avoid Similarity: ${narrative.howToAvoidSimilarity ?? ''}`,
+    `Current RFP Specificity: ${narrative.currentRfpSpecificity ?? ''}`,
   ].join('\n');
 }

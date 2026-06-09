@@ -200,6 +200,7 @@ export async function saveProposalPatterns(input: SaveProposalPatternsInput): Pr
       narrative_stage: pattern.narrative_stage ?? null,
       outcome: pattern.outcome ?? null,
       outcome_reason: pattern.outcome_reason ?? null,
+      outcome_reason_type: pattern.outcome_reason_type ?? null,
       source_text: pattern.source_text ?? null,
       source_type: pattern.source_type ?? 'text_extracted',
       confidence: pattern.confidence ?? 'medium',

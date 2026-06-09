@@ -14,7 +14,8 @@ import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, isReferen
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
 import { getPresentationConceptName } from '@/lib/conceptNamingGuard';
-import { formatProposalPatternsForOutlinePrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
+import { formatProposalAvoidanceRulesForPrompt, formatProposalPatternDiagnostics, formatProposalPatternsForOutlinePrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
+import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
 
 
 function normalizeOutlineSourceEvidence(value: unknown) {
@@ -80,8 +81,12 @@ export async function POST(request: Request) {
     const strategyLayerMetadata = buildStrategyLayerMetadata({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic, conceptGenerationResult: body.conceptGenerationResult });
     const strategicMessageSummary = strategicMessageFieldsFromLogic(body.conceptDevelopmentLogic);
     const proposalNarrative = ensureProposalNarrative(body.proposalNarrative, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, documentText: body.input.briefText });
-    const outlineProposalPatterns = await retrieveProposalPatternsForOutline({ limit: 16 });
+    const differentiationStrategy = buildRfpDifferentiationStrategy(body.analysis, proposalNarrative);
+    const proposalPatternGuidance = await retrieveProposalPatternsForOutline({ limit: 16 });
+    const outlineProposalPatterns = proposalPatternGuidance.patterns;
     const proposalPatternContext = formatProposalPatternsForOutlinePrompt(outlineProposalPatterns);
+    const proposalAvoidanceRuleContext = formatProposalAvoidanceRulesForPrompt(proposalPatternGuidance.avoidanceRules);
+    const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, differentiationStrategy.hasMultipleEntities);
 
     const result = await createStructuredJson<{ slides: SlideOutline[] }>({
       schemaName: 'proposal_outline',
@@ -91,8 +96,15 @@ export async function POST(request: Request) {
         structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '이 단계는 콘텐츠 개발형 제안 생성 단계의 아웃라인 설계다. 기본 18~22장, 하드캡 24장 이내로 실제 제안 내용을 담는 슬라이드 구조를 만든다.' : '이 단계는 제안 생성 단계의 아웃라인 설계다. RFP 요약이나 확인 필요 장표가 아니라 실제 제안 내용을 담을 20~40장 슬라이드 구조를 만든다.',
         isEventOperationType ? 'MICE/컨퍼런스 운영형 기본 흐름은 Cover, Project Understanding, Strategic Approach, Event Identity, Program Overview, Operation Framework, Registration & Entry Plan, Session System Operation, Partner Pavilion Plan, Networking / Catering Plan, Moving Line Plan, Setup / Conversion Plan, Staffing Plan, Risk Management, Schedule, Budget Summary, Portfolio / Organization, Closing이다.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') && structureGuard.proposalScopeTypes.includes('boothExhibition') ? '콘텐츠 개발 + 부스/전시형 기본 흐름은 Cover/Intro, Project Understanding, Approach, Main Theme, Strategy & Goals, Hero Content, Sub Content, Zoning & Flow, Content Scenario, Schedule, Credential, Closing이다. 필요 시 과업 대응표를 1장 포함하되 일반 체험 마케팅 슬라이드로 확장하지 말라.' : '기본 흐름은 Cover, Project / Market Context, Core Problem or Challenge, Audience Insight, Strategic Opportunity / Strategic Direction, Concept Rationale, Core Concept, Key Experience Asset Concept, Visitor Journey, Spatial / Content Plan 복수 장표, Media / Interactive Plan 복수 장표, Viral / Communication Mechanism, Operation Plan, Expected Effect, Closing이다.',
         '아웃라인은 Proposal Narrative의 5단계 구조를 최우선으로 따른다: Phase 1 Problem Definition(시장/산업 맥락, 프로젝트 배경, 클라이언트 과제, audience insight) → Phase 2 Strategic Declaration(전략 기회, proposal thesis, concept rationale, core concept) → Phase 3 Experience Strategy(경험 원칙, visitor journey, spatial strategy) → Phase 4 Content Proposal(hero experience, main experience, media/interactive content, key proof points) → Phase 5 Proof & Impact(expected impact, differentiation, feasibility, 필요한 경우에만 operation/RFP response table).',
-        'Proposal patterns are structure references only. Do not reuse old proposal copy, project names, client names, slogans, filenames, or proprietary content. Translate the pattern into a new outline suited to the current RFP.',
-        'proposal_patterns는 수주 제안서의 구조적 흐름만 참고한다. 현재 RFP 분석을 최우선 원천으로 삼고, 패턴은 slide order, concept buildup, core concept 선언 타이밍, problem→insight→strategy→concept→content→proof→operation 관계, 각 장표의 존재 이유, operation/credential 장표 배치를 개선하는 보조 가이드로만 사용하라.',
+        'Proposal patterns are structure references only. Do not reuse old proposal copy, old project names, client names, slogans, filenames, or proprietary content. Translate only the reusable structural principle into a new outline suited to the current RFP.',
+        'proposal_patterns는 구조 참고 자료일 뿐이며 현재 RFP evidence가 항상 1차 원천이다. 원문, old body copy, old client/project names, slogans, filenames, copyright/confidential text는 절대 사용하지 말라.',
+        'A lost proposal is not always a poor proposal. If the loss reason is external, such as budget or procurement conditions, its structure can still be used as reference. If the loss reason is quality-related, use it as an anti-pattern.',
+        'Pattern priority: won patterns first, lost_external second, unknown neutral third, lost_mixed with caution fourth, lost_quality only as anti-patterns. Budget-only or external-only losses are not proposal quality failures.',
+        'Quality-related lost proposal reasons must become avoidance rules for generic concept, weak differentiation, over-integrated story, unclear client benefit, weak audience insight, weak proof of feasibility, missing operational detail, content list without hierarchy, visuals/media without reason, concept before rationale, or copied old structure without current relevance.',
+        'proposal_patterns는 구조적 흐름만 참고한다. 현재 RFP 분석을 최우선 원천으로 삼고, 패턴은 slide order, concept buildup, core concept 선언 타이밍, problem→insight→strategy→concept→content→proof→operation 관계, 각 장표의 존재 이유, operation/credential 장표 배치를 개선하는 보조 가이드로만 사용하라.',
+        'Do not default to generic concept words. The concept must emerge from the current RFP’s specific strategic tension, audience barrier, client objective, and proof logic.',
+        'If the RFP contains multiple entities, do not solve the proposal only with unity. Define what is unified and what remains distinct. Include a differentiation strategy when multiple companies, brands, divisions, zones, products/services, audiences, visitor types, content categories, stakeholders, or evaluation priorities are present.',
+        'Every slide needs a clear role, why it exists, sourceEvidence from the current RFP when possible, and explicit relation to proposalThesis. Operation/proof/credential slides appear only where they support the thesis.',
         'Cover 다음 첫 전략 섹션은 반드시 1) Project / Market Context 2) Core Problem / Challenge 3) Audience Insight 4) Strategic Opportunity 5) Concept Rationale 6) Core Concept 7) Experience Principle / Visitor Journey 순서로 배치하라. Strategic Opportunity, Experience Principle, Visitor Journey, Media Overview, Spatial Overview, Content Mechanism은 Project / Market Context와 Core Problem보다 앞에 절대 두지 말라. Core Concept는 Project / Market Context, Core Problem, Audience Insight, Strategic Opportunity, Concept Rationale이 모두 설명된 뒤에만 배치하라.',
         'Concept Rationale은 공간 제약에서 시작하지 말고 1) hydrogen처럼 보이지 않는 시스템 기반 가치 2) HTWO/hydrogen value chain의 복잡성 3) B2B와 public audience의 다른 이해 수준 4) Hyundai Motor Group hydrogen leadership을 신뢰 가능하고 체험 가능하게 만들어야 하는 필요 5) 선택 콘셉트가 그 간극을 가장 잘 표현하는 이유 순서로 작성하라. Case Insight가 유용할 때는 Concept Rationale의 전략 근거로만 활용하고 콘텐츠 제안 섹션 뒤에 두지 말라. Columns, booth constraints, venue limitations, layout constraints는 Spatial Strategy 이전에 한 번의 supporting challenge로만 언급할 수 있으며 early slide title이나 Concept Rationale의 주된 근거가 되어서는 안 된다.',
         '각 outline slide는 slidePurpose를 Problem, Insight, Strategy, Concept, Experience, Content, Proof, Impact 중 하나로만 지정하고 slideRole, relationToThesis, whyThisSlideExists를 반드시 작성하라. sourceEvidence는 문자열 배열로 작성하고, 현재 프로젝트 근거가 없으면 반드시 빈 배열 []을 넣어라. referenceAllowed는 Reference Guard가 허용한 현재 프로젝트 레퍼런스 근거가 있을 때만 true이고 기본값은 false다.',
@@ -123,7 +135,7 @@ export async function POST(request: Request) {
         isEventOperationType ? '행사 운영형의 성과 장표는 운영 품질 관리 지표와 측정 체계를 중심으로 구성하고 체험 산출/공유 장표로 대체하지 말라.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '콘텐츠 개발형에서는 Media / Interactive Plan을 5장으로 강제 확장하지 말고 hero/sub content의 media mechanism과 scenario를 설명하는 범위로 제한하라. Output & Share는 RFP가 명시할 때만 생성하라.' : 'Media / Interactive Plan은 절대 1장으로 요약하지 말고 최소 5장(Media Experience Overview, Key Media Scene, Interactive Flow, Content Mechanism, Output & Share)으로 구성하라. Content Mechanism과 콘텐츠 작동 원리 및 메커니즘처럼 같은 의미의 장표를 중복 생성하지 말라. 미디어/인터랙션 요소가 많으면 핵심 체험 자산별 상세 장표를 추가하라.',
         'Spatial zoning, Media Overview, Content Mechanism, Key Media Scene, Hero Image, detailed content modules는 Core Concept 이후 실행 전략 섹션에서만 다루고, Core Concept 이전의 문제/인사이트/전략 근거 섹션에는 배치하지 말라.',
         '공간 구성과 콘텐츠 구성을 한 장에 뭉뚱그리지 말고 핵심 체험 단위별로 분리하라.',
-        'RFP나 분석 결과의 taskSections.requiredDeliverables/requiredScope/productInfo에 제품/서비스 단위가 있으면 그 단위별 Product Experience Detail 장표를 포함하되, “제작”, “개발”, “운영”, “구성”, “기획”, “제안” 같은 과업/업무 범위 표현은 체험 콘텐츠명으로 사용하지 말라. 체험 상세 장표는 방문객 행동, 시스템 반응, 결과물이 명확한 콘텐츠만 생성한다. referenceOnly/doNotTreatAsScope/existingAssets에서만 감지된 참고 사례, 기존 캠페인, 레슨런드 항목은 제품별 체험 상세 장표로 만들지 말라. 포괄적인 “폴더블 갤럭시 체험존” 대신 대화면 멀티태스킹 체험, 미디어 최적화 폼팩터 체험, 전면 디스플레이 셀피 체험처럼 방문객 행동 중심의 구체 제목을 사용하라.',
+        'RFP나 분석 결과의 taskSections.requiredDeliverables/requiredScope/productInfo에 제품/서비스 단위가 있으면 그 단위별 Product Experience Detail 장표를 포함하되, “제작”, “개발”, “운영”, “구성”, “기획”, “제안” 같은 과업/업무 범위 표현은 체험 콘텐츠명으로 사용하지 말라. 체험 상세 장표는 방문객 행동, 시스템 반응, 결과물이 명확한 콘텐츠만 생성한다. referenceOnly/doNotTreatAsScope/existingAssets에서만 감지된 참고 사례, 기존 캠페인, 레슨런드 항목은 제품별 체험 상세 장표로 만들지 말라. 포괄적인 제품명+체험존 제목 대신, 현재 RFP에 명시된 제품/서비스별 방문객 행동·시스템 반응·인식 변화가 드러나는 구체 제목을 사용하라.',
         'winningStrategyBrief / proposalThesis / experienceLogic은 Winning Strategy Layer 메타데이터다. 제공된 값이 있으면 보존해 제안서 구조의 전략 흐름에 반영하고, 없으면 서버에서 생성된 fallback 값을 사용하라. 이 메타데이터가 없다는 이유로 아웃라인 생성을 중단하거나 빈 장표를 만들지 말라.',
         'slideNumber는 1부터 순서대로 부여하라. 각 슬라이드에는 사용자가 수정할 수 있는 mainCopy를 포함하고, mainCopy에는 해당 장표의 본문 방향 또는 대표 제안서 문장을 1~2문장으로 작성하라. 모든 slide item은 schema의 모든 필드를 빠짐없이 채워야 하며 sourceEvidence가 없을 때도 []로 채워 생성 실패를 방지하라.',
       ].join('\n'),
@@ -138,8 +150,16 @@ ${retrievalContext || '검색된 chunk 없음'}
 
 참고한 구조 패턴: ${outlineProposalPatterns.length}개
 수주 제안서 패턴 우선 반영: ${outlineProposalPatterns.some((pattern) => pattern.outcome === 'won') ? '예' : '아니오'}
-proposal_patterns 구조 참고 JSON(허용된 구조 필드만 포함, 원문/제목/요약 제외):
+내부 진단 요약(사용자-facing 제안서에는 old proposal 세부정보 노출 금지):
+${proposalPatternDiagnostics}
+proposal_patterns 구조 참고 JSON(허용된 구조 필드만 포함, 원문/source_text/제목/요약/파일명 제외):
 ${proposalPatternContext}
+
+품질 관련 미수주 회피 규칙 JSON(현재 RFP에 맞는 회피 원칙으로만 사용):
+${proposalAvoidanceRuleContext}
+
+RFP Entity / Content Differentiation Strategy JSON:
+${summarizeDifferentiationStrategy(differentiationStrategy)}
 
 분석 결과 JSON:
 ${JSON.stringify(body.analysis, null, 2)}

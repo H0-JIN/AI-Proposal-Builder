@@ -3,6 +3,26 @@ const stringArray = { type: 'array', items: { type: 'string' } } as const;
 
 const slidePurposeEnum = ['Problem', 'Insight', 'Strategy', 'Concept', 'Experience', 'Content', 'Proof', 'Impact'] as const;
 
+
+const entityDifferentiationItemSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    entityName: { type: 'string' },
+    entityType: { type: 'string' },
+    roleInProject: { type: 'string' },
+    keyOffering: { type: 'string' },
+    audienceTakeaway: { type: 'string' },
+    distinctMessage: { type: 'string' },
+    proofPoint: { type: 'string' },
+    spatialOrContentRole: { type: 'string' },
+    visualOrToneCue: { type: 'string' },
+    relationshipToOtherEntities: { type: 'string' },
+    riskIfUndifferentiated: { type: 'string' },
+  },
+  required: ['entityName', 'entityType', 'roleInProject', 'keyOffering', 'audienceTakeaway', 'distinctMessage', 'proofPoint', 'spatialOrContentRole', 'visualOrToneCue', 'relationshipToOtherEntities', 'riskIfUndifferentiated'],
+} as const;
+
 const narrativeFlowStageSchema = {
   type: 'object',
   additionalProperties: false,
@@ -25,8 +45,14 @@ export const proposalNarrativeJsonSchema = {
     whyUs: { type: 'string' },
     whyThisConcept: { type: 'string' },
     narrativeFlow: { type: 'array', minItems: 5, items: narrativeFlowStageSchema },
+    unifyingFrame: { type: 'string' },
+    differentiationPrinciple: { type: 'string' },
+    entityDifferentiationMatrix: { type: 'array', items: entityDifferentiationItemSchema },
+    riskOfOverIntegration: { type: 'string' },
+    howToAvoidSimilarity: { type: 'string' },
+    currentRfpSpecificity: { type: 'string' },
   },
-  required: ['marketContext', 'coreProblem', 'strategicOpportunity', 'proposalThesis', 'whyNow', 'whyUs', 'whyThisConcept', 'narrativeFlow'],
+  required: ['marketContext', 'coreProblem', 'strategicOpportunity', 'proposalThesis', 'whyNow', 'whyUs', 'whyThisConcept', 'narrativeFlow', 'unifyingFrame', 'differentiationPrinciple', 'entityDifferentiationMatrix', 'riskOfOverIntegration', 'howToAvoidSimilarity', 'currentRfpSpecificity'],
 } as const;
 
 
