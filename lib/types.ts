@@ -103,7 +103,7 @@ export interface UploadedDocument {
   dbProjectId?: string;
   dbDocumentId?: string;
   dbChunkCount?: number;
-  proposalPatternStatus?: 'extracted' | 'skipped' | 'failed';
+  proposalPatternStatus?: 'extracting' | 'extracted' | 'skipped' | 'failed';
   proposalPatternCount?: number;
   dbLibraryMetadata?: DbLibraryDocumentMetadata;
   extractionStatus: ExtractionStatus;

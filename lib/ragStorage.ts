@@ -51,6 +51,11 @@ export interface SaveProposalPatternsInput {
   patterns: ProposalPatternInput[];
 }
 
+export interface ProposalPatternBackfillDocument extends DocumentRecord {
+  chunkCount: number;
+  proposalPatternCount: number;
+}
+
 function logRagStorageError(operation: string, error: unknown) {
   const message = error instanceof Error ? error.message : typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error);
   console.error(`[ragStorage] ${operation} failed: ${message}`);
@@ -212,6 +217,130 @@ export async function saveProposalPatterns(input: SaveProposalPatternsInput): Pr
     return data ?? [];
   } catch (error) {
     logRagStorageError('saveProposalPatterns', error);
+    return [];
+  }
+}
+
+
+export async function getProposalPatternCountByDocument(documentId: string): Promise<number> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) {
+    return 0;
+  }
+
+  try {
+    const { count, error } = await client
+      .from('proposal_patterns')
+      .select('id', { count: 'exact', head: true })
+      .eq('document_id', documentId);
+
+    if (error) {
+      logRagStorageError('getProposalPatternCountByDocument', error);
+      return 0;
+    }
+
+    return count ?? 0;
+  } catch (error) {
+    logRagStorageError('getProposalPatternCountByDocument', error);
+    return 0;
+  }
+}
+
+export async function deleteProposalPatternsByDocument(documentId: string): Promise<boolean> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) {
+    return false;
+  }
+
+  try {
+    const { error } = await client
+      .from('proposal_patterns')
+      .delete()
+      .eq('document_id', documentId);
+
+    if (error) {
+      logRagStorageError('deleteProposalPatternsByDocument', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logRagStorageError('deleteProposalPatternsByDocument', error);
+    return false;
+  }
+}
+
+export async function getDocumentChunks(documentId: string): Promise<ChunkRecord[]> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await client
+      .from('chunks')
+      .select('*')
+      .eq('document_id', documentId)
+      .order('chunk_index', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      logRagStorageError('getDocumentChunks', error);
+      return [];
+    }
+
+    return data ?? [];
+  } catch (error) {
+    logRagStorageError('getDocumentChunks', error);
+    return [];
+  }
+}
+
+export async function getProposalDocumentsForPatternBackfill(options: { documentId?: string; projectId?: string } = {}): Promise<ProposalPatternBackfillDocument[]> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) {
+    return [];
+  }
+
+  try {
+    let query = client
+      .from('documents')
+      .select('*, chunks(id), proposal_patterns(id)')
+      .eq('role', 'proposal')
+      .order('created_at', { ascending: true });
+
+    if (options.documentId) {
+      query = query.eq('id', options.documentId);
+    }
+
+    if (options.projectId) {
+      query = query.eq('project_id', options.projectId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      logRagStorageError('getProposalDocumentsForPatternBackfill', error);
+      return [];
+    }
+
+    return (data ?? [])
+      .map((document) => {
+        const withRelations = document as DocumentRecord & { chunks?: Array<{ id: string }>; proposal_patterns?: Array<{ id: string }> };
+        const { chunks: _chunks, proposal_patterns: _patterns, ...record } = withRelations;
+        return {
+          ...record,
+          chunkCount: _chunks?.length ?? 0,
+          proposalPatternCount: _patterns?.length ?? 0,
+        } as ProposalPatternBackfillDocument;
+      })
+      .filter((document) => document.chunkCount > 0);
+  } catch (error) {
+    logRagStorageError('getProposalDocumentsForPatternBackfill', error);
     return [];
   }
 }
