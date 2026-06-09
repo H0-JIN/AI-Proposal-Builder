@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -1473,6 +1473,7 @@ export default function Home() {
   const [dbUploadFile, setDbUploadFile] = useState<File | null>(null);
   const [dbUploadOutcome, setDbUploadOutcome] = useState<ProposalOutcome>('unknown');
   const [dbUploadOutcomeReason, setDbUploadOutcomeReason] = useState('');
+  const [dbUploadOutcomeReasonType, setDbUploadOutcomeReasonType] = useState<OutcomeReasonType>('unknown');
   const [dbUploadNotice, setDbUploadNotice] = useState<UploadNotice | null>(null);
   const [isDbUploadModalOpen, setIsDbUploadModalOpen] = useState(false);
 
@@ -2336,7 +2337,7 @@ export default function Home() {
   );
 
   const buildDbLibraryMetadata = (file: File): UploadedDocument['dbLibraryMetadata'] => ({
-    ...(dbUploadRole === 'proposal' ? { outcome: dbUploadOutcome, outcomeReason: dbUploadOutcomeReason.trim() } : {}),
+    ...(dbUploadRole === 'proposal' ? { outcome: dbUploadOutcome, outcomeReason: dbUploadOutcomeReason.trim(), ...(dbUploadOutcome === 'lost' ? { outcomeReasonType: dbUploadOutcomeReasonType } : {}) } : {}),
     originalFileName: file.name,
     uploadedVia: 'db_library_upload',
   });
@@ -2964,6 +2965,21 @@ export default function Home() {
                         <option value="unknown">결과 모름</option>
                       </select>
                     </label>
+                    {dbUploadOutcome === 'lost' && (
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">미수주 사유 유형 <span className="text-slate-400">(선택)</span></span>
+                        <select
+                          value={dbUploadOutcomeReasonType}
+                          onChange={(event) => setDbUploadOutcomeReasonType(event.target.value as OutcomeReasonType)}
+                          className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
+                        >
+                          <option value="external">예산/외부 요인</option>
+                          <option value="quality">제안 품질 요인</option>
+                          <option value="mixed">복합 요인</option>
+                          <option value="unknown">모르겠음</option>
+                        </select>
+                      </label>
+                    )}
                     <label className="block">
                       <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">수주/미수주 이유 <span className="text-slate-400">(선택, 권장)</span></span>
                       <textarea
@@ -2982,7 +2998,7 @@ export default function Home() {
                     <p className="font-black text-slate-950">파일명 권장 형식</p>
                     <p className="mt-1 font-semibold">[클라이언트]_[프로젝트명]_[문서유형].pdf 형식을 권장합니다.</p>
                     <ul className="mt-2 list-disc space-y-1 pl-5 text-xs font-semibold text-slate-600">
-                      <li>KIA_AutoLand_Hwaseong_PBV_proposal.pdf</li>
+                      <li>[Client]_[Project]_[proposal].pdf</li>
                       <li>NAVERCloud_LEAP2025_proposal.pdf</li>
                       <li>Hyundai_WorldHydrogenEXPO_RFP.pdf</li>
                       <li>Samsung_GalaxyStudio_reference.pdf</li>

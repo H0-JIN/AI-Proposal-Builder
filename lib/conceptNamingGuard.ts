@@ -1,30 +1,50 @@
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProposalNarrative } from './types';
 
+
+export const GENERIC_CONCEPT_WORD_PENALTY_LIST = [
+  'nexus',
+  'pulse',
+  'vanguard',
+  'synergy',
+  'connect',
+  'future',
+  'innovation',
+  'hub',
+  'platform',
+  'experience',
+  'journey',
+  'alliance',
+  'lab',
+  'studio',
+  'universe',
+  'beyond',
+  'next',
+  'shift',
+  'flow',
+];
+
 const WEAK_GENERIC_CONCEPT_NAMES = [
-  'modular interactive hydrogen value chain',
-  'modular interactive value chain',
-  'hydrogen value chain',
-  'interactive hydrogen value chain',
-  'hydrogen flow',
   'future nexus',
-  'pulse of hydrogen',
-  'future grid',
-  'living h2',
-  'hydrogen experience',
-  'hydrogen pavilion',
-  'hydrogen journey',
+  'innovation hub',
+  'future experience',
+  'experience journey',
+  'next platform',
+  'synergy hub',
+  'creative lab',
+  'brand universe',
 ];
 
 const WEAK_GENERIC_TOKEN_COMBINATIONS = [
-  ['hydrogen', 'flow'],
   ['future', 'nexus'],
-  ['future', 'grid'],
-  ['hydrogen', 'experience'],
-  ['hydrogen', 'pavilion'],
-  ['hydrogen', 'journey'],
+  ['innovation', 'hub'],
+  ['future', 'experience'],
+  ['experience', 'journey'],
+  ['next', 'platform'],
+  ['synergy', 'hub'],
 ];
 
 const GENERIC_CATEGORY_WORDS = [
+  ...GENERIC_CONCEPT_WORD_PENALTY_LIST,
   'pavilion',
   'zone',
   'experience',
@@ -227,6 +247,12 @@ function hasWeakGenericConceptName(name: string) {
   );
 }
 
+function hasGenericConceptPenaltyWord(name: string) {
+  const normalized = normalizedText(name);
+  const tokens = normalized.split(/[\s/·|+_-]+/).filter(Boolean);
+  return GENERIC_CONCEPT_WORD_PENALTY_LIST.some((word) => tokens.includes(word) || normalized === word);
+}
+
 function hasGenericMainNamingDevice(name: string) {
   const normalized = normalizedText(name);
   const tokens = normalized.split(/[\s/·|+_-]+/).filter(Boolean);
@@ -314,6 +340,7 @@ export function validateConceptNaming(
     if (unitCount > 5 || name.length > 36) violations.push(`${label}: conceptName is too long for a presentation-ready title.`);
     if (isLikelySentence(name)) violations.push(`${label}: conceptName reads like an explanatory sentence or section heading.`);
     if (hasWeakGenericConceptName(name)) violations.push(`${label}: conceptName is a weak generic keyword combination rather than a proposal-ready idea.`);
+    if (hasGenericConceptPenaltyWord(name)) violations.push(`${label}: conceptName uses a generic tech/event branding word from the universal penalty list without current-RFP-specific justification.`);
     if (hasGenericMainNamingDevice(name)) violations.push(`${label}: conceptName uses a generic category word as the main naming device.`);
     if (hasUntransformedConceptRoleTerm(name)) violations.push(`${label}: conceptName uses execution methods, content categories, spatial solutions, constraints, or RFP keywords as the main naming device instead of a transformed strategic metaphor.`);
     if (hasExecutionDescriptionName(name)) violations.push(`${label}: conceptName reads like an execution strategy, content category, spatial solution, RFP keyword, or technical description instead of a strategic idea.`);
@@ -330,10 +357,10 @@ export function buildConceptNamingRetryInstruction(violations: string[]) {
   return [
     'CONCEPT NAMING GUARD REJECTION:',
     ...violations.map((violation) => `- ${violation}`),
-    'Regenerate all 3 concepts. Keep the strategic narrative, but replace rejected naming logic with concise, memorable, proposal-ready names derived from proposalThesis, audience transformation, client vision, HTWO/client brand message, hydrogen value chain where relevant, strategic opportunity, and core experience promise.',
+    'Regenerate all 3 concepts. Keep the strategic narrative, but replace rejected naming logic with concise, memorable, proposal-ready names derived from the current RFP strategic tension, client situation, audience barrier, product/service logic, spatial or content mechanism, desired perception shift, evaluation criteria, proposalThesis, and proof logic.',
     'Concept Role Guard: conceptName must express the proposal strategic idea, not the execution method. Do not use modular, interactive, value chain, media, zone, pavilion, experience, content, mechanism, spatial layout, booth/column constraints, deliverable categories, or RFP object lists as the main naming device unless transformed into a strong strategic metaphor.',
     'Reject names that read like technical descriptions, combine 2+ execution terms, use modular interactive or value chain as the main naming device, exceed 5 words without a strong reason, sound like slide titles, or start from constraints instead of proposalThesis.',
     'Do not use constraints, columns, booth limits, venue limitations, schedule, budget, deliverable names, equipment, media types, object lists, or floor-plan limitations as conceptName sources.',
-    'Avoid weak generic names such as Hydrogen Flow, Future Nexus, Future Grid, Pulse of Hydrogen, Living H2, Hydrogen Experience, Hydrogen Pavilion, and Hydrogen Journey. Do not use external project names or unrelated case names to make naming feel stronger.',
+    'Universal Concept Novelty Guard: do not default to Nexus, Pulse, Vanguard, Synergy, Connect, Future, Innovation, Hub, Platform, Experience, Journey, Alliance, Lab, Studio, Universe, Beyond, Next, Shift, or Flow as the main concept name unless strongly justified by current RFP evidence. Avoid names that sound like generic tech/event branding. Concept names must be specific to the current brief and not reusable across unrelated RFPs. Do not use external project names or unrelated case names to make naming feel stronger.',
   ].join('\n');
 }

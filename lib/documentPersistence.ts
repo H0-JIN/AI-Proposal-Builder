@@ -3,6 +3,7 @@ import 'server-only';
 import { createDocument, createProject, isSupabaseConfigured, saveChunks, saveProposalPatterns } from './ragStorage';
 import { extractProposalPatternsFromChunks } from './proposalPatternExtractor';
 import { inferUploadedDocumentRole } from './documentRoles';
+import { classifyOutcomeReason } from './outcomeReasonClassifier';
 import type { JsonValue, ProposalPatternInput } from './dbTypes';
 import type { DocumentChunk } from './rag';
 import type { ProjectInput, UploadedDocument } from './types';
@@ -57,15 +58,20 @@ function normalizeOutcome(value: string | null) {
 function applyOutcomeMetadata(patterns: ProposalPatternInput[], metadata: JsonValue | null | undefined) {
   const outcome = normalizeOutcome(getMetadataString(metadata, 'outcome'));
   const outcomeReason = getMetadataString(metadata, 'outcomeReason');
+  const explicitOutcomeReasonType = getMetadataString(metadata, 'outcomeReasonType');
+  const outcomeReasonType = classifyOutcomeReason(outcome, outcomeReason, explicitOutcomeReasonType);
 
   return patterns.map((pattern) => ({
     ...pattern,
     outcome,
     outcome_reason: outcomeReason,
+    outcome_reason_type: outcomeReasonType,
     metadata: toJsonValue({
       ...(pattern.metadata && typeof pattern.metadata === 'object' && !Array.isArray(pattern.metadata) ? pattern.metadata : {}),
       proposalOutcome: outcome,
       proposalOutcomeReason: outcomeReason,
+      proposalOutcomeReasonType: outcomeReasonType,
+      outcomeReasonType,
     }),
   }));
 }
@@ -120,6 +126,10 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
 
     if (!project) return { status: 'failed', chunkCount: documentChunks.length, role, proposalPatternStatus: 'skipped', proposalPatternCount: 0 };
 
+    const normalizedOutcome = document.dbLibraryMetadata?.outcome;
+    const normalizedOutcomeReason = document.dbLibraryMetadata?.outcomeReason;
+    const outcomeReasonType = classifyOutcomeReason(normalizedOutcome, normalizedOutcomeReason, document.dbLibraryMetadata?.outcomeReasonType);
+
     const documentRecord = await createDocument({
       projectId: project.id,
       fileName: document.fileName || 'Uploaded document',
@@ -128,6 +138,7 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
       sourceType: document.visionUsed ? 'visionAnalysis' : 'textExtraction',
       metadata: toJsonValue({
         ...(document.dbLibraryMetadata ?? {}),
+        ...(role === 'proposal' ? { outcomeReasonType } : {}),
         originalDocumentId: document.id,
         documentRole: role,
         documentType: document.documentType ?? null,
