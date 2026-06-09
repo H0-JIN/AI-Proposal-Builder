@@ -100,6 +100,7 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
       mimeType: document.fileType || null,
       sourceType: document.visionUsed ? 'visionAnalysis' : 'textExtraction',
       metadata: toJsonValue({
+        ...(document.dbLibraryMetadata ?? {}),
         originalDocumentId: document.id,
         documentRole: role,
         documentType: document.documentType ?? null,

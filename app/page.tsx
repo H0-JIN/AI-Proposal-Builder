@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -79,6 +79,7 @@ type PersistDocumentResponse = {
   role?: 'rfp' | 'proposal' | 'reference' | 'memo';
   proposalPatternStatus?: 'extracted' | 'skipped' | 'failed';
   proposalPatternCount?: number;
+  dbLibraryMetadata?: UploadedDocument['dbLibraryMetadata'];
 };
 
 type ExtractFromStorageResponse = {
@@ -90,12 +91,15 @@ type ExtractFromStorageResponse = {
   chunkCount?: number;
   role?: 'proposal' | 'reference' | 'memo';
   warning?: string;
+  extractionStatus?: ExtractionStatus;
+  detail?: string;
   pageCount?: number;
   extractedPageCount?: number;
   bucket?: string;
   storagePath?: string;
   proposalPatternStatus?: 'extracted' | 'skipped' | 'failed';
   proposalPatternCount?: number;
+  dbLibraryMetadata?: UploadedDocument['dbLibraryMetadata'];
 };
 
 type PersistAnalysisResponse = {
@@ -127,8 +131,21 @@ const MAX_DB_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const LARGE_FILE_UPLOAD_GUIDANCE = '파일 용량이 커서 직접 업로드 방식에 실패했습니다. Storage 업로드 방식으로 다시 시도해 주세요.';
 const DB_STORAGE_UPLOAD_THRESHOLD_BYTES = 10 * 1024 * 1024;
 const DB_UPLOAD_SIZE_GUIDANCE = '대용량 PDF/PPTX는 Supabase Storage에 먼저 업로드한 뒤 서버에서 추출/저장합니다.';
+const DB_STORAGE_EXTRACTION_TIMEOUT_DETAIL = '파일 원본은 Storage에 저장되었지만, PDF 텍스트 추출이 시간 초과되었습니다. MD/TXT 변환본을 추가 업로드하면 구조 분석에 더 안정적으로 사용할 수 있습니다.';
 const clientReadableExtensions = ['txt', 'md'];
 const serverReadableExtensions = ['pdf', 'docx', 'pptx'];
+
+const dbDocumentRoleLabels: Record<'proposal' | 'reference' | 'memo', string> = {
+  proposal: '기존 제안서 / Proposal',
+  reference: '레퍼런스 / Reference',
+  memo: '메모 / Memo',
+};
+
+const proposalOutcomeLabels: Record<ProposalOutcome, string> = {
+  won: '수주',
+  lost: '미수주',
+  unknown: '결과 모름',
+};
 
 const STORAGE_KEY = 'ai-proposal-builder-state';
 
@@ -337,11 +354,11 @@ function getProposalPatternStatusLabel(status?: UploadedDocument['proposalPatter
 
 function getDocumentDbSaveStatusLabel(status?: UploadedDocument['dbSaveStatus']) {
   const statusConfig: Record<Exclude<DbSaveStatus, 'idle'>, { label: string; tone: string }> = {
-    disabled: { label: 'DB upload disabled', tone: 'border-slate-200 bg-slate-50 text-slate-600' },
-    saving: { label: 'Saving to DB', tone: 'border-blue-200 bg-blue-50 text-blue-700' },
-    saved: { label: 'Saved to DB', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-    failed: { label: 'DB upload failed', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
-    partial: { label: 'Partial text saved', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+    disabled: { label: '대기', tone: 'border-slate-200 bg-slate-50 text-slate-600' },
+    saving: { label: 'DB 저장 중', tone: 'border-blue-200 bg-blue-50 text-blue-700' },
+    saved: { label: '저장 성공', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    failed: { label: '저장 실패', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
+    partial: { label: '일부 저장', tone: 'border-amber-200 bg-amber-50 text-amber-800' },
   };
 
   if (!status || status === 'idle') return null;
@@ -426,6 +443,7 @@ function UploadedDocumentsList({
     '추가 메모 입력 필요': 'bg-red-50 text-red-700 ring-red-200',
     '이미지 중심 문서 / OCR 필요': 'bg-slate-100 text-slate-700 ring-slate-200',
     '추출 실패': 'bg-red-50 text-red-700 ring-red-200',
+    '원본 저장 / 텍스트 추출 실패': 'bg-amber-50 text-amber-800 ring-amber-200',
   };
 
   if (!documents.length) {
@@ -494,6 +512,91 @@ function UploadedDocumentsList({
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+
+function DbLibraryUploadedDocumentsList({
+  documents,
+}: {
+  documents: UploadedDocument[];
+}) {
+  const statusTone: Record<ExtractionStatus, string> = {
+    '텍스트 추출 중': 'bg-blue-50 text-blue-700 ring-blue-200',
+    '텍스트 추출 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    '일부 텍스트만 추출': 'bg-amber-50 text-amber-800 ring-amber-200',
+    '텍스트 추출 실패': 'bg-red-50 text-red-700 ring-red-200',
+    '텍스트 품질 낮음': 'bg-amber-50 text-amber-800 ring-amber-200',
+    '이미지 중심 PDF 가능성 높음': 'bg-amber-50 text-amber-800 ring-amber-200',
+    'OCR 필요': 'bg-blue-50 text-blue-700 ring-blue-200',
+    'OCR 추출 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    'OCR 일부 추출': 'bg-amber-50 text-amber-800 ring-amber-200',
+    'OCR 추출 실패': 'bg-red-50 text-red-700 ring-red-200',
+    '이미지 중심 PDF로 판단': 'bg-purple-50 text-purple-700 ring-purple-200',
+    '빠른 Vision 분석 중': 'bg-blue-50 text-blue-700 ring-blue-200',
+    '빠른 Vision 분석 완료': 'bg-sky-50 text-sky-700 ring-sky-200',
+    '전체 Vision 분석 중': 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+    '전체 Vision 분석 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    '하이브리드 PDF 분석 중': 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+    '하이브리드 PDF 분석 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    'Vision 분석 중': 'bg-blue-50 text-blue-700 ring-blue-200',
+    'Vision 분석 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    'Vision 일부 완료': 'bg-amber-50 text-amber-800 ring-amber-200',
+    'Vision 분석 실패': 'bg-red-50 text-red-700 ring-red-200',
+    '추가 메모 입력 필요': 'bg-red-50 text-red-700 ring-red-200',
+    '이미지 중심 문서 / OCR 필요': 'bg-slate-100 text-slate-700 ring-slate-200',
+    '추출 실패': 'bg-red-50 text-red-700 ring-red-200',
+    '원본 저장 / 텍스트 추출 실패': 'bg-amber-50 text-amber-800 ring-amber-200',
+  };
+
+  if (!documents.length) {
+    return (
+      <div className="mt-4 rounded-2xl border border-dashed border-emerald-200 bg-white/70 p-4 text-sm font-semibold text-slate-600">
+        아직 등록된 라이브러리 파일이 없습니다. 문서 유형과 메타데이터를 입력한 뒤 DB에 업로드해 주세요.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-100 bg-white">
+      <div className="grid grid-cols-12 gap-3 border-b border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-emerald-700">
+        <span className="col-span-4">파일명</span>
+        <span className="col-span-2">문서 유형</span>
+        <span className="col-span-1">결과</span>
+        <span className="col-span-2">이유</span>
+        <span className="col-span-3">상태</span>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {documents.map((document, index) => {
+          const role = document.documentRole ?? inferUploadedDocumentRole(document.fileName, document.documentAnalysisText || document.extractedText);
+          const outcome = role === 'proposal' ? document.dbLibraryMetadata?.outcome : undefined;
+          const outcomeReason = role === 'proposal' ? document.dbLibraryMetadata?.outcomeReason?.trim() : '';
+          const dbStatus = getDocumentDbSaveStatusLabel(document.dbSaveStatus);
+
+          return (
+            <div key={document.id || `${document.fileName}-${index}`} className="grid grid-cols-12 gap-3 px-4 py-4 text-sm text-slate-700">
+              <div className="col-span-12 font-bold text-slate-950 md:col-span-4">{document.fileName}</div>
+              <div className="col-span-4 text-xs font-bold md:col-span-2">{dbDocumentRoleLabels[role as 'proposal' | 'reference' | 'memo'] ?? role}</div>
+              <div className="col-span-3 text-xs font-bold md:col-span-1">{outcome ? proposalOutcomeLabels[outcome] : '-'}</div>
+              <div className="col-span-9 text-xs leading-5 text-slate-600 md:col-span-2">{outcomeReason || '-'}</div>
+              <div className="col-span-12 md:col-span-3">
+                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusTone[document.extractionStatus]}`}>
+                  {document.extractionStatus}
+                </span>
+                {dbStatus ? (
+                  <span className={`ml-2 mt-2 inline-flex rounded-full border px-3 py-1 text-[11px] font-black ${dbStatus.tone}`}>
+                    {document.dbSaveStatus === 'saving' && <span className="mr-2 h-1.5 w-1.5 animate-pulse self-center rounded-full bg-current" />}
+                    {dbStatus.label}
+                  </span>
+                ) : null}
+                {document.warningMessage && <p className="mt-2 text-xs leading-5 text-slate-500">{document.warningMessage}</p>}
+                {document.errorMessage && document.errorMessage !== document.warningMessage && <p className="mt-2 text-xs font-semibold leading-5 text-red-600">{document.errorMessage}</p>}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1318,6 +1421,9 @@ export default function Home() {
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
   const [dbSaveStatus, setDbSaveStatus] = useState<DbSaveStatus>('idle');
   const [dbUploadRole, setDbUploadRole] = useState<'proposal' | 'reference' | 'memo'>('proposal');
+  const [dbUploadFile, setDbUploadFile] = useState<File | null>(null);
+  const [dbUploadOutcome, setDbUploadOutcome] = useState<ProposalOutcome>('unknown');
+  const [dbUploadOutcomeReason, setDbUploadOutcomeReason] = useState('');
   const [dbUploadNotice, setDbUploadNotice] = useState<UploadNotice | null>(null);
   const [isDbUploadModalOpen, setIsDbUploadModalOpen] = useState(false);
 
@@ -1470,17 +1576,13 @@ export default function Home() {
       });
       setDbUploadNotice({
         type: savedStatus === 'saved' ? 'success' : savedStatus === 'partial' ? 'warning' : savedStatus === 'disabled' ? 'warning' : 'error',
-        message: response.proposalPatternStatus === 'extracted'
-          ? 'Proposal patterns extracted'
-          : response.proposalPatternStatus === 'failed'
-            ? 'Proposal pattern extraction failed, document still saved'
-            : getDocumentDbSaveStatusLabel(savedStatus)?.label ?? 'DB upload failed',
+        message: getDocumentDbSaveStatusLabel(savedStatus)?.label ?? '저장 실패',
       });
     } catch (err) {
       console.error('DB upload persist request failed; uploaded file remains separate from RFP analysis.', err);
-      const message = getUploadErrorMessage(err, 'DB upload failed');
+      const message = getUploadErrorMessage(err, '저장 실패');
       updateDbUploadedDocument(enrichedDocument.id, { dbSaveStatus: 'failed', errorMessage: message });
-      setDbUploadNotice({ type: 'error', message: isLargePayloadError(err) ? message : 'DB upload failed' });
+      setDbUploadNotice({ type: 'error', message: isLargePayloadError(err) ? message : '저장 실패' });
     }
   };
 
@@ -1489,7 +1591,7 @@ export default function Home() {
     extractionStatus: ExtractionStatus,
     extractedText = '',
     warningMessage?: string,
-    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'pageTextSources' | 'textExtractionPageNumbers' | 'visionPageNumbers' | 'failedChunks' | 'failedPages' | 'needsReview' | 'errorMessage' | 'documentRole' | 'dbSaveStatus' | 'proposalPatternStatus' | 'proposalPatternCount'> = {},
+    options: Pick<UploadedDocument, 'ocrUsed' | 'ocrAvailable' | 'visionStatus' | 'visionUsed' | 'visionPageCount' | 'visionTotalPageCount' | 'totalPageCount' | 'documentAnalysisText' | 'visionAnalysis' | 'pageTextSources' | 'textExtractionPageNumbers' | 'visionPageNumbers' | 'failedChunks' | 'failedPages' | 'needsReview' | 'errorMessage' | 'documentRole' | 'dbSaveStatus' | 'proposalPatternStatus' | 'proposalPatternCount' | 'dbLibraryMetadata'> = {},
   ): UploadedDocument => {
     const documentRole = options.documentRole ?? inferUploadedDocumentRole(file.name, options.documentAnalysisText || extractedText);
 
@@ -1522,6 +1624,7 @@ export default function Home() {
       dbSaveStatus: options.dbSaveStatus ?? 'idle',
       proposalPatternStatus: options.proposalPatternStatus,
       proposalPatternCount: options.proposalPatternCount,
+      dbLibraryMetadata: options.dbLibraryMetadata,
     });
   };
 
@@ -2104,39 +2207,63 @@ export default function Home() {
     file.size > DB_STORAGE_UPLOAD_THRESHOLD_BYTES && ['pdf', 'pptx', 'docx'].includes(extension)
   );
 
-  const uploadDbFileThroughStorage = async (file: File, extension: string) => {
-    setLoading('Uploading file to storage');
-    setDbUploadNotice({ type: 'warning', message: 'Uploading file to storage' });
+  const buildDbLibraryMetadata = (file: File): UploadedDocument['dbLibraryMetadata'] => ({
+    ...(dbUploadRole === 'proposal' ? { outcome: dbUploadOutcome, outcomeReason: dbUploadOutcomeReason.trim() } : {}),
+    originalFileName: file.name,
+    uploadedVia: 'db_library_upload',
+  });
+
+  const uploadDbFileThroughStorage = async (file: File, extension: string, dbLibraryMetadata: UploadedDocument['dbLibraryMetadata']) => {
+    setLoading('업로드 중');
+    setDbUploadNotice({ type: 'warning', message: '업로드 중' });
     const storageFile: UploadedDbLibraryStorageFile = await uploadDbLibraryFileToStorage({ file, role: dbUploadRole });
 
     const pendingDocument = createUploadedDocument(
       file,
       '텍스트 추출 중',
       '',
-      'Extracting text',
-      { documentRole: dbUploadRole, dbSaveStatus: 'saving' },
+      '텍스트 추출 중',
+      { documentRole: dbUploadRole, dbSaveStatus: 'saving', dbLibraryMetadata },
     );
     addDbUploadedDocument(pendingDocument);
 
-    setLoading('Extracting text');
-    setDbUploadNotice({ type: 'warning', message: 'Extracting text' });
+    setLoading('텍스트 추출 중');
+    setDbUploadNotice({ type: 'warning', message: '텍스트 추출 중' });
 
-    const storageResponse = await fetch('/api/extract-from-storage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        input: state.input,
-        ...storageFile,
-      }),
-    });
-    const response = await parseJsonResponse<ExtractFromStorageResponse>(storageResponse, 'Storage DB 업로드 API');
+    let storageResponse: Response;
+    let response: ExtractFromStorageResponse;
+    try {
+      storageResponse = await fetch('/api/extract-from-storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: state.input,
+          ...storageFile,
+          dbLibraryMetadata,
+        }),
+      });
+      response = await parseJsonResponse<ExtractFromStorageResponse>(storageResponse, 'Storage DB 업로드 API');
+    } catch (storageError) {
+      console.error('DB storage extraction failed after original file upload.', storageError);
+      const partialDocument = { ...pendingDocument, extractionStatus: '원본 저장 / 텍스트 추출 실패' as const, warningMessage: DB_STORAGE_EXTRACTION_TIMEOUT_DETAIL, dbLibraryMetadata };
+      await persistDbUploadedDocumentSafely(partialDocument, true);
+      updateDbUploadedDocument(pendingDocument.id, {
+        extractionStatus: '원본 저장 / 텍스트 추출 실패',
+        warningMessage: DB_STORAGE_EXTRACTION_TIMEOUT_DETAIL,
+        errorMessage: getUploadErrorMessage(storageError, DB_STORAGE_EXTRACTION_TIMEOUT_DETAIL),
+        dbSaveStatus: 'partial',
+        dbChunkCount: 0,
+      });
+      setDbUploadNotice({ type: 'warning', message: DB_STORAGE_EXTRACTION_TIMEOUT_DETAIL });
+      return;
+    }
 
     const savedStatus = storageResponse.ok && response.status === 'saved' ? 'saved' : storageResponse.ok && response.status === 'partial' ? 'partial' : 'failed';
     updateDbUploadedDocument(pendingDocument.id, {
       documentRole: response.role ?? dbUploadRole,
-      extractionStatus: savedStatus === 'failed' ? '추출 실패' : savedStatus === 'partial' ? '일부 텍스트만 추출' : '텍스트 추출 완료',
-      warningMessage: savedStatus === 'partial' ? response.warning || response.message || 'Partial text saved' : undefined,
-      errorMessage: savedStatus === 'failed' ? response.error || response.message || 'DB upload failed' : undefined,
+      extractionStatus: response.extractionStatus ?? (savedStatus === 'failed' ? '추출 실패' : savedStatus === 'partial' ? '일부 텍스트만 추출' : '텍스트 추출 완료'),
+      warningMessage: savedStatus === 'partial' ? response.detail || response.warning || response.message || '일부 저장' : undefined,
+      errorMessage: savedStatus === 'failed' ? response.error || response.message || '저장 실패' : undefined,
       dbSaveStatus: savedStatus,
       dbProjectId: response.projectId,
       dbDocumentId: response.documentId,
@@ -2146,10 +2273,10 @@ export default function Home() {
       proposalPatternCount: response.proposalPatternCount,
     });
 
-    setLoading('Saving to DB');
+    setLoading('DB 저장 중');
     setDbUploadNotice({
       type: savedStatus === 'saved' ? 'success' : savedStatus === 'partial' ? 'warning' : 'error',
-      message: savedStatus === 'saved' ? 'Saved to DB' : savedStatus === 'partial' ? 'Partial text saved' : 'DB upload failed',
+      message: response.detail || (savedStatus === 'saved' ? '저장 성공' : savedStatus === 'partial' ? '일부 저장' : '저장 실패'),
     });
 
     if (savedStatus === 'failed') {
@@ -2172,30 +2299,51 @@ export default function Home() {
     });
   };
 
-  const handleDbFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleDbFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
     event.target.value = '';
-    if (!file) return;
-
-    setError('');
     setDbUploadNotice(null);
 
+    if (!file) {
+      setDbUploadFile(null);
+      return;
+    }
+
     if (file.size > MAX_DB_UPLOAD_FILE_SIZE_BYTES) {
+      setDbUploadFile(null);
       setDbUploadNotice({ type: 'error', message: '파일 크기가 너무 큽니다. 100MB 이하 파일을 업로드해주세요.' });
       return;
     }
 
     const extension = getFileExtension(file.name);
     if (![...clientReadableExtensions, ...serverReadableExtensions].includes(extension)) {
+      setDbUploadFile(null);
       setDbUploadNotice({ type: 'error', message: '지원하지 않는 파일 형식입니다. PDF, PPTX, DOCX, TXT, MD 파일을 업로드해주세요.' });
       return;
     }
 
-    setLoading('DB 업로드 저장 중...');
+    setDbUploadFile(file);
+  };
+
+  const handleDbUploadSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const file = dbUploadFile;
+    if (!file) {
+      setDbUploadNotice({ type: 'warning', message: '업로드할 파일을 먼저 선택해 주세요.' });
+      return;
+    }
+
+    setError('');
+    setDbUploadNotice(null);
+
+    const extension = getFileExtension(file.name);
+    const dbLibraryMetadata = buildDbLibraryMetadata(file);
+
+    setLoading('DB 저장 중');
 
     try {
       if (shouldUseStorageForDbUpload(file, extension)) {
-        await uploadDbFileThroughStorage(file, extension);
+        await uploadDbFileThroughStorage(file, extension, dbLibraryMetadata);
         return;
       }
 
@@ -2210,7 +2358,7 @@ export default function Home() {
         const message = data.error || data.warning || data.message || TEXT_EXTRACTION_FAILED_MESSAGE;
         console.error('DB upload text extraction failed.', { status: response.status, message });
         if (isLargePayloadError(message, response.status)) {
-          await uploadDbFileThroughStorage(file, extension);
+          await uploadDbFileThroughStorage(file, extension, dbLibraryMetadata);
           return;
         }
         throw new Error(message);
@@ -2221,10 +2369,10 @@ export default function Home() {
       if (!text) {
         const message = data.warning || data.error || TEXT_EXTRACTION_FAILED_MESSAGE;
         console.error('DB upload produced no text.', { fileName: file.name, message });
-        const friendlyMessage = getUploadErrorMessage(message, 'DB upload failed');
-        const failedDocument = createUploadedDocument(file, '추출 실패', '', friendlyMessage, { documentRole: dbUploadRole, dbSaveStatus: 'failed', errorMessage: friendlyMessage });
+        const friendlyMessage = getUploadErrorMessage(message, '저장 실패');
+        const failedDocument = createUploadedDocument(file, '추출 실패', '', friendlyMessage, { documentRole: dbUploadRole, dbSaveStatus: 'failed', errorMessage: friendlyMessage, dbLibraryMetadata });
         addDbUploadedDocument(failedDocument);
-        setDbUploadNotice({ type: 'error', message: isLargePayloadError(message) ? friendlyMessage : 'DB upload failed' });
+        setDbUploadNotice({ type: 'error', message: isLargePayloadError(message) ? friendlyMessage : '저장 실패' });
         return;
       }
 
@@ -2233,27 +2381,28 @@ export default function Home() {
         file,
         isPartial ? '일부 텍스트만 추출' : '텍스트 추출 완료',
         text,
-        isPartial ? data.warning || data.message || 'Partial text saved' : undefined,
+        isPartial ? data.warning || data.message || '일부 저장' : undefined,
         {
           documentRole: dbUploadRole,
           dbSaveStatus: 'saving',
+          dbLibraryMetadata,
           totalPageCount: data.pageCount,
           pageTextSources: extension === 'pptx' && data.slides?.length ? buildSlideTextSources(data.slides) : undefined,
         },
       );
 
       addDbUploadedDocument(document);
-      setDbUploadNotice({ type: 'warning', message: 'Uploading to DB' });
+      setDbUploadNotice({ type: 'warning', message: 'DB 저장 중' });
       await persistDbUploadedDocumentSafely(document, isPartial);
     } catch (err) {
       if (isLargePayloadError(err)) {
         try {
-          await uploadDbFileThroughStorage(file, extension);
+          await uploadDbFileThroughStorage(file, extension, dbLibraryMetadata);
           return;
         } catch (storageErr) {
           console.error('DB upload Storage retry failed.', storageErr);
           const message = getUploadErrorMessage(storageErr, LARGE_FILE_UPLOAD_GUIDANCE);
-          const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed', errorMessage: message });
+          const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed', errorMessage: message, dbLibraryMetadata });
           addDbUploadedDocument(failedDocument);
           setDbUploadNotice({ type: 'error', message });
           return;
@@ -2262,11 +2411,12 @@ export default function Home() {
 
       console.error('DB upload extract/upload failed.', err);
       const message = getUploadErrorMessage(err, TEXT_EXTRACTION_FAILED_MESSAGE);
-      const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed', errorMessage: message });
+      const failedDocument = createUploadedDocument(file, '추출 실패', '', message, { documentRole: dbUploadRole, dbSaveStatus: 'failed', errorMessage: message, dbLibraryMetadata });
       addDbUploadedDocument(failedDocument);
-      setDbUploadNotice({ type: 'error', message: isLargePayloadError(err) ? message : 'DB upload failed' });
+      setDbUploadNotice({ type: 'error', message: isLargePayloadError(err) ? message : '저장 실패' });
     } finally {
       setLoading('');
+      setDbUploadFile(null);
     }
   };
 
@@ -2648,7 +2798,7 @@ export default function Home() {
                 </button>
               </div>
 
-              <div className="mt-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+              <form className="mt-6 space-y-5" onSubmit={handleDbUploadSubmit}>
                 <label className="block">
                   <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">문서 유형</span>
                   <select
@@ -2661,30 +2811,81 @@ export default function Home() {
                     <option value="memo">메모 / Memo</option>
                   </select>
                 </label>
-                <label className="inline-flex cursor-pointer items-center justify-center self-end rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700">
-                  DB 파일 선택
-                  <input
-                    type="file"
-                    accept=".pdf,.pptx,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
-                    onChange={handleDbFileUpload}
-                    disabled={Boolean(loading)}
-                    className="sr-only"
-                  />
-                </label>
-              </div>
+
+                {dbUploadRole === 'proposal' && (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">결과</span>
+                      <select
+                        value={dbUploadOutcome}
+                        onChange={(event) => setDbUploadOutcome(event.target.value as ProposalOutcome)}
+                        className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
+                      >
+                        <option value="won">수주</option>
+                        <option value="lost">미수주</option>
+                        <option value="unknown">결과 모름</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">수주/미수주 이유 <span className="text-slate-400">(선택, 권장)</span></span>
+                      <textarea
+                        value={dbUploadOutcomeReason}
+                        onChange={(event) => setDbUploadOutcomeReason(event.target.value)}
+                        rows={3}
+                        placeholder="예: 기술 연출 차별성, 예산 적합성, 클라이언트 니즈 부합, 레퍼런스 신뢰도, 제안 범위 차이 등"
+                        className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold leading-6 text-slate-700 outline-none focus:border-emerald-500"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                    <p className="font-black text-slate-950">파일명 권장 형식</p>
+                    <p className="mt-1 font-semibold">[클라이언트]_[프로젝트명]_[문서유형].pdf 형식을 권장합니다.</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs font-semibold text-slate-600">
+                      <li>KIA_AutoLand_Hwaseong_PBV_proposal.pdf</li>
+                      <li>NAVERCloud_LEAP2025_proposal.pdf</li>
+                      <li>Hyundai_WorldHydrogenEXPO_RFP.pdf</li>
+                      <li>Samsung_GalaxyStudio_reference.pdf</li>
+                    </ul>
+                    <p className="mt-2 text-xs font-bold text-amber-700">한글 파일명도 가능하지만, 검색과 관리 안정성을 위해 영문+언더바 형식을 권장합니다.</p>
+                    {dbUploadFile && <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-black text-emerald-700">선택된 파일: {dbUploadFile.name}</p>}
+                  </div>
+                  <div className="flex flex-col gap-3 self-end">
+                    <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl border border-emerald-200 bg-white px-5 py-3 text-sm font-bold text-emerald-700 transition hover:bg-emerald-50">
+                      파일 선택
+                      <input
+                        type="file"
+                        accept=".pdf,.pptx,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+                        onChange={handleDbFileSelect}
+                        disabled={Boolean(loading)}
+                        className="sr-only"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      disabled={Boolean(loading) || !dbUploadFile}
+                      className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                    >
+                      DB에 업로드
+                    </button>
+                  </div>
+                </div>
+              </form>
 
               <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm leading-6 text-slate-700">
                 <p className="font-black text-emerald-900">업로드 상태</p>
-                <p className="mt-1 font-semibold">Uploading file to storage · Extracting text · Saving to DB · Saved to DB · Partial text saved · DB upload failed</p>
+                <p className="mt-1 font-semibold">대기 · 업로드 중 · 텍스트 추출 중 · DB 저장 중 · 저장 성공 · 일부 저장 · 저장 실패 · 원본 저장 / 텍스트 추출 실패</p>
                 {latestDbUploadStatus && (
                   <span className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-black ${latestDbUploadStatus.tone}`} role="status" aria-live="polite">
                     {latestDbUploadedDocument?.dbSaveStatus === 'saving' && <span className="mr-2 h-1.5 w-1.5 animate-pulse self-center rounded-full bg-current" />}
-                    {latestDbUploadStatus.label}{latestDbUploadedDocument?.dbChunkCount !== undefined ? ` · ${latestDbUploadedDocument.dbChunkCount} chunks` : ''}
+                    {latestDbUploadStatus.label}
                   </span>
                 )}
               </div>
 
-              <UploadedDocumentsList documents={dbUploadedDocuments} />
+              <DbLibraryUploadedDocumentsList documents={dbUploadedDocuments} />
               {dbUploadNotice && (
                 <div
                   className={`mt-4 rounded-2xl border p-4 text-sm font-semibold leading-6 ${

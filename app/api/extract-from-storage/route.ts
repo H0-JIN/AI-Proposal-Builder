@@ -9,6 +9,8 @@ import { TEXT_EXTRACTION_FAILED_MESSAGE } from '@/lib/extractedTextValidation';
 import type { ProjectInput, UploadedDocument } from '@/lib/types';
 import type { DocumentRole } from '@/lib/dbTypes';
 
+const DB_STORAGE_EXTRACTION_TIMEOUT_DETAIL = '파일 원본은 Storage에 저장되었지만, PDF 텍스트 추출이 시간 초과되었습니다. MD/TXT 변환본을 추가 업로드하면 구조 분석에 더 안정적으로 사용할 수 있습니다.';
+
 const supportedStorageExtensions = new Set(['pdf', 'docx', 'pptx', 'txt', 'md']);
 
 type StorageDocumentRole = Extract<DocumentRole, 'proposal' | 'reference' | 'memo'>;
@@ -21,6 +23,7 @@ interface ExtractFromStoragePayload {
   mimeType?: string;
   fileSize?: number;
   role?: StorageDocumentRole;
+  dbLibraryMetadata?: UploadedDocument['dbLibraryMetadata'];
 }
 
 function isStorageDocumentRole(value: unknown): value is StorageDocumentRole {
@@ -83,20 +86,62 @@ export async function POST(request: Request) {
     });
 
     const text = (result.text ?? '').trim();
+    const documentId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const documentType = mapStorageRoleToDocumentType(role) ?? inferDocumentType(fileName);
+
     if (!text) {
+      const failureDetail = /timeout|FUNCTION_INVOCATION_TIMEOUT|time out|시간 초과/i.test(`${result.error ?? ''} ${result.warning ?? ''} ${result.message ?? ''}`)
+        ? DB_STORAGE_EXTRACTION_TIMEOUT_DETAIL
+        : result.error || result.warning || result.message || TEXT_EXTRACTION_FAILED_MESSAGE;
+      const document: UploadedDocument = {
+        id: documentId,
+        fileName,
+        fileType: payload.mimeType || extension.toUpperCase(),
+        documentType,
+        documentRole: role,
+        extractionStatus: '원본 저장 / 텍스트 추출 실패',
+        extractedText: '',
+        documentAnalysisText: '',
+        extractedCharCount: 0,
+        visionStatus: 'unused',
+        visionUsed: false,
+        totalPageCount: result.pageCount,
+        ocrUsed: false,
+        ocrAvailable: false,
+        warningMessage: failureDetail,
+        dbSaveStatus: 'saving',
+        dbLibraryMetadata: payload.dbLibraryMetadata,
+      };
+      const persistence = await persistUploadedDocumentToSupabase({
+        input: payload.input ?? createFallbackInput(fileName),
+        document,
+        documentChunks: [],
+      });
+      const status = persistence.status === 'saved' ? 'partial' : 'failed';
+
       return NextResponse.json(
         {
-          status: 'failed',
-          error: result.error || result.warning || result.message || TEXT_EXTRACTION_FAILED_MESSAGE,
-          extractionStatus: result.status,
+          status,
+          message: status === 'partial' ? '원본 저장 / 텍스트 추출 실패' : '저장 실패',
+          detail: failureDetail,
+          error: status === 'failed' ? failureDetail : undefined,
+          extractionStatus: '원본 저장 / 텍스트 추출 실패',
+          projectId: persistence.projectId,
+          documentId: persistence.documentId,
+          chunkCount: 0,
+          role: persistence.role ?? role,
+          pageCount: result.pageCount,
+          extractedPageCount: result.extractedPageCount,
+          storagePath,
+          bucket,
+          proposalPatternStatus: persistence.proposalPatternStatus,
+          proposalPatternCount: persistence.proposalPatternCount,
         },
-        { status: httpStatus >= 400 ? httpStatus : 422 },
+        { status: status === 'partial' ? 200 : httpStatus >= 400 ? httpStatus : 422 },
       );
     }
 
     const extractionPartial = result.status === 'partial' || Boolean(result.warning) || httpStatus >= 400;
-    const documentId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const documentType = mapStorageRoleToDocumentType(role) ?? inferDocumentType(fileName);
     const pageSources = result.slides?.length
       ? result.slides.map((slide) => ({ slideNumber: slide.slideNumber, sectionTitle: slide.title, text: slide.text, sourceType: 'textExtraction' as const }))
       : result.pages?.length
@@ -118,8 +163,9 @@ export async function POST(request: Request) {
       totalPageCount: result.pageCount,
       ocrUsed: false,
       ocrAvailable: false,
-      warningMessage: extractionPartial ? result.warning || result.message || 'Partial text saved' : undefined,
+      warningMessage: extractionPartial ? result.warning || result.message || '일부 저장' : undefined,
       dbSaveStatus: 'saving',
+      dbLibraryMetadata: payload.dbLibraryMetadata,
     };
 
     const chunks = createDocumentChunks({
@@ -141,13 +187,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       status,
-      message: status === 'partial' ? 'Partial text saved' : status === 'saved' ? 'Saved to DB' : 'DB upload failed',
+      message: status === 'partial' ? '일부 저장' : status === 'saved' ? '저장 성공' : '저장 실패',
       projectId: persistence.projectId,
       documentId: persistence.documentId,
       chunkCount: persistence.chunkCount,
       role: persistence.role ?? role,
-      extractionStatus: result.status,
+      extractionStatus: extractionPartial ? '일부 텍스트만 추출' : '텍스트 추출 완료',
       warning: result.warning,
+      detail: result.warning,
       pageCount: result.pageCount,
       extractedPageCount: result.extractedPageCount,
       storagePath,
