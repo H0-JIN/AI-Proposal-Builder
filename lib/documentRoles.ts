@@ -3,6 +3,25 @@ import type { DocumentType } from './rag';
 
 export type UploadDocumentRole = Extract<DocumentRole, 'rfp' | 'proposal' | 'reference' | 'memo'>;
 
+export const canonicalDocumentRoles = ['rfp', 'proposal', 'reference', 'memo'] as const;
+
+export type CanonicalDocumentRole = (typeof canonicalDocumentRoles)[number];
+
+
+export function isCanonicalDocumentRole(value: unknown): value is CanonicalDocumentRole {
+  return typeof value === 'string' && (canonicalDocumentRoles as readonly string[]).includes(value);
+}
+
+export function getDocumentRole(document: { role?: unknown; document_role?: unknown } | null | undefined): CanonicalDocumentRole | undefined {
+  const role = typeof document?.role === 'string' ? document.role.trim() : undefined;
+  if (isCanonicalDocumentRole(role)) return role;
+
+  const legacyRole = typeof document?.document_role === 'string' ? document.document_role.trim() : undefined;
+  if (isCanonicalDocumentRole(legacyRole)) return legacyRole;
+
+  return undefined;
+}
+
 function normalizeRoleText(value: string) {
   return value.toLowerCase().replace(/[_.\-]+/g, ' ').replace(/\s+/g, ' ').trim();
 }

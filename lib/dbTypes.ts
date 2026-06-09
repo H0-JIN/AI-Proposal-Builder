@@ -1,18 +1,7 @@
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue | undefined };
 
-export type DocumentRole =
-  | 'rfp'
-  | 'clientBrief'
-  | 'reference'
-  | 'portfolio'
-  | 'proposal'
-  | 'template'
-  | 'budgetSample'
-  | 'scheduleSample'
-  | 'organizationSample'
-  | 'other'
-  | 'memo';
+export type DocumentRole = 'rfp' | 'proposal' | 'reference' | 'memo';
 
 export type ChunkImportance = 'high' | 'medium' | 'low';
 
@@ -33,7 +22,8 @@ export interface DocumentRecord {
   id: string;
   project_id: string;
   file_name: string;
-  role: DocumentRole;
+  role: DocumentRole | null;
+  document_role?: DocumentRole | null;
   mime_type: string | null;
   source_type: string | null;
   metadata: JsonValue | null;
@@ -136,7 +126,7 @@ export interface Database {
       };
       documents: {
         Row: DocumentRecord;
-        Insert: Partial<Pick<DocumentRecord, 'id' | 'mime_type' | 'source_type' | 'metadata' | 'status' | 'file_size' | 'created_at'>> &
+        Insert: Partial<Pick<DocumentRecord, 'id' | 'document_role' | 'mime_type' | 'source_type' | 'metadata' | 'status' | 'file_size' | 'created_at'>> &
           Pick<DocumentRecord, 'project_id' | 'file_name' | 'role'>;
         Update: Partial<Omit<DocumentRecord, 'id' | 'project_id' | 'created_at'>>;
         Relationships: [

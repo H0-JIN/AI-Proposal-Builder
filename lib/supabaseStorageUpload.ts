@@ -4,7 +4,7 @@ import type { Database, DocumentRole } from './dbTypes';
 export const PROPOSAL_LIBRARY_BUCKET = 'proposal-library';
 export const PROPOSAL_LIBRARY_PATH_PREFIX = 'project-documents';
 
-export type DbLibraryDocumentRole = Extract<DocumentRole, 'proposal' | 'reference' | 'memo'>;
+export type DbLibraryDocumentRole = Extract<DocumentRole, 'rfp' | 'proposal' | 'reference' | 'memo'>;
 
 export interface UploadDbLibraryFileInput {
   file: File;
