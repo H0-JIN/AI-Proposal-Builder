@@ -3,12 +3,14 @@ import type { AnalysisResult, ProposalNarrative } from './types';
 export interface EntityDifferentiationItem {
   entityName: string;
   entityType: string;
+  sourceEvidence: string;
   roleInProject: string;
   keyOffering: string;
   audienceTakeaway: string;
   distinctMessage: string;
   proofPoint: string;
   spatialOrContentRole: string;
+  experienceMechanism: string;
   visualOrToneCue: string;
   relationshipToOtherEntities: string;
   riskIfUndifferentiated: string;
@@ -26,7 +28,7 @@ export interface RfpDifferentiationStrategy {
 
 const empty = '현재 RFP 근거 없음';
 const entityDelimiters = /[,/&+·]|\s(?:and|or)\s|(?:와|과|및|,)/iu;
-const genericTaskWords = /^(?:제작|개발|운영|구성|기획|제안|관리|설치|철거|보고|협의|디자인)$/u;
+const genericTaskWords = /^(?:제작|개발|운영|구성|기획|제안|관리|설치|철거|보고|협의|디자인|콘텐츠|프로그램|서비스|제품|브랜드|기업)$/u;
 
 function clean(value?: string | null) {
   return value?.trim().replace(/\s+/g, ' ') ?? '';
@@ -76,12 +78,14 @@ function collectEntities(analysis: AnalysisResult): EntityDifferentiationItem[] 
     return {
       entityName,
       entityType: evidence?.entityType ?? 'RFP element',
+      sourceEvidence: evidence?.source || empty,
       roleInProject: evidence?.source || empty,
       keyOffering: clean(product?.keyFeature) || empty,
       audienceTakeaway: clean(product?.valueProposition) || empty,
-      distinctMessage: empty,
+      distinctMessage: clean(product?.valueProposition) || empty,
       proofPoint: clean(product?.valueProposition) || evidence?.source || empty,
       spatialOrContentRole: evidence?.source || empty,
+      experienceMechanism: clean(product?.keyFeature) || evidence?.source || empty,
       visualOrToneCue: empty,
       relationshipToOtherEntities: selected.length > 1 ? '같은 제안 명제 안에서 비교·역할 구분이 필요한 요소' : empty,
       riskIfUndifferentiated: '구분 없이 통합하면 평가자가 각 요소의 역할, 가치, 필요성을 판단하기 어렵습니다.',

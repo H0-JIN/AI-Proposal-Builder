@@ -10,17 +10,19 @@ const entityDifferentiationItemSchema = {
   properties: {
     entityName: { type: 'string' },
     entityType: { type: 'string' },
+    sourceEvidence: { type: 'string' },
     roleInProject: { type: 'string' },
     keyOffering: { type: 'string' },
     audienceTakeaway: { type: 'string' },
     distinctMessage: { type: 'string' },
     proofPoint: { type: 'string' },
     spatialOrContentRole: { type: 'string' },
+    experienceMechanism: { type: 'string' },
     visualOrToneCue: { type: 'string' },
     relationshipToOtherEntities: { type: 'string' },
     riskIfUndifferentiated: { type: 'string' },
   },
-  required: ['entityName', 'entityType', 'roleInProject', 'keyOffering', 'audienceTakeaway', 'distinctMessage', 'proofPoint', 'spatialOrContentRole', 'visualOrToneCue', 'relationshipToOtherEntities', 'riskIfUndifferentiated'],
+  required: ['entityName', 'entityType', 'sourceEvidence', 'roleInProject', 'keyOffering', 'audienceTakeaway', 'distinctMessage', 'proofPoint', 'spatialOrContentRole', 'experienceMechanism', 'visualOrToneCue', 'relationshipToOtherEntities', 'riskIfUndifferentiated'],
 } as const;
 
 const narrativeFlowStageSchema = {
@@ -241,6 +243,20 @@ const conceptDevelopmentLogicSchema = {
   ],
 } as const;
 
+
+const entityDifferentiationUseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    unifyingFrame: { type: 'string' },
+    distinctEntityRoles: { type: 'string' },
+    visitorRecognitionLogic: { type: 'string' },
+    proofByEntity: { type: 'string' },
+    riskCheck: { type: 'string' },
+  },
+  required: ['unifyingFrame', 'distinctEntityRoles', 'visitorRecognitionLogic', 'proofByEntity', 'riskCheck'],
+} as const;
+
 const conceptRationaleSchema = {
   type: 'object',
   additionalProperties: false,
@@ -332,6 +348,7 @@ export const conceptCandidatesJsonSchema = {
   properties: {
     hiddenNeeds: hiddenNeedsSchema,
     strategicApproach: strategicApproachSchema,
+    entityDifferentiationMatrix: { type: 'array', items: entityDifferentiationItemSchema },
     conceptDevelopmentLogic: conceptDevelopmentLogicSchema,
     concepts: {
       type: 'array',
@@ -353,6 +370,7 @@ export const conceptCandidatesJsonSchema = {
           keywordExecutionGuide: { type: 'array', minItems: 3, maxItems: 3, items: keywordExecutionGuideSchema },
           experienceNarrativeFlow: { type: 'array', minItems: 3, items: { type: 'string' } },
           antiPatternValidation: antiPatternValidationSchema,
+          entityDifferentiationUse: entityDifferentiationUseSchema,
           conceptRationale: conceptRationaleSchema,
           conceptTitle: { type: 'string' },
           subtitle: { type: 'string' },
@@ -390,6 +408,7 @@ export const conceptCandidatesJsonSchema = {
           'keywordExecutionGuide',
           'experienceNarrativeFlow',
           'antiPatternValidation',
+          'entityDifferentiationUse',
           'conceptRationale',
           'conceptTitle',
           'subtitle',
@@ -427,7 +446,7 @@ export const conceptCandidatesJsonSchema = {
       required: ['recommendedConceptId', 'recommendationReason', 'whyNotOthers'],
     },
   },
-  required: ['hiddenNeeds', 'strategicApproach', 'conceptDevelopmentLogic', 'concepts', 'recommendation'],
+  required: ['hiddenNeeds', 'strategicApproach', 'entityDifferentiationMatrix', 'conceptDevelopmentLogic', 'concepts', 'recommendation'],
 } as const;
 
 export const outlineJsonSchema = {
