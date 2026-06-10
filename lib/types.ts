@@ -276,6 +276,36 @@ export interface AnalysisResult {
   kpiTimelineConstraints: AnalysisSection;
 }
 
+export interface HiddenNeedsLayer {
+  surfaceRequest: string;
+  hiddenNeed: string;
+  clientAnxiety: string;
+  decisionTrigger: string;
+  evaluationRisk: string;
+  realWinningCondition: string;
+}
+
+export interface StrategicApproachLayer {
+  strategicTension: string;
+  winningApproach: string;
+  differentiationLogic: string;
+  audiencePerceptionShift: string;
+  proofLogic: string;
+}
+
+export interface KeywordExecutionGuide {
+  keyword: string;
+  spatialUXImplication: string;
+  designImplication: string;
+  contentImplication: string;
+}
+
+export interface AntiPatternValidation {
+  validationCriteria: string[];
+  passed: boolean;
+  validationSummary: string;
+}
+
 export interface ConceptDevelopmentLogic {
   winningStrategyBrief?: string;
   proposalThesis?: string;
@@ -315,8 +345,16 @@ export interface ConceptEvaluationScores {
 export interface ConceptCandidate {
   conceptId: string;
   conceptName: string;
+  conceptSlogan: string;
   conceptTagline: string;
   conceptDefinition: string;
+  hiddenNeedResolved: string;
+  strategicApproach: string;
+  whyThisConcept: string;
+  conceptKeywords: [string, string, string];
+  keywordExecutionGuide: KeywordExecutionGuide[];
+  experienceNarrativeFlow: string[];
+  antiPatternValidation: AntiPatternValidation;
   conceptRationale?: ConceptRationale;
   conceptTitle: string;
   subtitle: string;
@@ -349,6 +387,8 @@ export interface ConceptRecommendation {
 }
 
 export interface ConceptCandidatesResult {
+  hiddenNeeds: HiddenNeedsLayer;
+  strategicApproach: StrategicApproachLayer;
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
