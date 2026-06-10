@@ -8,7 +8,7 @@ import { assessInputQuality } from '@/lib/inputQuality';
 import { formatCategoryEvidenceGroupsForPrompt, retrieveCategoryEvidenceGroups } from '@/lib/rag';
 import { buildReferenceGuardInstruction } from '@/lib/referenceGuard';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
-import { buildConceptNamingRetryInstruction, normalizeConceptCandidatesResult, validateConceptNaming } from '@/lib/conceptNamingGuard';
+import { applyNonBlockingConceptNamingGuard, buildConceptNamingRetryInstruction, normalizeConceptCandidatesResult, validateConceptNaming } from '@/lib/conceptNamingGuard';
 import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
 import { formatProposalAvoidanceRulesForPrompt, formatProposalPatternDiagnostics, formatProposalPatternsForOutlinePrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
 
@@ -123,23 +123,33 @@ ${proposalAvoidanceRuleContext}`;
     });
 
     let result = normalizeConceptCandidatesResult(await generateConcepts());
-    const firstValidation = validateConceptNaming(result, { analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules });
+    const namingGuardContext = { input: body.input, analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules };
+    let validation = validateConceptNaming(result, namingGuardContext);
 
-    if (!firstValidation.ok) {
-      result = normalizeConceptCandidatesResult(await generateConcepts(buildConceptNamingRetryInstruction(firstValidation.violations)));
-      const secondValidation = validateConceptNaming(result, { analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules });
-      if (!secondValidation.ok) {
-        return NextResponse.json(
-          {
-            error: '콘셉트 네이밍 가드 기준을 충족하지 못해 후보를 재생성해야 합니다.',
-            violations: secondValidation.violations,
-          },
-          { status: 422 },
-        );
-      }
+    for (let attempt = 0; attempt < 2 && !validation.ok && validation.violations.length >= result.concepts.length; attempt += 1) {
+      const nameRetry = normalizeConceptCandidatesResult(await generateConcepts(buildConceptNamingRetryInstruction(validation.violations)));
+      result = normalizeConceptCandidatesResult({
+        ...result,
+        concepts: result.concepts.map((candidate, index) => {
+          const retryName = nameRetry.concepts[index]?.conceptName?.trim();
+          return retryName
+            ? {
+                ...candidate,
+                conceptName: retryName,
+                conceptTitle: retryName,
+                conceptNameKR: nameRetry.concepts[index]?.conceptNameKR || retryName,
+                conceptNameEN: nameRetry.concepts[index]?.conceptNameEN || retryName,
+              }
+            : candidate;
+        }),
+      });
+      validation = validateConceptNaming(result, namingGuardContext);
     }
 
-    return NextResponse.json(result);
+    const guardedResult = applyNonBlockingConceptNamingGuard(result, namingGuardContext);
+    const response = guardedResult.concepts.length ? guardedResult : applyNonBlockingConceptNamingGuard({ ...result, concepts: result.concepts.slice(0, 1) }, namingGuardContext);
+
+    return NextResponse.json(response);
   } catch (error) {
     const message = error instanceof Error ? error.message : '콘셉트 후보 생성 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });

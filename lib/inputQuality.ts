@@ -102,8 +102,43 @@ const AI_MISSING_MATCHERS: Record<MissingInfoKey, RegExp[]> = {
 
 export const inputQualityChecklist = REQUIRED_INFO_ITEMS;
 
-function normalizeText(input: ProjectInput) {
-  return [input.projectName, input.clientName, input.briefText].filter(Boolean).join('\n');
+function flattenAnalysisText(value: unknown): string[] {
+  if (!value) return [];
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(flattenAnalysisText);
+  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).flatMap(flattenAnalysisText);
+  return [String(value)];
+}
+
+function normalizeText(input: ProjectInput, analysis?: AnalysisResult) {
+  const analysisEvidence = analysis ? flattenAnalysisText({
+    projectOverview: analysis.projectOverview,
+    clientChallenge: analysis.clientChallenge,
+    requiredDeliverables: analysis.requiredDeliverables,
+    scopeOfWork: analysis.scopeOfWork,
+    evaluationCriteria: analysis.evaluationCriteria,
+    requiredItems: analysis.requiredItems,
+    requiredScope: analysis.requiredScope,
+    existingAssets: analysis.existingAssets,
+    productInfo: analysis.productInfo,
+    productFeatures: analysis.productFeatures,
+    kpiObjectives: analysis.kpiObjectives,
+    numericInfo: analysis.numericInfo,
+    constraints: analysis.constraints,
+    schedule: analysis.schedule,
+    doNotTreatAsScope: analysis.doNotTreatAsScope,
+    targetInfo: analysis.targetInfo,
+    spatialCondition: analysis.spatialCondition,
+    contentCondition: analysis.contentCondition,
+    operationCondition: analysis.operationCondition,
+    kpiScheduleConstraints: analysis.kpiScheduleConstraints,
+    rfpRequirements: analysis.rfpRequirements?.rfpFact,
+    clientTask: analysis.clientTask?.rfpFact,
+    targetSpaceContentOperation: analysis.targetSpaceContentOperation?.rfpFact,
+    kpiTimelineConstraints: analysis.kpiTimelineConstraints?.rfpFact,
+  }) : [];
+
+  return [input.projectName, input.clientName, input.briefText, ...analysisEvidence].filter(Boolean).join('\n');
 }
 
 function getAiMissingKeys(missingInfo: string[]) {
@@ -121,14 +156,12 @@ function getAiMissingKeys(missingInfo: string[]) {
 }
 
 export function assessInputQuality(input: ProjectInput, analysis?: AnalysisResult): InputQualityResult {
-  const text = normalizeText(input);
+  const text = normalizeText(input, analysis);
   const briefLength = input.briefText.trim().replace(/\s+/g, ' ').length;
   const aiMissingInfo = analysis?.missingInfo?.filter(Boolean) ?? [];
-  const aiMissingKeys = getAiMissingKeys(aiMissingInfo);
-
   const presentItems = REQUIRED_INFO_ITEMS.filter((item) => {
     const hasKeywordEvidence = KEYWORD_GROUPS[item.key].some((pattern) => pattern.test(text));
-    return hasKeywordEvidence && !aiMissingKeys.has(item.key);
+    return hasKeywordEvidence;
   });
 
   const missingItems = REQUIRED_INFO_ITEMS.filter((item) => !presentItems.some((present) => present.key === item.key));
@@ -145,7 +178,10 @@ export function assessInputQuality(input: ProjectInput, analysis?: AnalysisResul
     isInsufficient,
     missingItems,
     presentItems,
-    aiMissingInfo,
+    aiMissingInfo: aiMissingInfo.filter((item) => {
+      const keys = getAiMissingKeys([item]);
+      return !Array.from(keys).some((key) => presentItems.some((present) => present.key === key));
+    }),
     guidance: isInsufficient
       ? '입력 정보가 부족하면 결과물이 일반적으로 생성될 수 있습니다. 아래 항목을 보완하면 더 구체적인 제안서가 생성됩니다.'
       : '핵심 정보가 비교적 충분합니다. 누락 항목은 생성 결과에서 확인 필요로 표시됩니다.',

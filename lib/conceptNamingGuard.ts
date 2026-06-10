@@ -393,6 +393,103 @@ export function validateConceptNaming(
   };
 }
 
+
+function normalizeSafeNameSeed(value: string) {
+  return value
+    .replace(/[()\[\]{}]/g, ' ')
+    .replace(/[^a-zA-Z0-9가-힣\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildSafeConceptNames(context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
+  const projectSeed = normalizeSafeNameSeed(context.input?.projectName || context.analysis?.projectOverview || context.analysis?.clientChallenge || '').split(/\s+/).find((token) => token.length >= 2 && token.length <= 10);
+  const clientSeed = normalizeSafeNameSeed(context.input?.clientName || '').split(/\s+/).find((token) => token.length >= 2 && token.length <= 10);
+  const thesisSeed = normalizeSafeNameSeed(context.proposalNarrative?.proposalThesis || context.analysis?.clientChallenge || '').split(/\s+/).find((token) => token.length >= 2 && token.length <= 10);
+  const prefix = projectSeed || clientSeed || thesisSeed || '제안';
+
+  return [
+    `${prefix}의 이유`,
+    `${prefix}의 증명`,
+    `${prefix}의 전환`,
+    `${prefix}의 약속`,
+    `${prefix}의 기준`,
+    '믿음의 설계',
+    '선택의 이유',
+    '관계의 증명',
+  ];
+}
+
+function applyConceptName(candidate: ConceptCandidate, conceptName: string, warning?: string): ConceptCandidate {
+  return normalizeConceptCandidate({
+    ...candidate,
+    conceptName,
+    conceptTitle: conceptName,
+    conceptNameKR: conceptName,
+    conceptNameEN: conceptName,
+    namingGuardWarning: warning,
+  });
+}
+
+function getCandidateViolations(candidate: ConceptCandidate, index: number, context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] }) {
+  const result = validateConceptNaming({
+    hiddenNeeds: {} as ConceptCandidatesResult['hiddenNeeds'],
+    strategicApproach: {} as ConceptCandidatesResult['strategicApproach'],
+    conceptDevelopmentLogic: {} as ConceptCandidatesResult['conceptDevelopmentLogic'],
+    recommendation: { recommendedConceptId: '', recommendationReason: '', whyNotOthers: '' },
+    concepts: [candidate],
+  }, context);
+
+  return result.violations.map((violation) => violation.replace(/^concept-1/, candidate.conceptId || `concept-${index + 1}`));
+}
+
+export function applyNonBlockingConceptNamingGuard(
+  result: ConceptCandidatesResult,
+  context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] } = {},
+): ConceptCandidatesResult {
+  const safeNames = buildSafeConceptNames(context);
+  const repairedConceptIds = new Set<string>();
+  const warningConceptIds = new Set<string>();
+  const allViolations: string[] = [];
+  let safeNameIndex = 0;
+
+  const concepts = result.concepts.map((candidate, index) => {
+    const originalViolations = getCandidateViolations(candidate, index, context);
+    if (!originalViolations.length) return candidate;
+
+    allViolations.push(...originalViolations);
+    for (let attempt = 0; attempt < safeNames.length; attempt += 1) {
+      const safeName = safeNames[(safeNameIndex + attempt) % safeNames.length];
+      const repairedCandidate = applyConceptName(candidate, safeName, '일부 콘셉트명이 기준을 충족하지 않아 자동 보정했습니다. 결과를 확인해 주세요.');
+      const repairedViolations = getCandidateViolations(repairedCandidate, index, context);
+      if (!repairedViolations.length) {
+        safeNameIndex += attempt + 1;
+        repairedConceptIds.add(candidate.conceptId || `concept-${index + 1}`);
+        return repairedCandidate;
+      }
+    }
+
+    warningConceptIds.add(candidate.conceptId || `concept-${index + 1}`);
+    return {
+      ...candidate,
+      namingGuardWarning: '콘셉트명 기준 확인이 필요하지만 전략 레이어는 유지했습니다.',
+    };
+  });
+
+  const guarded = normalizeConceptCandidatesResult({ ...result, concepts });
+  if (!repairedConceptIds.size && !warningConceptIds.size) return guarded;
+
+  return {
+    ...guarded,
+    namingGuardNotice: {
+      message: '일부 콘셉트명이 기준을 충족하지 않아 자동 보정했습니다. 결과를 확인해 주세요.',
+      repairedConceptIds: Array.from(repairedConceptIds),
+      warningConceptIds: Array.from(warningConceptIds),
+      violations: allViolations,
+    },
+  };
+}
+
 export function buildConceptNamingRetryInstruction(violations: string[]) {
   return [
     'CONCEPT NAMING GUARD REJECTION:',
