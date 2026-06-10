@@ -10,12 +10,13 @@ import {
   assessExtractedTextQuality,
   PDF_TEXT_EXTRACTION_PARTIAL_SUCCESS_MESSAGE,
   PDF_TEXT_EXTRACTION_SUCCESS_MESSAGE,
+  validateDirectTextInput,
   validateExtractedText,
 } from '@/lib/extractedTextValidation';
 
 export const MAX_RFP_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const MAX_DB_FILE_SIZE_BYTES = 100 * 1024 * 1024;
-export const supportedExtensions = ['pdf', 'docx', 'pptx'] as const;
+export const supportedExtensions = ['pdf', 'docx', 'pptx', 'txt', 'md'] as const;
 export const dbSupportedExtensions = ['pdf', 'docx', 'pptx', 'txt', 'md'] as const;
 
 export type SupportedExtension = (typeof supportedExtensions)[number];
@@ -540,22 +541,32 @@ export async function extractDocumentTextFromBuffer({
     : supportedExtensions.includes(extension as SupportedExtension);
 
   if (!isSupported) {
-    const formats = mode === 'db' ? 'PDF, DOCX, PPTX, TXT 또는 MD' : 'PDF, DOCX 또는 PPTX';
+    const formats = mode === 'db' ? 'PDF, DOCX, PPTX, TXT 또는 MD' : 'PDF, DOCX, PPTX, TXT 또는 MD';
     return { result: { error: `지원하지 않는 파일 형식입니다. ${formats} 파일을 업로드해주세요.` }, httpStatus: 400 };
   }
 
-  if (mode === 'db' && (extension === 'txt' || extension === 'md')) {
-    const text = buffer.toString('utf8').trim();
-    if (!text) {
-      return { result: { error: '저장할 텍스트를 찾을 수 없습니다.' }, httpStatus: 422 };
+  if (extension === 'txt' || extension === 'md') {
+    const validation = validateDirectTextInput(buffer.toString('utf8'));
+
+    if (!validation.ok) {
+      return {
+        result: {
+          error: validation.message,
+          text: validation.text,
+        },
+        httpStatus: 422,
+      };
     }
 
     return {
       result: {
-        text,
+        text: validation.text,
         status: 'success',
-        message: extension === 'md' ? 'MD 텍스트를 DB 저장용으로 읽었습니다.' : 'TXT 텍스트를 DB 저장용으로 읽었습니다.',
+        message: mode === 'db'
+          ? (extension === 'md' ? 'MD 텍스트를 DB 저장용으로 읽었습니다.' : 'TXT 텍스트를 DB 저장용으로 읽었습니다.')
+          : 'MD/TXT 직접 읽기 완료',
         extractedPageCount: 1,
+        extractedCharCount: validation.text.length,
       },
       httpStatus: 200,
     };
