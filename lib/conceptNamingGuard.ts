@@ -346,6 +346,13 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
 
   return {
     ...candidate,
+    entityDifferentiationUse: candidate.entityDifferentiationUse ?? {
+      unifyingFrame: '',
+      distinctEntityRoles: '',
+      visitorRecognitionLogic: '',
+      proofByEntity: '',
+      riskCheck: '',
+    },
     conceptName,
     conceptSlogan: candidate.conceptSlogan || conceptTagline,
     conceptTagline,
@@ -359,6 +366,7 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
 export function normalizeConceptCandidatesResult(result: ConceptCandidatesResult): ConceptCandidatesResult {
   return {
     ...result,
+    entityDifferentiationMatrix: result.entityDifferentiationMatrix ?? [],
     concepts: result.concepts.map(normalizeConceptCandidate),
   };
 }
@@ -435,6 +443,7 @@ function getCandidateViolations(candidate: ConceptCandidate, index: number, cont
   const result = validateConceptNaming({
     hiddenNeeds: {} as ConceptCandidatesResult['hiddenNeeds'],
     strategicApproach: {} as ConceptCandidatesResult['strategicApproach'],
+    entityDifferentiationMatrix: [],
     conceptDevelopmentLogic: {} as ConceptCandidatesResult['conceptDevelopmentLogic'],
     recommendation: { recommendedConceptId: '', recommendationReason: '', whyNotOthers: '' },
     concepts: [candidate],

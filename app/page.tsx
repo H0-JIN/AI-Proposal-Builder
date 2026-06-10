@@ -1173,6 +1173,53 @@ function ProposalNarrativePanel({ narrative }: { narrative?: ProposalNarrative }
   );
 }
 
+
+function EntityDifferentiationMatrixPanel({ matrix }: { matrix?: ConceptCandidatesResult['entityDifferentiationMatrix'] }) {
+  if (!matrix?.length) return null;
+
+  return (
+    <div className="mt-6 rounded-3xl border border-emerald-100 bg-emerald-50 p-5 text-emerald-950">
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-emerald-700">Entity Differentiation Matrix</p>
+      <h3 className="mt-2 text-xl font-black">콘셉트 생성 전 역할·메시지 차별화</h3>
+      <div className="mt-4 overflow-x-auto rounded-2xl bg-white/85">
+        <table className="min-w-full text-left text-xs leading-5">
+          <thead className="bg-emerald-100 text-emerald-900">
+            <tr>
+              {['Entity', 'Role', 'Takeaway', 'Message', 'Proof', 'Mechanism'].map((header) => (
+                <th key={header} className="whitespace-nowrap px-3 py-2 font-black">{header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.slice(0, 8).map((entity, index) => (
+              <tr key={`${entity.entityName}-${index}`} className="border-t border-emerald-100 align-top">
+                <td className="px-3 py-2 font-black text-emerald-900">{entity.entityName}<br /><span className="font-semibold text-emerald-700">{entity.entityType}</span></td>
+                <td className="px-3 py-2">{entity.roleInProject}</td>
+                <td className="px-3 py-2">{entity.audienceTakeaway}</td>
+                <td className="px-3 py-2">{entity.distinctMessage}</td>
+                <td className="px-3 py-2">{entity.proofPoint}</td>
+                <td className="px-3 py-2">{entity.experienceMechanism || entity.spatialOrContentRole}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function entityDifferentiationUseRows(concept: ConceptCandidate) {
+  const use = concept.entityDifferentiationUse;
+  if (!use) return [];
+  return [
+    ['통합 프레임', use.unifyingFrame],
+    ['개별 역할', use.distinctEntityRoles],
+    ['인지 로직', use.visitorRecognitionLogic],
+    ['Entity별 증거', use.proofByEntity],
+    ['과잉 통합 리스크', use.riskCheck],
+  ].filter(([, value]) => Boolean(value?.trim()));
+}
+
 function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLogic }) {
   if (!logic) return null;
 
@@ -3348,6 +3395,7 @@ export default function Home() {
             )}
             <ProposalNarrativePanel narrative={state.proposalNarrative} />
             <ConceptDevelopmentLogicPanel logic={state.conceptDevelopmentLogic} />
+            <EntityDifferentiationMatrixPanel matrix={state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix} />
             <ConceptRecommendationPanel recommendation={state.conceptRecommendation} />
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
               {(state.conceptCandidates ?? []).map((concept) => {
@@ -3377,6 +3425,14 @@ export default function Home() {
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
                       <div><dt className="font-black text-slate-950">핵심 메시지</dt><dd>{concept.coreMessage}</dd></div>
                       <div><dt className="font-black text-slate-950">명제 증명</dt><dd>{concept.thesisProof || concept.whyThisWorks}</dd></div>
+                      {entityDifferentiationUseRows(concept).length > 0 && (
+                        <div>
+                          <dt className="font-black text-slate-950">Entity Matrix 활용</dt>
+                          <dd className="mt-1 space-y-1">
+                            {entityDifferentiationUseRows(concept).map(([label, value]) => <p key={label}><span className="font-bold">{label}: </span>{value}</p>)}
+                          </dd>
+                        </div>
+                      )}
                       <div><dt className="font-black text-slate-950">경험 구조</dt><dd>{concept.experienceStructure || concept.experienceLogic}</dd></div>
                       <div><dt className="font-black text-slate-950">예상 핵심 체험 자산 방향</dt><dd>{concept.keyExperienceAssetDirection}</dd></div>
                       <div><dt className="font-black text-slate-950">강점</dt><dd>{concept.strengths?.length ? concept.strengths.join(' / ') : concept.whyThisWorks}</dd></div>

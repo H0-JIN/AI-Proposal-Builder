@@ -35,6 +35,76 @@ function sanitizeOutlineSlides(slides: SlideOutline[] = []) {
   }));
 }
 
+
+function normalizeSlideRoleText(value?: string) {
+  return (value ?? '')
+    .toLowerCase()
+    .replace(/[\s\-/_:()\[\]{}.,]+/g, '')
+    .replace(/대상관객|타깃관객|targetaudience/g, 'audience')
+    .replace(/전략적기회|strategicdirection/g, 'strategicopportunity')
+    .replace(/coreconcept|핵심콘셉트/g, 'concept')
+    .replace(/conceptrationale|컨셉도출|콘셉트도출/g, 'conceptrationale')
+    .trim();
+}
+
+function duplicateRoleKey(slide: SlideOutline) {
+  const roleText = normalizeSlideRoleText(`${slide.slideRole} ${slide.slideTitle} ${slide.slidePurpose}`);
+  if (/audience.*insight|insight.*audience|관객.*인사이트|타깃.*인사이트/.test(roleText)) return 'audience-insight';
+  if (/strategicopportunity|전략.*기회/.test(roleText)) return 'strategic-opportunity';
+  if (/conceptrationale|컨셉.*도출|콘셉트.*도출|왜.*컨셉|whythisconcept/.test(roleText)) return 'concept-rationale';
+  if (/\bconcept\b|핵심콘셉트/.test(roleText)) return 'core-concept';
+  if (/contentmechanism|콘텐츠.*메커니즘|작동원리/.test(roleText)) return 'content-mechanism';
+  return normalizeSlideRoleText(slide.slideTitle);
+}
+
+function mergeDuplicateSlideRoles(slides: SlideOutline[] = []) {
+  const seen = new Map<string, SlideOutline>();
+  const merged: SlideOutline[] = [];
+
+  for (const slide of slides) {
+    const key = duplicateRoleKey(slide);
+    const previous = seen.get(key);
+    if (!previous) {
+      seen.set(key, slide);
+      merged.push(slide);
+      continue;
+    }
+
+    previous.keyMessage = [previous.keyMessage, slide.keyMessage].filter(Boolean).join(' / ');
+    previous.mainCopy = [previous.mainCopy, slide.mainCopy].filter(Boolean).join(' ');
+    previous.sourceEvidence = Array.from(new Set([...(previous.sourceEvidence ?? []), ...(slide.sourceEvidence ?? [])])).slice(0, 8);
+    previous.confirmNeededNote = [previous.confirmNeededNote, slide.confirmNeededNote].filter(Boolean).join(' / ');
+  }
+
+  return merged.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
+}
+
+function ensureEntityDifferentiationOutlineSlide(slides: SlideOutline[], differentiationStrategy: ReturnType<typeof buildRfpDifferentiationStrategy>) {
+  if (!differentiationStrategy.hasMultipleEntities || differentiationStrategy.entityDifferentiationMatrix.length < 2) return slides;
+  const hasDifferentiationSlide = slides.some((slide) => /entity|differentiation|role.*matrix|message.*matrix|차별화|역할.*매트릭스|메시지.*매트릭스/i.test(`${slide.slideType} ${slide.slideTitle} ${slide.slideRole} ${slide.keyMessage}`));
+  if (hasDifferentiationSlide) return slides.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
+
+  const conceptIndex = slides.findIndex((slide) => /concept rationale|core concept|컨셉|콘셉트/i.test(`${slide.slideTitle} ${slide.slideType}`));
+  const insertIndex = conceptIndex >= 0 ? conceptIndex : Math.min(6, slides.length);
+  const entityNames = differentiationStrategy.entityDifferentiationMatrix.map((item) => item.entityName).join(' / ');
+  const newSlide: SlideOutline = {
+    slideNumber: insertIndex + 1,
+    slideType: 'Strategic Approach - Entity Differentiation Matrix',
+    slideTitle: 'Entity Differentiation Strategy',
+    slidePurpose: 'Strategy',
+    slideRole: 'entity differentiation strategy / role-message matrix',
+    relationToThesis: differentiationStrategy.differentiationPrinciple,
+    whyThisSlideExists: '복수 entity의 역할, 메시지, 증거, 공간·콘텐츠 역할을 콘셉트 선언 전에 분리해 과잉 통합을 방지합니다.',
+    sourceEvidence: differentiationStrategy.entityDifferentiationMatrix.map((item) => item.sourceEvidence).filter(Boolean).slice(0, 8),
+    referenceAllowed: false,
+    keyMessage: `${differentiationStrategy.unifyingFrame} 아래 ${entityNames}의 역할과 관객 인식 포인트를 분리합니다.`,
+    mainCopy: differentiationStrategy.entityDifferentiationMatrix.map((item) => `${item.entityName}: ${item.roleInProject} → ${item.audienceTakeaway || item.distinctMessage}`).join(' / '),
+    confirmNeededNote: '',
+  };
+
+  return [...slides.slice(0, insertIndex), newSlide, ...slides.slice(insertIndex)].map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
+}
+
 const styleGuides = {
   basic: '프로젝트 이해, 과제 정의, 경험 전략, 콘셉트, 공간/콘텐츠 구성, 운영 및 기대 효과가 이어지는 기본형 구조.',
   cheil: '브랜드 과제, 소비자 인사이트, 경험 전략, 캠페인형 공간 아이디어, 확산/바이럴 포인트, 실행 계획을 강조하는 제일기획형 구조.',
@@ -103,8 +173,8 @@ export async function POST(request: Request) {
         'Quality-related lost proposal reasons must become avoidance rules for generic concept, weak differentiation, over-integrated story, unclear client benefit, weak audience insight, weak proof of feasibility, missing operational detail, content list without hierarchy, visuals/media without reason, concept before rationale, or copied old structure without current relevance.',
         'proposal_patterns는 구조적 흐름만 참고한다. 현재 RFP 분석을 최우선 원천으로 삼고, 패턴은 slide order, concept buildup, core concept 선언 타이밍, problem→insight→strategy→concept→content→proof→operation 관계, 각 장표의 존재 이유, operation/credential 장표 배치를 개선하는 보조 가이드로만 사용하라.',
         'Do not default to generic concept words. The concept must emerge from the current RFP’s specific strategic tension, audience barrier, client objective, and proof logic.',
-        'If the RFP contains multiple entities, do not solve the proposal only with unity. Define what is unified and what remains distinct. Include a differentiation strategy when multiple companies, brands, divisions, zones, products/services, audiences, visitor types, content categories, stakeholders, or evaluation priorities are present.',
-        'Every slide needs a clear role, why it exists, sourceEvidence from the current RFP when possible, and explicit relation to proposalThesis. Operation/proof/credential slides appear only where they support the thesis.',
+        'If the RFP contains multiple entities, do not solve the proposal only with unity. Define what is unified and what remains distinct. Include one or more entity differentiation slides before/around Concept Rationale: entity differentiation strategy, role/message matrix, entity-by-entity content strategy, and integration logic that connects entities without erasing their differences.',
+        'Before finalizing, detect duplicate slide roles or near-duplicate titles such as Audience Insight + 대상 관객 인사이트, Strategic Opportunity + 전략적 기회, Concept Rationale + Core Concept with repeated bullets; merge or remove duplicates instead of outputting both. Every slide needs a clear role, why it exists, sourceEvidence from the current RFP when possible, and explicit relation to proposalThesis. Operation/proof/credential slides appear only where they support the thesis.',
         'Cover 다음 첫 전략 섹션은 반드시 1) Project / Market Context 2) Core Problem / Challenge 3) Audience Insight 4) Strategic Opportunity 5) Concept Rationale 6) Core Concept 7) Experience Principle / Visitor Journey 순서로 배치하라. Strategic Opportunity, Experience Principle, Visitor Journey, Media Overview, Spatial Overview, Content Mechanism은 Project / Market Context와 Core Problem보다 앞에 절대 두지 말라. Core Concept는 Project / Market Context, Core Problem, Audience Insight, Strategic Opportunity, Concept Rationale이 모두 설명된 뒤에만 배치하라.',
         'Concept Rationale은 공간 제약에서 시작하지 말고 1) hydrogen처럼 보이지 않는 시스템 기반 가치 2) HTWO/hydrogen value chain의 복잡성 3) B2B와 public audience의 다른 이해 수준 4) Hyundai Motor Group hydrogen leadership을 신뢰 가능하고 체험 가능하게 만들어야 하는 필요 5) 선택 콘셉트가 그 간극을 가장 잘 표현하는 이유 순서로 작성하라. Case Insight가 유용할 때는 Concept Rationale의 전략 근거로만 활용하고 콘텐츠 제안 섹션 뒤에 두지 말라. Columns, booth constraints, venue limitations, layout constraints는 Spatial Strategy 이전에 한 번의 supporting challenge로만 언급할 수 있으며 early slide title이나 Concept Rationale의 주된 근거가 되어서는 안 된다.',
         '각 outline slide는 slidePurpose를 Problem, Insight, Strategy, Concept, Experience, Content, Proof, Impact 중 하나로만 지정하고 slideRole, relationToThesis, whyThisSlideExists를 반드시 작성하라. sourceEvidence는 문자열 배열로 작성하고, 현재 프로젝트 근거가 없으면 반드시 빈 배열 []을 넣어라. referenceAllowed는 Reference Guard가 허용한 현재 프로젝트 레퍼런스 근거가 있을 때만 true이고 기본값은 false다.',
@@ -135,7 +205,7 @@ export async function POST(request: Request) {
         isEventOperationType ? '행사 운영형의 성과 장표는 운영 품질 관리 지표와 측정 체계를 중심으로 구성하고 체험 산출/공유 장표로 대체하지 말라.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '콘텐츠 개발형에서는 Media / Interactive Plan을 5장으로 강제 확장하지 말고 hero/sub content의 media mechanism과 scenario를 설명하는 범위로 제한하라. Output & Share는 RFP가 명시할 때만 생성하라.' : 'Media / Interactive Plan은 절대 1장으로 요약하지 말고 최소 5장(Media Experience Overview, Key Media Scene, Interactive Flow, Content Mechanism, Output & Share)으로 구성하라. Content Mechanism과 콘텐츠 작동 원리 및 메커니즘처럼 같은 의미의 장표를 중복 생성하지 말라. 미디어/인터랙션 요소가 많으면 핵심 체험 자산별 상세 장표를 추가하라.',
         'Spatial zoning, Media Overview, Content Mechanism, Key Media Scene, Hero Image, detailed content modules는 Core Concept 이후 실행 전략 섹션에서만 다루고, Core Concept 이전의 문제/인사이트/전략 근거 섹션에는 배치하지 말라.',
         '공간 구성과 콘텐츠 구성을 한 장에 뭉뚱그리지 말고 핵심 체험 단위별로 분리하라.',
-        'RFP나 분석 결과의 taskSections.requiredDeliverables/requiredScope/productInfo에 제품/서비스 단위가 있으면 그 단위별 Product Experience Detail 장표를 포함하되, “제작”, “개발”, “운영”, “구성”, “기획”, “제안” 같은 과업/업무 범위 표현은 체험 콘텐츠명으로 사용하지 말라. 체험 상세 장표는 방문객 행동, 시스템 반응, 결과물이 명확한 콘텐츠만 생성한다. referenceOnly/doNotTreatAsScope/existingAssets에서만 감지된 참고 사례, 기존 캠페인, 레슨런드 항목은 제품별 체험 상세 장표로 만들지 말라. 포괄적인 제품명+체험존 제목 대신, 현재 RFP에 명시된 제품/서비스별 방문객 행동·시스템 반응·인식 변화가 드러나는 구체 제목을 사용하라.',
+        'RFP나 Entity Differentiation Matrix 또는 분석 결과의 taskSections.requiredDeliverables/requiredScope/productInfo에 제품/서비스/회사/브랜드/존/관객/콘텐츠 단위가 있으면 그 단위별 Product Experience Detail 장표를 포함하되, “제작”, “개발”, “운영”, “구성”, “기획”, “제안” 같은 과업/업무 범위 표현은 체험 콘텐츠명으로 사용하지 말라. 체험 상세 장표는 matrix의 roleInProject, keyOffering, audienceTakeaway, experienceMechanism에서 mechanism을 파생하고 방문객 행동, 시스템 반응, 결과물이 명확한 콘텐츠만 생성한다. 모든 entity에 visitor mission/kiosk/video/result report 같은 동일 템플릿을 반복하지 말라. referenceOnly/doNotTreatAsScope/existingAssets에서만 감지된 참고 사례, 기존 캠페인, 레슨런드 항목은 제품별 체험 상세 장표로 만들지 말라. 포괄적인 제품명+체험존 제목 대신, 현재 RFP에 명시된 제품/서비스별 방문객 행동·시스템 반응·인식 변화가 드러나는 구체 제목을 사용하라.',
         'winningStrategyBrief / proposalThesis / experienceLogic은 Winning Strategy Layer 메타데이터다. 제공된 값이 있으면 보존해 제안서 구조의 전략 흐름에 반영하고, 없으면 서버에서 생성된 fallback 값을 사용하라. 이 메타데이터가 없다는 이유로 아웃라인 생성을 중단하거나 빈 장표를 만들지 말라.',
         'slideNumber는 1부터 순서대로 부여하라. 각 슬라이드에는 사용자가 수정할 수 있는 mainCopy를 포함하고, mainCopy에는 해당 장표의 본문 방향 또는 대표 제안서 문장을 1~2문장으로 작성하라. 모든 slide item은 schema의 모든 필드를 빠짐없이 채워야 하며 sourceEvidence가 없을 때도 []로 채워 생성 실패를 방지하라.',
       ].join('\n'),
@@ -190,9 +260,9 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
 - Operation Plan 장표 허용: ${structureGuard.hasExplicitOperationPlan ? '예' : '아니오'}`,
     });
 
-    const sanitizedSlides = sanitizeOutlineSlides(result.slides);
+    const sanitizedSlides = mergeDuplicateSlideRoles(ensureEntityDifferentiationOutlineSlide(sanitizeOutlineSlides(result.slides), differentiationStrategy));
     const expandedSlides = expandExperiencePlanOutline(sanitizedSlides, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
-    const coverageCheckedSlides = ensureRfpRequirementCoverage(removeInternalConceptComparisonSlides(expandedSlides), body.analysis, body.documentChunks ?? []);
+    const coverageCheckedSlides = mergeDuplicateSlideRoles(ensureRfpRequirementCoverage(removeInternalConceptComparisonSlides(expandedSlides), body.analysis, body.documentChunks ?? []));
     const guardedSlides = applyReferenceGuardToOutline(
       applyProposalStructureGuardToOutline(coverageCheckedSlides, body.input, body.analysis, { selectedConcept: body.selectedConcept, proposalNarrative, conceptDevelopmentLogic: body.conceptDevelopmentLogic }),
       body.analysis,
@@ -200,7 +270,7 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
       { allowReferenceSlides },
     );
 
-    return NextResponse.json(guardedSlides);
+    return NextResponse.json(mergeDuplicateSlideRoles(ensureEntityDifferentiationOutlineSlide(guardedSlides, differentiationStrategy)));
   } catch (error) {
     const message = error instanceof Error ? error.message : '아웃라인 생성 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });

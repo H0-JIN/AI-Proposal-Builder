@@ -202,12 +202,14 @@ export interface ProposalNarrativeFlowStage {
 export interface EntityDifferentiationItem {
   entityName: string;
   entityType: string;
+  sourceEvidence: string;
   roleInProject: string;
   keyOffering: string;
   audienceTakeaway: string;
   distinctMessage: string;
   proofPoint: string;
   spatialOrContentRole: string;
+  experienceMechanism: string;
   visualOrToneCue: string;
   relationshipToOtherEntities: string;
   riskIfUndifferentiated: string;
@@ -342,6 +344,14 @@ export interface ConceptEvaluationScores {
   operationFeasibilityScore: number;
 }
 
+export interface EntityDifferentiationUse {
+  unifyingFrame: string;
+  distinctEntityRoles: string;
+  visitorRecognitionLogic: string;
+  proofByEntity: string;
+  riskCheck: string;
+}
+
 export interface ConceptCandidate {
   conceptId: string;
   conceptName: string;
@@ -355,6 +365,7 @@ export interface ConceptCandidate {
   keywordExecutionGuide: KeywordExecutionGuide[];
   experienceNarrativeFlow: string[];
   antiPatternValidation: AntiPatternValidation;
+  entityDifferentiationUse: EntityDifferentiationUse;
   conceptRationale?: ConceptRationale;
   conceptTitle: string;
   subtitle: string;
@@ -397,6 +408,7 @@ export interface ConceptNamingGuardNotice {
 export interface ConceptCandidatesResult {
   hiddenNeeds: HiddenNeedsLayer;
   strategicApproach: StrategicApproachLayer;
+  entityDifferentiationMatrix: EntityDifferentiationItem[];
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
