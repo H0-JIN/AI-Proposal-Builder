@@ -200,6 +200,105 @@ const supplementalInfoFields: { key: keyof SupplementalInfo; label: string; plac
   { key: 'exclusions', label: '제외 사항', placeholder: '예: 대규모 구조 변경 제외, 외부 광고 집행 제외, 과도한 사은품 지양' },
 ];
 
+
+type SupplementalInfoConfidence = 'RFP 근거 있음' | 'AI 보완' | '사용자 확인 권장' | '사용자 수정';
+
+type SupplementalInfoDraft = {
+  key: keyof SupplementalInfo;
+  label: string;
+  value: string;
+  confidence: SupplementalInfoConfidence;
+  evidenceLevel: 'confirmed' | 'assumption' | 'user';
+  helper: string;
+};
+
+function compactValue(items: Array<string | undefined>, fallback = '') {
+  const value = uniqueItems(items).join(' / ').trim();
+  return value || fallback;
+}
+
+function hasMeaningfulValue(value: string) {
+  return value.trim().length >= 2 && !/^(없음|미정|미확정|확인 필요|n\/a|na|tbd)$/i.test(value.trim());
+}
+
+function buildSupplementalInfoDrafts(analysis: AnalysisResult | undefined, quality: ReturnType<typeof assessInputQuality>, currentInfo: SupplementalInfo): SupplementalInfoDraft[] {
+  const fieldMap = new Map(supplementalInfoFields.map((field) => [field.key, field]));
+  const presentKeys = new Set(quality.presentItems.map((item) => item.key === 'target' ? 'targetCustomer' : item.key));
+  const missingKeys = new Set(quality.missingItems.map((item) => item.key === 'target' ? 'targetCustomer' : item.key));
+
+  const analysisDrafts: Record<keyof SupplementalInfo, string> = {
+    projectPurpose: compactValue([
+      analysis?.clientChallenge,
+      ...(analysis?.kpiObjectives ?? []),
+      ...(analysis?.clientTask?.rfpFact ?? []),
+    ], 'RFP 과제와 제안 목적을 기준으로 설득 메시지를 보완합니다.'),
+    spaceLocationScale: compactValue([
+      analysis?.spatialCondition,
+      ...(analysis?.targetSpaceContentOperation?.rfpFact ?? []),
+      ...(analysis?.constraints ?? []),
+    ], 'RFP의 공간/동선 조건을 기준으로 적용 가능한 규모를 가정합니다.'),
+    targetCustomer: compactValue([
+      analysis?.targetInfo,
+      ...(analysis?.clientTask?.rfpFact ?? []),
+    ], 'RFP 맥락상 주요 의사결정자와 방문객을 함께 고려합니다.'),
+    experienceElements: compactValue([
+      analysis?.contentCondition,
+      ...(analysis?.requiredItems ?? []),
+      ...(analysis?.requiredDeliverables ?? []),
+      ...(analysis?.scopeOfWork ?? []),
+    ], '필수 산출물과 콘텐츠 조건을 바탕으로 핵심 체험 요소를 보완합니다.'),
+    brandMessage: compactValue([
+      ...(analysis?.productInfo ?? []),
+      ...(analysis?.productFeatures?.map((feature) => `${feature.product}: ${feature.valueProposition || feature.keyFeature}`) ?? []),
+      ...(analysis?.rfpRequirements?.rfpFact ?? []),
+    ], '브랜드/제품 정보가 제한적이므로 RFP 과제 중심 메시지로 보완합니다.'),
+    schedule: compactValue([
+      ...(analysis?.schedule ?? []),
+      ...(analysis?.kpiScheduleConstraints ?? []),
+      ...(analysis?.kpiTimelineConstraints?.rfpFact ?? []),
+    ], '상세 일정은 발주처 확인 전제로 단계별 준비/제작/운영 흐름을 가정합니다.'),
+    budgetScope: compactValue([
+      ...(analysis?.scopeOfWork ?? []),
+      ...(analysis?.requiredScope ?? []),
+      ...(analysis?.requiredDeliverables ?? []),
+    ], '명시 예산이 없으면 제안 범위 중심으로 제작/운영 포함 범위를 가정합니다.'),
+    designTone: compactValue([
+      ...(analysis?.referenceOnly ?? []),
+      ...(analysis?.existingAssets ?? []),
+      ...(analysis?.targetSpaceContentOperation?.aiProposal ?? []),
+    ], 'RFP의 브랜드/레퍼런스/공간 맥락에 맞춰 톤앤매너를 보완합니다.'),
+    exclusions: compactValue([
+      ...(analysis?.doNotTreatAsScope ?? []),
+      ...(analysis?.constraints ?? []),
+      ...(analysis?.referenceOnly ?? []),
+    ], 'RFP 제약과 제외 범위를 기준으로 과도한 확장을 방지합니다.'),
+  };
+
+  return supplementalInfoFields.map((field) => {
+    const userValue = currentInfo[field.key]?.trim() ?? '';
+    const aiValue = analysisDrafts[field.key];
+    const isUserEdited = hasMeaningfulValue(userValue) && userValue !== aiValue;
+    const hasRfpEvidence = presentKeys.has(field.key) && hasMeaningfulValue(aiValue);
+    const isHighRiskMissing = missingKeys.has(field.key) && !hasMeaningfulValue(aiValue);
+    const confidence: SupplementalInfoConfidence = isUserEdited
+      ? '사용자 수정'
+      : hasRfpEvidence
+        ? 'RFP 근거 있음'
+        : isHighRiskMissing
+          ? '사용자 확인 권장'
+          : 'AI 보완';
+
+    return {
+      key: field.key,
+      label: fieldMap.get(field.key)?.label ?? field.label,
+      value: userValue || aiValue,
+      confidence,
+      evidenceLevel: isUserEdited ? 'user' : hasRfpEvidence ? 'confirmed' : 'assumption',
+      helper: confidence === 'RFP 근거 있음' ? 'RFP 분석에서 확인된 사실입니다.' : confidence === '사용자 수정' ? '사용자가 수정한 값입니다.' : 'RFP 맥락을 바탕으로 AI가 보완한 가정값입니다.',
+    };
+  });
+}
+
 const supplementalInfoMarker = '--- 보완 입력 정보 ---';
 const shortBriefGuidance = '입력 정보가 부족하면 제안서가 일반적으로 생성될 수 있습니다. 아래 정보를 추가하면 결과 품질이 개선됩니다.';
 
@@ -797,15 +896,31 @@ type ConfirmationInfo = {
   count: number;
 };
 
-function AdditionalInfoRecommendationPanel({ confirmationInfo }: { confirmationInfo: ConfirmationInfo }) {
+function AdditionalInfoReviewPanel({ drafts, confirmationInfo, supplementalInfo, onChange }: { drafts: SupplementalInfoDraft[]; confirmationInfo: ConfirmationInfo; supplementalInfo: SupplementalInfo; onChange: <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => void }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const highRiskCount = drafts.filter((draft) => draft.confidence === '사용자 확인 권장').length;
+  const confirmedCount = drafts.filter((draft) => draft.evidenceLevel === 'confirmed').length;
+  const assumptionCount = drafts.filter((draft) => draft.evidenceLevel === 'assumption').length;
+  const badgeClass = (confidence: SupplementalInfoConfidence) => confidence === 'RFP 근거 있음'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    : confidence === '사용자 수정'
+      ? 'border-blue-200 bg-blue-50 text-blue-700'
+      : confidence === '사용자 확인 권장'
+        ? 'border-amber-300 bg-amber-100 text-amber-800'
+        : 'border-slate-200 bg-slate-50 text-slate-600';
 
   return (
-    <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+    <div className="rounded-3xl border border-amber-200 bg-amber-50/80 p-4 text-amber-950">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">추가 정보 입력 권장</p>
-          <h3 className="mt-1 text-lg font-black">확인 필요 {confirmationInfo.count}건 · 추가 입력 시 분석 정확도 향상</h3>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-700">추가 정보 검토</p>
+          <h3 className="mt-1 text-lg font-black">AI가 보완한 가정값을 확인하고 필요 시 수정하세요.</h3>
+          <p className="mt-1 text-sm leading-6 text-amber-900">AI가 RFP를 바탕으로 보완한 가정값입니다. 필요하면 수정 후 반영하세요.</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs font-black">
+            <span className="rounded-full bg-white/80 px-3 py-1 text-emerald-700">RFP 근거 있음 {confirmedCount}개</span>
+            <span className="rounded-full bg-white/80 px-3 py-1 text-slate-700">AI 보완 {assumptionCount}개</span>
+            {highRiskCount > 0 && <span className="rounded-full bg-amber-200 px-3 py-1 text-amber-900">확인이 필요한 항목 {highRiskCount}개</span>}
+          </div>
         </div>
         <button
           type="button"
@@ -813,27 +928,33 @@ function AdditionalInfoRecommendationPanel({ confirmationInfo }: { confirmationI
           className="w-full rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm font-black text-amber-800 transition hover:bg-amber-100 md:w-auto"
           aria-expanded={isExpanded}
         >
-          {isExpanded ? '상세 항목 접기' : '상세 항목 보기'}
+          {isExpanded ? '가정값 접기' : '가정값 확인 / 수정'}
         </button>
       </div>
 
       {isExpanded && (
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
-            <p className="text-sm font-bold text-amber-900">AI 확인 필요 항목</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
-              {confirmationInfo.analysisNeeds.length ? confirmationInfo.analysisNeeds.map((item, index) => <li key={`${item}-${index}`}>{item}</li>) : <li>현재 AI 확인 필요 항목이 없습니다.</li>}
-            </ul>
-          </div>
-          <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
-            <p className="text-sm font-bold text-amber-900">자동 체크리스트 부족 항목</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
-              {confirmationInfo.checklistMissingItems.length ? confirmationInfo.checklistMissingItems.map((item) => (
-                <li key={item.key}>
-                  <span className="font-semibold">{item.label}</span>: {item.description}
-                </li>
-              )) : <li>자동 체크리스트 기준 필수 항목이 모두 확인되었습니다.</li>}
-            </ul>
+        <div className="mt-4 space-y-4">
+          {confirmationInfo.aiMissingInfo.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-white/80 px-4 py-3 text-sm leading-6 text-amber-900">
+              <span className="font-black">AI 확인 메모</span> · {confirmationInfo.aiMissingInfo.join(' / ')}
+            </div>
+          )}
+          <div className="grid gap-3 md:grid-cols-3">
+            {drafts.map((draft) => (
+              <label key={draft.key} className="block rounded-2xl border border-amber-100 bg-white/90 p-3 shadow-sm">
+                <span className="flex flex-wrap items-center justify-between gap-2 text-sm font-black text-slate-900">
+                  {draft.label}
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${badgeClass(draft.confidence)}`}>{draft.confidence}</span>
+                </span>
+                <textarea
+                  value={supplementalInfo[draft.key] || draft.value}
+                  onChange={(event) => onChange(draft.key, event.target.value)}
+                  className="mt-2 min-h-16 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-5 outline-none focus:border-blue-500"
+                  placeholder={draft.value || '필요 시 확인 내용을 입력하세요.'}
+                />
+                <span className="mt-1 block text-xs font-semibold leading-5 text-slate-500">{draft.helper}</span>
+              </label>
+            ))}
           </div>
         </div>
       )}
@@ -1526,6 +1647,7 @@ export default function Home() {
     ? { type: 'warning' as const, message: activeVisionDocument.warningMessage }
     : uploadNotice;
   const inputQuality = useMemo(() => assessInputQuality(analysisInput, step === 'analysis' ? state.analysis : undefined), [analysisInput, state.analysis, step]);
+  const supplementalInfoDrafts = useMemo(() => buildSupplementalInfoDrafts(state.analysis, inputQuality, supplementalInfo), [inputQuality, state.analysis, supplementalInfo]);
   const documentChunks = useMemo(() => getAllDocumentChunks(uploadedDocuments.map(enrichDocumentWithChunks)), [uploadedDocuments]);
   const confirmationInfo = useMemo(() => getConfirmationInfo(state.analysis, inputQuality), [state.analysis, inputQuality]);
   const hasConfirmationNeeds = confirmationInfo.count > 0;
@@ -1541,6 +1663,24 @@ export default function Home() {
       supplementalInfo: { ...(current.supplementalInfo ?? initialSupplementalInfo), [key]: value },
     }));
   };
+
+  useEffect(() => {
+    if (!state.analysis) return;
+    setState((current) => {
+      const currentSupplementalInfo = current.supplementalInfo ?? initialSupplementalInfo;
+      const nextSupplementalInfo = { ...currentSupplementalInfo };
+      let changed = false;
+
+      buildSupplementalInfoDrafts(current.analysis, assessInputQuality(analysisInput, current.analysis), currentSupplementalInfo).forEach((draft) => {
+        if (!nextSupplementalInfo[draft.key] && draft.value) {
+          nextSupplementalInfo[draft.key] = draft.value;
+          changed = true;
+        }
+      });
+
+      return changed ? { ...current, supplementalInfo: nextSupplementalInfo } : current;
+    });
+  }, [analysisInput, state.analysis]);
 
 
   const addUploadedDocument = (document: UploadedDocument, noticeType: UploadNotice['type'], message: string) => {
@@ -3165,41 +3305,9 @@ export default function Home() {
               <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
             </div>
             {hasConfirmationNeeds && (
-              <>
-                <div className="mt-6">
-                  <AdditionalInfoRecommendationPanel confirmationInfo={confirmationInfo} />
-                </div>
-                <div className="mt-3 rounded-3xl border border-amber-200 bg-amber-50 p-5">
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">추가 정보 입력</p>
-                    <h3 className="mt-2 text-xl font-black text-amber-950">부족한 정보를 입력하면 AI 분석을 다시 실행할 수 있습니다.</h3>
-                    <p className="mt-2 text-sm leading-6 text-amber-900">
-                      입력 정보가 부족하면 제안서가 일반적으로 생성될 수 있습니다. 아래 정보를 추가하면 결과 품질이 개선됩니다.
-                    </p>
-                    <p className="mt-2 text-sm font-semibold leading-6 text-amber-950">
-                      모든 항목을 입력할 필요는 없습니다. 확인 가능한 정보만 입력해도 분석 품질이 개선됩니다.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-white/70 px-4 py-3 text-sm font-bold text-amber-900 shadow-sm">
-                    확인 필요 {confirmationInfo.count}건
-                  </div>
-                </div>
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  {supplementalInfoFields.map((field) => (
-                    <label key={field.key} className="block">
-                      <span className="mb-2 block text-sm font-bold text-slate-800">{field.label}</span>
-                      <textarea
-                        value={supplementalInfo[field.key]}
-                        onChange={(event) => updateSupplementalInfo(field.key, event.target.value)}
-                        className="min-h-28 w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
-                        placeholder={field.placeholder}
-                      />
-                    </label>
-                  ))}
-                </div>
-                </div>
-              </>
+              <div className="mt-6">
+                <AdditionalInfoReviewPanel drafts={supplementalInfoDrafts} confirmationInfo={confirmationInfo} supplementalInfo={supplementalInfo} onChange={updateSupplementalInfo} />
+              </div>
             )}
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('create')}>이전</SecondaryButton>
@@ -3232,6 +3340,11 @@ export default function Home() {
                 </p>
               )}
             </div>
+            {state.conceptGenerationResult?.namingGuardNotice && (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900">
+                {state.conceptGenerationResult.namingGuardNotice.message}
+              </div>
+            )}
             <ProposalNarrativePanel narrative={state.proposalNarrative} />
             <ConceptDevelopmentLogicPanel logic={state.conceptDevelopmentLogic} />
             <ConceptRecommendationPanel recommendation={state.conceptRecommendation} />
@@ -3242,6 +3355,9 @@ export default function Home() {
                   <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
                     <h3 className="mt-2 text-2xl font-black text-slate-950">{getPresentationConceptName(concept)}</h3>
+                    {concept.namingGuardWarning && (
+                      <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 확인 권장</p>
+                    )}
                     <p className="text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
                     {conceptRationaleRows(concept).length > 0 && (
                       <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm leading-6 text-blue-950">

@@ -378,6 +378,7 @@ export interface ConceptCandidate {
   whyThisWorks: string;
   riskOrCaution: string;
   evaluationScores: ConceptEvaluationScores;
+  namingGuardWarning?: string;
 }
 
 export interface ConceptRecommendation {
@@ -386,12 +387,20 @@ export interface ConceptRecommendation {
   whyNotOthers: string;
 }
 
+export interface ConceptNamingGuardNotice {
+  message: string;
+  repairedConceptIds: string[];
+  warningConceptIds: string[];
+  violations: string[];
+}
+
 export interface ConceptCandidatesResult {
   hiddenNeeds: HiddenNeedsLayer;
   strategicApproach: StrategicApproachLayer;
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
+  namingGuardNotice?: ConceptNamingGuardNotice;
 }
 
 export interface SlideOutline extends SlideNarrativeMetadata {
