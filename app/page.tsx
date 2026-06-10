@@ -20,6 +20,7 @@ import {
   VISION_PROCESSING_GUIDANCE,
   VISION_PROCESSING_PAGE_LIMIT_MESSAGE,
   VISION_REQUIRED_MESSAGE,
+  validateDirectTextInput,
   validateExtractedText,
 } from '@/lib/extractedTextValidation';
 import { DEFAULT_VISION_CHUNK_SIZE, DEFAULT_VISION_MODE } from '@/lib/visionConfig';
@@ -2713,7 +2714,7 @@ export default function Home() {
 
     try {
       if (clientReadableExtensions.includes(extension)) {
-        const validation = validateExtractedText(await file.text());
+        const validation = validateDirectTextInput(await file.text());
         if (!validation.ok) {
           addUploadedDocumentAndPersist(
             createUploadedDocument(file, '추출 실패', '', validation.message),
@@ -2724,9 +2725,9 @@ export default function Home() {
         }
 
         addUploadedDocumentAndPersist(
-          createUploadedDocument(file, '텍스트 추출 완료', validation.text),
+          createUploadedDocument(file, '텍스트 추출 완료', validation.text, undefined, { documentAnalysisText: validation.text }),
           'success',
-          '파일에서 텍스트를 추출했습니다. 추출 원문은 화면에 표시하지 않고 AI 분석 입력에만 사용합니다.',
+          'MD/TXT 직접 읽기 완료',
         );
         return;
       }

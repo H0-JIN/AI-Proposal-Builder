@@ -209,6 +209,47 @@ function getLowQualityReasons(value: string, fileSizeBytes?: number): string[] {
   return Array.from(new Set(reasons));
 }
 
+
+export function validateDirectTextInput(
+  value: string,
+): ExtractedTextValidationResult {
+  const text = normalizeExtractedText(value);
+
+  if (!text) {
+    return {
+      ok: false,
+      reason: "empty",
+      text,
+      message: TEXT_EXTRACTION_FAILED_MESSAGE,
+    };
+  }
+
+  const characters = Array.from(text);
+  const replacementCount = characters.filter((character) => character === "\ufffd").length;
+  const readableCount = getReadableCharacterCount(text);
+  const replacementRatio = replacementCount / Math.max(characters.length, 1);
+
+  if (replacementRatio >= 0.3 || (replacementCount > 20 && replacementCount > readableCount)) {
+    return {
+      ok: false,
+      reason: "encodingCorruption",
+      text,
+      message: [TEXT_EXTRACTION_LOW_QUALITY_MESSAGE, ENCODING_CORRUPTION_DETECTED_MESSAGE].join(' · '),
+    };
+  }
+
+  if (readableCount === 0) {
+    return {
+      ok: false,
+      reason: "empty",
+      text,
+      message: TEXT_EXTRACTION_FAILED_MESSAGE,
+    };
+  }
+
+  return { ok: true, text };
+}
+
 export function validateExtractedText(
   value: string,
 ): ExtractedTextValidationResult {
