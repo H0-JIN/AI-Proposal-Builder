@@ -254,6 +254,57 @@ const conceptRationaleSchema = {
   required: ['problemInsight', 'clientNeed', 'audienceBarrier', 'strategicShift', 'whyThisConcept'],
 } as const;
 
+
+const hiddenNeedsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    surfaceRequest: { type: 'string' },
+    hiddenNeed: { type: 'string' },
+    clientAnxiety: { type: 'string' },
+    decisionTrigger: { type: 'string' },
+    evaluationRisk: { type: 'string' },
+    realWinningCondition: { type: 'string' },
+  },
+  required: ['surfaceRequest', 'hiddenNeed', 'clientAnxiety', 'decisionTrigger', 'evaluationRisk', 'realWinningCondition'],
+} as const;
+
+const strategicApproachSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    strategicTension: { type: 'string' },
+    winningApproach: { type: 'string' },
+    differentiationLogic: { type: 'string' },
+    audiencePerceptionShift: { type: 'string' },
+    proofLogic: { type: 'string' },
+  },
+  required: ['strategicTension', 'winningApproach', 'differentiationLogic', 'audiencePerceptionShift', 'proofLogic'],
+} as const;
+
+const keywordExecutionGuideSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    keyword: { type: 'string' },
+    spatialUXImplication: { type: 'string' },
+    designImplication: { type: 'string' },
+    contentImplication: { type: 'string' },
+  },
+  required: ['keyword', 'spatialUXImplication', 'designImplication', 'contentImplication'],
+} as const;
+
+const antiPatternValidationSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    validationCriteria: stringArray,
+    passed: { type: 'boolean' },
+    validationSummary: { type: 'string' },
+  },
+  required: ['validationCriteria', 'passed', 'validationSummary'],
+} as const;
+
 const conceptEvaluationScoresSchema = {
   type: 'object',
   additionalProperties: false,
@@ -279,6 +330,8 @@ export const conceptCandidatesJsonSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    hiddenNeeds: hiddenNeedsSchema,
+    strategicApproach: strategicApproachSchema,
     conceptDevelopmentLogic: conceptDevelopmentLogicSchema,
     concepts: {
       type: 'array',
@@ -290,8 +343,16 @@ export const conceptCandidatesJsonSchema = {
         properties: {
           conceptId: { type: 'string' },
           conceptName: { type: 'string' },
+          conceptSlogan: { type: 'string' },
           conceptTagline: { type: 'string' },
           conceptDefinition: { type: 'string' },
+          hiddenNeedResolved: { type: 'string' },
+          strategicApproach: { type: 'string' },
+          whyThisConcept: { type: 'string' },
+          conceptKeywords: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string' } },
+          keywordExecutionGuide: { type: 'array', minItems: 3, maxItems: 3, items: keywordExecutionGuideSchema },
+          experienceNarrativeFlow: { type: 'array', minItems: 3, items: { type: 'string' } },
+          antiPatternValidation: antiPatternValidationSchema,
           conceptRationale: conceptRationaleSchema,
           conceptTitle: { type: 'string' },
           subtitle: { type: 'string' },
@@ -319,8 +380,16 @@ export const conceptCandidatesJsonSchema = {
         required: [
           'conceptId',
           'conceptName',
+          'conceptSlogan',
           'conceptTagline',
           'conceptDefinition',
+          'hiddenNeedResolved',
+          'strategicApproach',
+          'whyThisConcept',
+          'conceptKeywords',
+          'keywordExecutionGuide',
+          'experienceNarrativeFlow',
+          'antiPatternValidation',
           'conceptRationale',
           'conceptTitle',
           'subtitle',
@@ -358,7 +427,7 @@ export const conceptCandidatesJsonSchema = {
       required: ['recommendedConceptId', 'recommendationReason', 'whyNotOthers'],
     },
   },
-  required: ['conceptDevelopmentLogic', 'concepts', 'recommendation'],
+  required: ['hiddenNeeds', 'strategicApproach', 'conceptDevelopmentLogic', 'concepts', 'recommendation'],
 } as const;
 
 export const outlineJsonSchema = {

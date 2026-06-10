@@ -2,6 +2,12 @@ import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, Proposa
 
 
 export const GENERIC_CONCEPT_WORD_PENALTY_LIST = [
+  'distinct unity',
+  'focused identity',
+  'differentiated synergy',
+  'synergized distinction',
+  'differentiation',
+  'identity',
   'nexus',
   'pulse',
   'vanguard',
@@ -21,9 +27,19 @@ export const GENERIC_CONCEPT_WORD_PENALTY_LIST = [
   'next',
   'shift',
   'flow',
+  'distinct',
+  'distinction',
+  'differentiated',
+  'differentiation',
+  'identity',
+  'unity',
 ];
 
 const WEAK_GENERIC_CONCEPT_NAMES = [
+  'distinct unity',
+  'focused identity',
+  'differentiated synergy',
+  'synergized distinction',
   'future nexus',
   'innovation hub',
   'future experience',
@@ -35,6 +51,10 @@ const WEAK_GENERIC_CONCEPT_NAMES = [
 ];
 
 const WEAK_GENERIC_TOKEN_COMBINATIONS = [
+  ['distinct', 'unity'],
+  ['focused', 'identity'],
+  ['differentiated', 'synergy'],
+  ['synergized', 'distinction'],
   ['future', 'nexus'],
   ['innovation', 'hub'],
   ['future', 'experience'],
@@ -148,7 +168,6 @@ const EXECUTION_NAMING_DEVICE_TERMS = [
 
 const RFP_KEYWORD_NAMING_DEVICES = [
   'value chain',
-  'hydrogen value chain',
   'rfp object list',
   'object list',
   '밸류체인',
@@ -218,6 +237,25 @@ function titleUnitCount(name: string) {
 function containsAny(value: string, terms: string[]) {
   const normalized = normalizedText(value);
   return terms.some((term) => normalized.includes(term.toLowerCase()));
+}
+
+function significantTokens(value: string) {
+  return normalizedText(value)
+    .split(/[^a-z0-9가-힣]+/iu)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 4);
+}
+
+function hasDirectAvoidanceRuleEcho(name: string, avoidanceRules: string[] = []) {
+  const nameTokens = new Set(significantTokens(name));
+  if (!nameTokens.size) return false;
+
+  return avoidanceRules.some((rule) => {
+    const ruleTokens = significantTokens(rule);
+    if (ruleTokens.length < 2) return false;
+    const overlap = ruleTokens.filter((token) => nameTokens.has(token)).length;
+    return overlap >= 2 || (ruleTokens.length === 2 && overlap === 1 && nameTokens.size <= 2);
+  });
 }
 
 function countTerms(value: string, terms: string[]) {
@@ -293,7 +331,7 @@ export function getPresentationConceptName(candidate?: ConceptCandidate) {
 
 export function getConceptTagline(candidate?: ConceptCandidate) {
   if (!candidate) return '';
-  return candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition || '';
+  return candidate.conceptSlogan || candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition || '';
 }
 
 export function getConceptDefinition(candidate?: ConceptCandidate) {
@@ -303,12 +341,13 @@ export function getConceptDefinition(candidate?: ConceptCandidate) {
 
 export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptCandidate {
   const conceptName = (candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR).trim();
-  const conceptTagline = (candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition).trim();
+  const conceptTagline = (candidate.conceptSlogan || candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition).trim();
   const conceptDefinition = (candidate.conceptDefinition || candidate.oneLineDefinition || candidate.whyThisWorks).trim();
 
   return {
     ...candidate,
     conceptName,
+    conceptSlogan: candidate.conceptSlogan || conceptTagline,
     conceptTagline,
     conceptDefinition,
     conceptTitle: conceptName,
@@ -326,7 +365,7 @@ export function normalizeConceptCandidatesResult(result: ConceptCandidatesResult
 
 export function validateConceptNaming(
   result: ConceptCandidatesResult,
-  context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative } = {},
+  context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] } = {},
 ) {
   const constraintTerms = collectConstraintTerms(context.analysis);
   const violations: string[] = [];
@@ -345,6 +384,7 @@ export function validateConceptNaming(
     if (hasUntransformedConceptRoleTerm(name)) violations.push(`${label}: conceptName uses execution methods, content categories, spatial solutions, constraints, or RFP keywords as the main naming device instead of a transformed strategic metaphor.`);
     if (hasExecutionDescriptionName(name)) violations.push(`${label}: conceptName reads like an execution strategy, content category, spatial solution, RFP keyword, or technical description instead of a strategic idea.`);
     if (containsAny(name, constraintTerms)) violations.push(`${label}: conceptName appears to be derived from constraints, deliverables, venue, schedule, or implementation conditions.`);
+    if (hasDirectAvoidanceRuleEcho(name, context.avoidanceRules)) violations.push(`${label}: conceptName directly echoes a lost-proposal avoidance rule; anti-patterns must be validation criteria, not naming source material.`);
   });
 
   return {
@@ -361,6 +401,6 @@ export function buildConceptNamingRetryInstruction(violations: string[]) {
     'Concept Role Guard: conceptName must express the proposal strategic idea, not the execution method. Do not use modular, interactive, value chain, media, zone, pavilion, experience, content, mechanism, spatial layout, booth/column constraints, deliverable categories, or RFP object lists as the main naming device unless transformed into a strong strategic metaphor.',
     'Reject names that read like technical descriptions, combine 2+ execution terms, use modular interactive or value chain as the main naming device, exceed 5 words without a strong reason, sound like slide titles, or start from constraints instead of proposalThesis.',
     'Do not use constraints, columns, booth limits, venue limitations, schedule, budget, deliverable names, equipment, media types, object lists, or floor-plan limitations as conceptName sources.',
-    'Universal Concept Novelty Guard: do not default to Nexus, Pulse, Vanguard, Synergy, Connect, Future, Innovation, Hub, Platform, Experience, Journey, Alliance, Lab, Studio, Universe, Beyond, Next, Shift, or Flow as the main concept name unless strongly justified by current RFP evidence. Avoid names that sound like generic tech/event branding. Concept names must be specific to the current brief and not reusable across unrelated RFPs. Do not use external project names or unrelated case names to make naming feel stronger.',
+    'Universal Concept Novelty Guard: do not default to Distinct Unity, Focused Identity, Differentiated Synergy, Nexus, Pulse, Vanguard, Synergy, Connect, Future, Innovation, Hub, Platform, Experience, Journey, Alliance, Lab, Studio, Universe, Beyond, Next, Shift, Flow, Differentiation, or Identity as the main concept name. Avoid names that sound like generic tech/event branding or direct correction of a lost-proposal reason. Concept names must be specific to the current brief and not reusable across unrelated RFPs. Do not use external project names or unrelated case names to make naming feel stronger.',
   ].join('\n');
 }
