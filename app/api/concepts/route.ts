@@ -107,8 +107,75 @@ function buildCompactAnalysis(analysis: AnalysisResult, differentiationSummary: 
   };
 }
 
+
+interface StrategicDirectionPlanItem {
+  type: string;
+  label: string;
+  emphasis: string;
+  chooseWhen: string;
+}
+
+function hasAny(text: string, patterns: RegExp[]) {
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: ProposalNarrative, hasMultipleEntities: boolean): StrategicDirectionPlanItem[] {
+  const evidenceText = [
+    analysis.projectOverview,
+    analysis.clientChallenge,
+    analysis.targetInfo,
+    analysis.contentCondition,
+    analysis.operationCondition,
+    analysis.spatialCondition,
+    ...(analysis.requiredItems ?? []),
+    ...(analysis.requiredScope ?? []),
+    ...(analysis.scopeOfWork ?? []),
+    ...(analysis.requiredDeliverables ?? []),
+    ...(analysis.evaluationCriteria ?? []),
+    narrative.differentiationPrinciple,
+  ].filter(Boolean).join(' ');
+
+  const contentHeavy = hasAny(evidenceText, [/미디어|영상|콘텐츠|content|media|message|메시지|SNS|캠페인|홍보|스토리|채널/i]);
+  const operationHeavy = hasAny(evidenceText, [/운영|동선|등록|안전|인력|staff|operation|logistics|현장|서비스|접수|관리|프로세스|매뉴얼/i]);
+
+  if (hasMultipleEntities) {
+    return [
+      { type: 'multi_entity_unity_first', label: '통합 중심', emphasis: '여러 참여 주체를 하나의 큰 브랜드·공간·경험 프레임으로 강하게 보이게 하는 방향', chooseWhen: '평가자가 전체 인상, 통일성, 대표 이미지를 가장 중요하게 볼 때 적합' },
+      { type: 'multi_entity_balanced_distinction', label: '통합+개별 구분', emphasis: '공통 프레임은 유지하되 각 기업·제품·존·콘텐츠의 역할 차이를 분명하게 보이게 하는 방향', chooseWhen: '통합감과 함께 참여 주체별 차별 역할을 평가자가 명확히 이해해야 할 때 적합' },
+      { type: 'multi_entity_signature_impact', label: '상징적 임팩트', emphasis: '대표 장면과 상징 구조로 전체 프로젝트의 힘, 리더십, 첫인상을 강하게 만드는 방향', chooseWhen: '초기 주목도, 상징성, 대외 홍보 임팩트가 중요한 RFP일 때 적합' },
+    ];
+  }
+
+  if (contentHeavy && !operationHeavy) {
+    return [
+      { type: 'content_message_architecture', label: '메시지 구조', emphasis: '핵심 메시지와 콘텐츠 체계를 명확한 정보 구조로 설계하는 방향', chooseWhen: '평가자가 메시지 일관성, 콘텐츠 논리, 이해 용이성을 중요하게 볼 때 적합' },
+      { type: 'content_audience_participation', label: '참여 전환', emphasis: '관객이 콘텐츠를 수동적으로 보는 데서 참여하고 반응하는 경험으로 전환하는 방향', chooseWhen: '타깃 행동 변화, 참여율, 공유 가능성이 중요한 과업일 때 적합' },
+      { type: 'content_hero_media_impact', label: '히어로 미디어', emphasis: '대표 콘텐츠나 미디어 장면으로 기억에 남는 강한 인상을 만드는 방향', chooseWhen: '대표 영상, 미디어월, 캠페인 확산처럼 한 장면의 임팩트가 중요할 때 적합' },
+    ];
+  }
+
+  if (operationHeavy) {
+    return [
+      { type: 'operation_reliable_execution', label: '안정 실행', emphasis: '리스크를 줄이고 일정·인력·현장 운영이 안정적으로 작동하는 실행 체계를 보여주는 방향', chooseWhen: '평가자가 수행 안정성, 일정 준수, 리스크 관리를 우선 볼 때 적합' },
+      { type: 'operation_user_service_experience', label: '서비스 경험', emphasis: '참가자·관람객·운영자의 접점 경험을 매끄럽게 만드는 서비스 흐름 중심 방향', chooseWhen: '현장 만족도, 이용 편의, 접점별 서비스 품질이 중요한 과업일 때 적합' },
+      { type: 'operation_proof_trust', label: '운영 신뢰 증명', emphasis: '운영 역량과 검증 근거를 신뢰할 수 있는 증명 구조로 보여주는 방향', chooseWhen: '수행사 역량, 안전성, 품질 보증을 강하게 설득해야 할 때 적합' },
+    ];
+  }
+
+  return [
+    { type: 'single_brand_identity', label: '브랜드 정체성', emphasis: '단일 브랜드의 의미와 톤을 하나의 선명한 제안 세계로 구축하는 방향', chooseWhen: '브랜드 이미지, 정체성, 일관된 인상이 가장 중요한 RFP일 때 적합' },
+    { type: 'single_brand_audience_behavior', label: '관객 행동 변화', emphasis: '타깃이 브랜드를 이해하는 데서 참여·공감·행동으로 이동하게 만드는 방향', chooseWhen: '방문자 반응, 참여, 인식 변화가 핵심 성과로 평가될 때 적합' },
+    { type: 'single_brand_signature_proof', label: '시그니처 증명', emphasis: '제품·서비스 강점이나 대표 경험을 통해 브랜드 역량을 직접 증명하는 방향', chooseWhen: '제품력, 기술력, 서비스 우수성, 대표 장면의 설득력이 중요할 때 적합' },
+  ];
+}
+
+function formatStrategicDirectionPlanForPrompt(plan: StrategicDirectionPlanItem[]) {
+  return plan.map((item, index) => `C${index + 1}: ${item.label} (${item.type})\n- emphasis: ${item.emphasis}\n- chooseWhen: ${item.chooseWhen}`).join('\n');
+}
+
 function fallbackCandidate(index: number, name: string, analysis: AnalysisResult, narrative: ProposalNarrative): ConceptCandidate {
   const conceptId = `C${index}`;
+  const direction = buildStrategicDirectionPlan(analysis, narrative, Boolean(narrative.entityDifferentiationMatrix?.length && narrative.entityDifferentiationMatrix.length > 1))[(index - 1) % 3];
   const fallbackPresets = [
     { keywords: ['근거', '판단', '확장'] as [string, string, string], slogan: 'RFP 근거가 바로 제안 구조로 이어지게 합니다.', definition: `RFP의 핵심 요구를 판단 기준과 실행 접점으로 변환해 평가자가 선택 이유를 확인하게 하는 콘셉트입니다.`, experienceMechanism: 'RFP 근거를 도입-판단-확장 순서로 배열해 제안의 논리를 따라가게 함', recognitionLogic: '요구 조건과 실행 근거가 같은 기준으로 연결됨을 기억함', nameWhy: '현재 RFP의 구체 근거를 제안 판단 장치로 바꾸는 이름입니다.' },
     { keywords: ['대상', '역할', '증명'] as [string, string, string], slogan: '각 대상의 역할을 분명히 나누고 하나의 증명으로 묶습니다.', definition: `RFP에 등장한 대상과 역할을 분리한 뒤 공간·콘텐츠·운영 증거로 재조합하는 콘셉트입니다.`, experienceMechanism: '대상별 역할을 먼저 인식하고 마지막에 통합 증명으로 연결하는 흐름', recognitionLogic: '각 요소의 차이와 전체 제안 명제를 동시에 기억함', nameWhy: 'RFP에 있는 대상·역할·평가 근거를 제목의 출처로 삼습니다.' },
@@ -133,6 +200,10 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
 
   return {
     conceptId,
+    strategicDirectionType: direction.type,
+    strategicDirectionLabel: direction.label,
+    whatThisDirectionEmphasizes: direction.emphasis,
+    whenToChooseThisDirection: direction.chooseWhen,
     proposalCoreConceptName: repairedName,
     proposalCoreConceptSlogan: preset.slogan,
     proposalCoreConceptDefinition: definition,
@@ -179,6 +250,8 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
       passed: true,
       validationSummary: '시간 초과 방지를 위해 핵심 검증 기준만 적용한 경량 후보입니다.',
     },
+    mainStrength: direction.emphasis,
+    mainRisk: `${direction.label} 방향은 강점이 선명한 만큼 다른 전략 우선순위는 후속 구조에서 함께 보완해야 합니다.`,
     entityDifferentiationUse: {
       unifyingFrame: compactText(narrative.unifyingFrame || '하나의 제안 명제로 통합', 120),
       distinctEntityRoles: compactText(narrative.differentiationPrinciple || '요소별 역할을 중복 없이 분리', 120),
@@ -274,8 +347,11 @@ function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: Prop
     ],
     recommendation: {
       recommendedConceptId: 'C1',
-      recommendationReason: '방문 흐름보다 RFP 문제, 공간·콘텐츠·운영·증명 구조를 가장 명확하게 묶는 Core Concept 후보입니다.',
-      whyNotOthers: 'C2는 경험 확장성이 있으나 세부 연출 보완이 더 필요합니다.',
+      recommendedDirectionLabel: buildStrategicDirectionPlan(analysis, proposalNarrative, Boolean(proposalNarrative.entityDifferentiationMatrix?.length && proposalNarrative.entityDifferentiationMatrix.length > 1))[0]?.label || '전략 방향',
+      recommendationReason: '현재 RFP에서는 요구 근거를 빠르게 묶고 평가자가 선택 이유를 이해하기 쉬운 방향을 우선 추천합니다.',
+      otherDirectionsUsefulness: '다른 방향은 통합감, 개별 구분, 임팩트, 참여, 운영 신뢰 등 우선순위가 달라질 때 유용한 선택지입니다.',
+      tradeOffSummary: '추천 방향은 명확성이 강하지만, 다른 방향들은 각각 차별 구분·참여 전환·상징 임팩트 같은 별도 강점을 제공합니다.',
+      whyNotOthers: '다른 후보가 나쁜 것이 아니라, 현재 입력 기준에서는 추천 후보가 RFP 근거와 제안 구조를 가장 빠르게 연결합니다.',
     },
     namingGuardNotice: {
       message: `컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요. (${reason})`,
@@ -292,6 +368,32 @@ interface ConceptGenerationMetadata {
   generationAttempt?: number;
   requestedAt?: string;
   generatedAt?: string;
+}
+
+
+function withNeutralDirectionRecommendation(result: ConceptCandidatesResult): ConceptCandidatesResult {
+  const recommended = result.concepts.find((concept) => concept.conceptId === result.recommendation.recommendedConceptId) ?? result.concepts[0];
+  const otherDirections = result.concepts
+    .filter((concept) => concept.conceptId !== recommended?.conceptId)
+    .map((concept) => `${concept.conceptId} ${concept.strategicDirectionLabel}: ${concept.whenToChooseThisDirection}`)
+    .join(' / ');
+  const negativeComparisonPattern = /bad|not good|wrong|나쁘|별로|부적합|틀렸|실패|낮[다은]|부족/i;
+  const existingOtherUse = result.recommendation.otherDirectionsUsefulness || result.recommendation.whyNotOthers || '';
+  const safeOtherUsefulness = existingOtherUse && !negativeComparisonPattern.test(existingOtherUse)
+    ? existingOtherUse
+    : (otherDirections || '다른 방향은 평가 우선순위가 달라질 때 유용한 대안입니다.');
+
+  return {
+    ...result,
+    recommendation: {
+      ...result.recommendation,
+      recommendedConceptId: result.recommendation.recommendedConceptId || recommended?.conceptId || 'C1',
+      recommendedDirectionLabel: result.recommendation.recommendedDirectionLabel || recommended?.strategicDirectionLabel || '전략 방향',
+      otherDirectionsUsefulness: safeOtherUsefulness,
+      tradeOffSummary: result.recommendation.tradeOffSummary || '각 후보는 우열이 아니라 통합감, 구분성, 임팩트, 참여, 운영 신뢰 등 서로 다른 우선순위의 선택지입니다.',
+      whyNotOthers: safeOtherUsefulness,
+    },
+  };
 }
 
 function attachGenerationMetadata(result: ConceptCandidatesResult, metadata: ConceptGenerationMetadata): ConceptCandidatesResult {
@@ -350,6 +452,7 @@ export async function POST(request: Request) {
     const compactAnalysis = buildCompactAnalysis(body.analysis, differentiationSummary, proposalNarrative);
     const proposalPatternGuidance = await retrieveProposalPatternsForOutline({ limit: maxProposalPatterns, antiPatternLimit: maxProposalPatterns });
     const hasMultipleEntities = differentiationStrategy.hasMultipleEntities;
+    const strategicDirectionPlan = buildStrategicDirectionPlan(body.analysis, proposalNarrative, hasMultipleEntities);
     const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, hasMultipleEntities);
     const proposalPatternContext = formatProposalPatternsForConceptPrompt(proposalPatternGuidance.patterns, proposalPatternGuidance.avoidanceRules, maxProposalPatterns);
 
@@ -357,6 +460,10 @@ export async function POST(request: Request) {
       `Concept Prompt Version: ${conceptPromptVersion}. 이 버전의 Proposal Core Concept hierarchy만 사용한다.`,
       '너는 한국어 제안서 콘셉트를 빠르게 설계하는 크리에이티브 디렉터다.',
       `정확히 ${maxCandidates}개의 콘셉트 후보를 생성한다. 최소 3개의 usable concept를 반환하고, 내부 네이밍 후보 5개는 절대 노출하지 말라.`,
+      '3개 후보는 winner-loser 비교가 아니라 서로 다른 전략 방향 옵션이어야 한다.',
+      '각 후보는 strategicDirectionType, strategicDirectionLabel, whatThisDirectionEmphasizes, whenToChooseThisDirection을 반드시 포함한다.',
+      'strategicDirectionLabel은 카드에 보이는 짧은 한국어 방향명이며, proposalCoreConceptName은 별도의 제안 레벨 마스터 콘셉트명이어야 한다. 방향명을 콘셉트명으로 그대로 쓰지 않는다.',
+      '추천은 가장 적합한 방향을 설명하되 다른 후보를 나쁘다/부적합하다/틀렸다로 말하지 않는다. 다른 방향의 쓰임과 선택 간 trade-off를 중립적으로 설명한다.',
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
       '출력은 hiddenNeeds, strategicApproach, entityDifferentiationMatrix, conceptDevelopmentLogic, concepts, recommendation을 포함한다.',
       '필수 생성 순서: (1) Hidden Needs (2) Strategic Approach (3) Entity/Content/Audience Differentiation if applicable (4) Proposal Core Concept (5) Experience Principle (6) Visitor Journey (7) Content/Media Execution (8) Anti-pattern Validation.',
@@ -374,6 +481,7 @@ export async function POST(request: Request) {
       'Concept Metaphor Source는 actual RFP object, project type, client or brand role, product/service logic, spatial structure, audience behavior, content mechanism, operational proof, evaluation criteria, stakeholder relationship 중 하나 이상에서만 도출한다.',
       '첫문장의 정원, 등대의 항로, 서랍 속 도감, 기억의 숲, 가능성의 지도, 미래의 정원, 빛의 항해, 경험의 서랍, 가치의 풍경처럼 문학 제목 같은 임의 은유는 RFP 원문 근거가 명시되지 않으면 거부하고 이름만 RFP 대상·역할·메커니즘·공간/콘텐츠 논리 기반으로 수리한다.',
       'conceptDefinition은 프로젝트명, 기간, 장소, 예산, 클라이언트, 제출 조건 등 RFP 개요를 반복하며 시작하지 말고 콘셉트의 의미, 작동 방식, 생성 경험/제안 논리, 전략 과제 해결 방식을 설명한다.',
+      '후보 다양성 점검: 반환 전 3개 후보가 서로 다른 전략 우선순위를 갖는지, C1/C2/C3 선택 시 제안 방향이 어떻게 바뀌는지, 이름 차이가 단순 문구 차이가 아닌 방향 차이에서 비롯되는지 확인한다. 너무 유사하면 약한 중복 후보만 재생성한다.',
       '각 후보별로 내부적으로 이름 5개를 만들고 specificityToCurrentRfp, symbolicPower, memorability, coverTitlePotential, expandability, nonGenericQuality, notStrategyLabel을 1~5점으로 채점한다. 종합 4 미만이거나 섹션 제목/컨설팅 헤딩/전략 부제/문제해결 문구로도 쓸 수 있으면 이름만 재생성하고 최종 1개만 출력한다. 내부 후보와 점수는 출력하지 않는다.',
       '약한 Core Concept 이름 금지: 증거 루트, 가치 신호, 선택의 이유, 인지의 흐름, 확신의 여정, 경험의 경로, 차별화의 단계, Signal to Proof, Route to Value, Evidence Journey, 혁신의 장면, 차별화된 통합, 명확한 구분, 통합된 경험, Distinct Unity, Focused Identity, Scene of Innovation, The Reason to Choose, Connected Future, Innovation Journey, Experience Hub.',
       'conceptName은 전략 문장/슬라이드 제목/프로젝트 목표/직접 솔루션 문구/캠페인 문구/RFP 요약/회피 규칙 번역처럼 보이면 안 되며, 무관한 RFP에 재사용하면 어색해야 한다.',
@@ -385,12 +493,16 @@ export async function POST(request: Request) {
       'antiPatternValidation은 Core Concept name이 visitor journey label, experience sequence, interaction mechanism, content section title, slide title, strategic instruction, anti-pattern correction인지 점검하고, proposal_patterns 회피 규칙은 검증 기준으로만 사용하며 naming source로 쓰지 않는다.',
       'proposal_patterns에 포함된 과거 프로젝트명, 클라이언트명, 파일명, 고유 상세를 추정하거나 재사용하지 않는다.',
       isEventOperationType ? '행사 운영형 콘셉트도 시스템명/카테고리명이 아니라 행사 목적과 비즈니스 기회를 압축한 이름으로 작성한다.' : '각 후보는 서로 다른 전략 관점과 경험 흐름을 가진다.',
+      'mainStrength와 mainRisk는 짧은 중립 문장으로 작성한다. mainRisk는 결함이 아니라 해당 방향 선택 시 보완할 trade-off로 설명한다.',
     ].join('\n');
 
     const userPrompt = `제안서 유형: ${proposalTypeLabels[effectiveProposalType]}
 
 Request Debug Metadata (캐시 방지 및 재생성 추적):
 ${JSON.stringify(metadata, null, 2)}
+
+Strategic Direction Plan (이 순서로 C1/C2/C3를 생성하되 RFP에 맞게 이름과 실행은 구체화):
+${formatStrategicDirectionPlanForPrompt(strategicDirectionPlan)}
 
 Compact RFP Analysis JSON (이 필드만 RFP 근거로 사용):
 ${JSON.stringify(compactAnalysis, null, 2)}
@@ -412,7 +524,7 @@ ${proposalPatternDiagnostics}
 proposal_patterns compact JSON (최대 ${maxProposalPatterns}개, source_text/summary/과거 고유명 없음):
 ${proposalPatternContext}
 
-Generation order reminder: Hidden Needs → Strategic Approach → Entity/Content/Audience Differentiation if applicable → Proposal Core Concept → Experience Principle → Visitor Journey → Content/Media Execution → Anti-pattern Validation. Do not generate Visitor Journey before Proposal Core Concept, and choose recommendation by strategic fit, RFP specificity, originality, whole-proposal organizing power, expandability to space/content/media/operation, evaluator clarity, and anti-pattern avoidance.`;
+Generation order reminder: Hidden Needs → Strategic Approach → Entity/Content/Audience Differentiation if applicable → Strategic Direction Option → Proposal Core Concept → Experience Principle → Visitor Journey → Content/Media Execution → Anti-pattern Validation. Do not generate Visitor Journey before Proposal Core Concept. Choose recommendation by best-fit strategic direction, RFP specificity, originality, whole-proposal organizing power, expandability to space/content/media/operation, evaluator clarity, and anti-pattern avoidance. recommendation.whyNotOthers must use neutral trade-off language and must explain what the other directions are useful for, not why they are bad.`;
 
     try {
       const generated = await createStructuredJson<ConceptCandidatesResult>({
@@ -423,7 +535,7 @@ Generation order reminder: Hidden Needs → Strategic Approach → Entity/Conten
         timeoutMs: CONCEPT_GENERATION_TIMEOUT_MS,
       });
 
-      let result = normalizeConceptCandidatesResult({
+      let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult({
         ...generated,
         conceptPromptVersion,
         regenerationId: metadata.regenerationId,
@@ -433,12 +545,12 @@ Generation order reminder: Hidden Needs → Strategic Approach → Entity/Conten
         entityDifferentiationMatrix: differentiationStrategy.hasMultipleEntities
           ? (generated.entityDifferentiationMatrix?.length ? generated.entityDifferentiationMatrix : differentiationStrategy.entityDifferentiationMatrix)
           : [],
-      });
+      }));
       result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules });
       return conceptsJson(attachGenerationMetadata(result, metadata));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'generation timeout';
-      const fallback = applyNonBlockingConceptNamingGuard(buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata), { input: body.input, analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules });
+      const fallback = applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation(buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata)), { input: body.input, analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules });
       return conceptsJson(attachGenerationMetadata(fallback, metadata));
     }
   } catch (error) {
