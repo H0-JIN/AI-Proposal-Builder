@@ -317,6 +317,67 @@ const FORBIDDEN_ABSTRACT_NAMING_TERMS = [
   'spectrum',
 ];
 
+
+const UNSUPPORTED_POETIC_CONCEPT_NAMES = [
+  '첫문장의 정원',
+  '등대의 항로',
+  '서랍 속 도감',
+  '기억의 숲',
+  '가능성의 지도',
+  '미래의 정원',
+  '빛의 항해',
+  '경험의 서랍',
+  '가치의 풍경',
+];
+
+const GENERIC_POETIC_OBJECT_TERMS = [
+  '정원',
+  '등대',
+  '항로',
+  '서랍',
+  '도감',
+  '숲',
+  '지도',
+  '항해',
+  '풍경',
+  '바다',
+  '별',
+  '빛',
+  '문장',
+  '기억',
+  '가능성',
+];
+
+const METAPHOR_SOURCE_TYPES = [
+  'actual RFP object',
+  'project type',
+  'client or brand role',
+  'product/service logic',
+  'spatial structure',
+  'audience behavior',
+  'content mechanism',
+  'operational proof',
+  'evaluation criteria',
+  'stakeholder relationship',
+];
+
+const RFP_OVERVIEW_DEFINITION_STARTERS = [
+  'project name',
+  'project period',
+  'venue',
+  'budget',
+  'client',
+  'submission',
+  '프로젝트명',
+  '사업명',
+  '기간',
+  '장소',
+  '예산',
+  '클라이언트',
+  '제출',
+  '입찰',
+];
+
 const CONSTRAINT_SOURCE_TERMS = [
   'column',
   'columns',
@@ -502,6 +563,116 @@ function nameMechanismScore(candidate: ConceptCandidate, name: string) {
   return scores.reduce((sum, score) => sum + score, 0) / scores.length;
 }
 
+
+function analysisEvidenceText(analysis?: AnalysisResult, proposalNarrative?: ProposalNarrative) {
+  return normalizedText([
+    analysis?.projectOverview,
+    analysis?.clientChallenge,
+    analysis?.targetInfo,
+    analysis?.spatialCondition,
+    analysis?.contentCondition,
+    analysis?.operationCondition,
+    analysis?.proposalStructureGuard,
+    ...(analysis?.requiredDeliverables ?? []),
+    ...(analysis?.scopeOfWork ?? []),
+    ...(analysis?.evaluationCriteria ?? []),
+    ...(analysis?.requiredItems ?? []),
+    ...(analysis?.requiredScope ?? []),
+    ...(analysis?.productInfo ?? []),
+    ...(analysis?.productFeatures ?? []).flatMap((feature) => [feature.product, feature.keyFeature, feature.valueProposition]),
+    ...(analysis?.kpiObjectives ?? []),
+    ...(analysis?.constraints ?? []),
+    ...(analysis?.schedule ?? []),
+    ...(analysis?.kpiScheduleConstraints ?? []),
+    proposalNarrative?.proposalThesis,
+    proposalNarrative?.strategicOpportunity,
+    proposalNarrative?.differentiationPrinciple,
+  ].filter(Boolean).join(' '));
+}
+
+function hasExplicitRfpGrounding(candidate: ConceptCandidate) {
+  const grounding = candidate.rfpGrounding ?? candidate.conceptMetaphorSource?.rfpEvidence ?? [];
+  const sourceTypes = candidate.conceptMetaphorSource?.sourceTypes ?? [];
+  return grounding.filter((item) => item.trim().length >= 8).length >= 3
+    && sourceTypes.some((sourceType) => METAPHOR_SOURCE_TYPES.includes(sourceType));
+}
+
+function unsupportedPoeticTerms(name: string, rfpEvidenceText: string) {
+  const normalizedName = normalizedText(name);
+  const exactUnsupported = UNSUPPORTED_POETIC_CONCEPT_NAMES.includes(normalizedName);
+  const poeticTerms = GENERIC_POETIC_OBJECT_TERMS.filter((term) => normalizedName.includes(term));
+  if (!exactUnsupported && !poeticTerms.length) return [];
+
+  return poeticTerms.filter((term) => !rfpEvidenceText.includes(term));
+}
+
+function isUnsupportedPoeticMetaphor(_candidate: ConceptCandidate, name: string, rfpEvidenceText: string) {
+  return unsupportedPoeticTerms(name, rfpEvidenceText).length > 0;
+}
+
+function conceptDefinitionCopiesOverview(definition: string, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult }) {
+  const normalizedDefinition = normalizedText(definition);
+  if (!normalizedDefinition) return false;
+  if (RFP_OVERVIEW_DEFINITION_STARTERS.some((starter) => normalizedDefinition.startsWith(starter))) return true;
+
+  const forbiddenStarts = [
+    context.input?.projectName,
+    context.input?.clientName,
+    context.analysis?.projectOverview,
+    context.analysis?.spatialCondition,
+    context.analysis?.operationCondition,
+  ]
+    .filter(Boolean)
+    .map((item) => normalizedText(String(item)).slice(0, 24))
+    .filter((item) => item.length >= 8);
+
+  return forbiddenStarts.some((starter) => normalizedDefinition.startsWith(starter));
+}
+
+function buildFallbackGrounding(candidate: ConceptCandidate, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
+  const analysis = context.analysis;
+  return compactUnique([
+    analysis?.productInfo?.[0],
+    analysis?.requiredItems?.[0],
+    analysis?.requiredScope?.[0],
+    analysis?.scopeOfWork?.[0],
+    analysis?.evaluationCriteria?.[0],
+    analysis?.targetInfo,
+    analysis?.spatialCondition,
+    analysis?.contentCondition,
+    analysis?.operationCondition,
+    context.proposalNarrative?.proposalThesis,
+    candidate.conceptMechanism?.proofMechanism,
+    'RFP 핵심 요구와 제안 명제 연결',
+    '필수 산출물과 실행 가능성 증명',
+    '평가 기준에 맞춘 선택 이유 제시',
+  ], 5);
+}
+
+function compactUnique(values: Array<string | undefined>, limit = 5) {
+  const seen = new Set<string>();
+  return values
+    .map((value) => String(value ?? '').trim().replace(/\s+/g, ' '))
+    .filter((value) => value.length >= 4)
+    .filter((value) => {
+      const key = normalizedText(value);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+function buildDefinitionFromMechanism(candidate: ConceptCandidate) {
+  const mechanism = candidate.conceptMechanism;
+  return mechanism?.whyThisCanBecomeAConcept
+    || mechanism?.recognitionLogic
+    || candidate.whyThisCanOrganizeProposal
+    || candidate.whyThisConcept
+    || candidate.whyThisWorks
+    || 'RFP의 핵심 근거를 하나의 판단 구조로 묶어 공간·콘텐츠·운영 실행을 조직하는 콘셉트입니다.';
+}
+
 function collectConstraintTerms(analysis?: AnalysisResult) {
   const dynamicTerms = [
     ...(analysis?.constraints ?? []),
@@ -553,12 +724,20 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
       proofMechanism: candidate.thesisProof || candidate.executionFeasibility || '',
       whyThisCanBecomeAConcept: candidate.whyThisConcept || candidate.whyThisWorks || '',
     },
-    conceptMetaphorSource: candidate.conceptMetaphorSource ?? {
-      metaphorSeed: conceptName,
-      symbolicImage: candidate.conceptMechanism?.experienceMechanism || candidate.experienceStructure || conceptDefinition,
-      proposalWorld: candidate.conceptMechanism?.whyThisCanBecomeAConcept || candidate.keyExperienceAssetDirection || conceptTagline,
-      whyThisCanBecomeAConceptTitle: candidate.whyThisNameWorks || candidate.whyThisConcept || candidate.whyThisWorks || '',
+    conceptMetaphorSource: {
+      ...(candidate.conceptMetaphorSource ?? {
+        metaphorSeed: conceptName,
+        symbolicImage: candidate.conceptMechanism?.experienceMechanism || candidate.experienceStructure || conceptDefinition,
+        proposalWorld: candidate.conceptMechanism?.whyThisCanBecomeAConcept || candidate.keyExperienceAssetDirection || conceptTagline,
+        whyThisCanBecomeAConceptTitle: candidate.whyThisNameWorks || candidate.whyThisConcept || candidate.whyThisWorks || '',
+      }),
+      sourceTypes: candidate.conceptMetaphorSource?.sourceTypes?.length ? candidate.conceptMetaphorSource.sourceTypes : ['project type'],
+      rfpEvidence: candidate.conceptMetaphorSource?.rfpEvidence?.length ? candidate.conceptMetaphorSource.rfpEvidence : candidate.rfpGrounding ?? [],
     },
+    rfpGrounding: candidate.rfpGrounding?.length ? candidate.rfpGrounding : candidate.conceptMetaphorSource?.rfpEvidence ?? [],
+    whyThisNameFitsRfp: candidate.whyThisNameFitsRfp || candidate.whyThisNameWorks || candidate.conceptMetaphorSource?.whyThisCanBecomeAConceptTitle || '',
+    whyThisIsNotJustPoetic: candidate.whyThisIsNotJustPoetic || '현재 RFP 근거와 실행 메커니즘에서 파생된 이름인지 검증합니다.',
+    whyThisCanOrganizeProposal: candidate.whyThisCanOrganizeProposal || candidate.conceptMechanism?.whyThisCanBecomeAConcept || candidate.whyThisConcept || '',
     whyThisNameWorks: candidate.whyThisNameWorks || candidate.conceptMetaphorSource?.whyThisCanBecomeAConceptTitle || candidate.whyThisConcept || candidate.whyThisWorks || '',
     keywordExecutionGuide: (candidate.keywordExecutionGuide ?? []).map((guide) => ({
       ...guide,
@@ -607,9 +786,10 @@ export function normalizeConceptCandidatesResult(result: ConceptCandidatesResult
 
 export function validateConceptNaming(
   result: ConceptCandidatesResult,
-  context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] } = {},
+  context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] } = {},
 ) {
   const constraintTerms = collectConstraintTerms(context.analysis);
+  const rfpEvidenceText = analysisEvidenceText(context.analysis, context.proposalNarrative);
   const violations: string[] = [];
 
   result.concepts.forEach((candidate, index) => {
@@ -631,6 +811,9 @@ export function validateConceptNaming(
     if (hasExecutionDescriptionName(name)) violations.push(`${label}: conceptName reads like an execution strategy, content category, spatial solution, RFP keyword, or technical description instead of a strategic idea.`);
     if (containsAny(name, constraintTerms)) violations.push(`${label}: conceptName appears to be derived from constraints, deliverables, venue, schedule, or implementation conditions.`);
     if (hasDirectAvoidanceRuleEcho(name, context.avoidanceRules)) violations.push(`${label}: conceptName directly echoes a lost-proposal avoidance rule; anti-patterns must be validation criteria, not naming source material.`);
+    if (isUnsupportedPoeticMetaphor(candidate, name, rfpEvidenceText)) violations.push(`${label}: conceptName uses a literary or arbitrary poetic metaphor that is not grounded in current RFP objects, roles, mechanisms, spatial/content logic, evaluation criteria, or stakeholder relationships.`);
+    if (!hasExplicitRfpGrounding(candidate)) violations.push(`${label}: concept candidate must include 3-5 concrete rfpGrounding evidence points and a valid conceptMetaphorSource.sourceTypes value.`);
+    if (conceptDefinitionCopiesOverview(getConceptDefinition(candidate), context)) violations.push(`${label}: conceptDefinition appears to restate the RFP overview or administrative facts instead of explaining the concept mechanism.`);
   });
 
   return {
@@ -658,47 +841,100 @@ function extractSymbolicSeeds(value: string, fallbackSeeds: string[] = []) {
   return [...seeds, ...fallbackSeeds].filter(Boolean);
 }
 
-function buildSafeConceptNamesFromMetaphor(candidate: ConceptCandidate, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
-  const source = candidate.conceptMetaphorSource;
-  const metaphorSeeds = extractSymbolicSeeds([
-    source?.metaphorSeed,
-    source?.symbolicImage,
-    source?.proposalWorld,
-    source?.whyThisCanBecomeAConceptTitle,
-  ].filter(Boolean).join(' '));
-  const contextSeeds = extractSymbolicSeeds([
-    context.input?.projectName,
+
+function extractRfpNameSeeds(context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
+  const analysis = context.analysis;
+  const values = [
+    ...(analysis?.productInfo ?? []),
+    ...(analysis?.productFeatures ?? []).flatMap((feature) => [feature.product, feature.keyFeature, feature.valueProposition]),
+    ...(analysis?.requiredItems ?? []),
+    ...(analysis?.requiredScope ?? []),
+    ...(analysis?.scopeOfWork ?? []),
+    ...(analysis?.requiredDeliverables ?? []),
+    ...(analysis?.evaluationCriteria ?? []),
+    analysis?.targetInfo,
+    analysis?.spatialCondition,
+    analysis?.contentCondition,
+    analysis?.operationCondition,
     context.input?.clientName,
-    context.analysis?.projectOverview,
-  ].filter(Boolean).join(' '), ['첫문장', '등대']);
-  const prefix = metaphorSeeds[0] || contextSeeds[0] || '첫문장';
-  const second = metaphorSeeds.find((token) => token !== prefix) || contextSeeds.find((token) => token !== prefix) || '등대';
+    context.input?.projectName,
+    context.proposalNarrative?.proposalThesis,
+  ];
+
+  const blocked = new Set([
+    '제안', '프로젝트', '사업', '운영', '행사', '콘텐츠', '컨텐츠', '체험', '전시', '공간', '부스', '장소', '예산', '일정', '산출물',
+    '요구', '기준', '평가', '구축', '제작', '관리', '용역', '과업', '수행', '필수', '대상', '제출',
+  ]);
+
+  return compactUnique(values.flatMap((value) => normalizeSafeNameSeed(String(value ?? '')).split(/\s+/)), 12)
+    .filter((token) => token.length >= 2 && token.length <= 10)
+    .filter((token) => !blocked.has(token))
+    .filter((token) => !GENERIC_POETIC_OBJECT_TERMS.includes(token))
+    .filter((token) => !FORBIDDEN_ABSTRACT_NAMING_TERMS.some((term) => token.toLowerCase().includes(term.toLowerCase())));
+}
+
+function buildSafeConceptNamesFromMetaphor(candidate: ConceptCandidate, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
+  const rfpSeeds = extractRfpNameSeeds(context);
+  const candidateSeeds = extractSymbolicSeeds([
+    candidate.conceptMechanism?.recognitionLogic,
+    candidate.conceptMechanism?.proofMechanism,
+    candidate.conceptMechanism?.whyThisCanBecomeAConcept,
+    candidate.whyThisCanOrganizeProposal,
+  ].filter(Boolean).join(' '));
+  const seeds = compactUnique([...rfpSeeds, ...candidateSeeds], 8);
+  const first = seeds[0] || context.input?.clientName || '판단';
+  const second = seeds.find((seed) => seed !== first) || seeds[1] || '증명';
+  const third = seeds.find((seed) => seed !== first && seed !== second) || '판단';
 
   return [
-    `${prefix}의 정원`,
-    `${second}의 항구`,
-    `${prefix} 서랍`,
-    `${second} 지도`,
-    `${prefix}의 표본실`,
-    `${second} 극장`,
-    `${prefix} 관측소`,
-    `${second}의 문턱`,
+    `${first} 프로토콜`,
+    `${first} 렌즈`,
+    `${second} 트리거`,
+    `${first} 매트릭스`,
+    `${second} 루프`,
+    `${third} 인덱스`,
+    `${first} 스위치`,
+    `${second} 그리드`,
   ];
 }
 
-function applyConceptName(candidate: ConceptCandidate, conceptName: string, warning?: string): ConceptCandidate {
+
+function applyConceptName(candidate: ConceptCandidate, conceptName: string, warning?: string, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative } = {}): ConceptCandidate {
+  const rfpGrounding = buildFallbackGrounding(candidate, context);
+  const conceptDefinition = conceptDefinitionCopiesOverview(getConceptDefinition(candidate), context)
+    ? buildDefinitionFromMechanism(candidate)
+    : getConceptDefinition(candidate);
+
   return normalizeConceptCandidate({
     ...candidate,
     proposalCoreConceptName: conceptName,
+    proposalCoreConceptDefinition: conceptDefinition,
     conceptName,
+    conceptDefinition,
+    oneLineDefinition: conceptDefinition,
     conceptTitle: conceptName,
     conceptNameKR: conceptName,
     conceptNameEN: conceptName,
+    rfpGrounding: candidate.rfpGrounding?.length ? candidate.rfpGrounding : rfpGrounding,
+    conceptMetaphorSource: {
+      ...(candidate.conceptMetaphorSource ?? {
+        metaphorSeed: conceptName,
+        symbolicImage: candidate.conceptMechanism?.recognitionLogic || conceptDefinition,
+        proposalWorld: candidate.conceptMechanism?.whyThisCanBecomeAConcept || conceptDefinition,
+        whyThisCanBecomeAConceptTitle: '',
+      }),
+      metaphorSeed: conceptName,
+      sourceTypes: candidate.conceptMetaphorSource?.sourceTypes?.length ? candidate.conceptMetaphorSource.sourceTypes : ['product/service logic', 'evaluation criteria'],
+      rfpEvidence: candidate.conceptMetaphorSource?.rfpEvidence?.length ? candidate.conceptMetaphorSource.rfpEvidence : rfpGrounding,
+    },
+    whyThisNameFitsRfp: candidate.whyThisNameFitsRfp || `${conceptName}은 RFP의 구체 근거를 제안 판단 장치로 묶습니다.`,
+    whyThisIsNotJustPoetic: candidate.whyThisIsNotJustPoetic || '임의의 문학적 사물이 아니라 현재 RFP의 대상·역할·평가 근거에서 추출한 명명입니다.',
+    whyThisCanOrganizeProposal: candidate.whyThisCanOrganizeProposal || candidate.conceptMechanism?.whyThisCanBecomeAConcept || '공간·콘텐츠·미디어·운영·증명 장표의 상위 기준으로 확장됩니다.',
     namingGuardWarning: warning,
   });
 }
 
-function getCandidateViolations(candidate: ConceptCandidate, index: number, context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] }) {
+function getCandidateViolations(candidate: ConceptCandidate, index: number, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] }) {
   const result = validateConceptNaming({
     hiddenNeeds: {} as ConceptCandidatesResult['hiddenNeeds'],
     strategicApproach: {} as ConceptCandidatesResult['strategicApproach'],
@@ -728,7 +964,7 @@ export function applyNonBlockingConceptNamingGuard(
     const safeNames = buildSafeConceptNamesFromMetaphor(candidate, context);
     const safeName = safeNames[safeNameIndex % safeNames.length];
     safeNameIndex += 1;
-    const repairedCandidate = applyConceptName(candidate, safeName, '일부 콘셉트명이 기준을 충족하지 않아 1회 자동 보정했습니다. 결과를 확인해 주세요.');
+    const repairedCandidate = applyConceptName(candidate, safeName, '일부 콘셉트명이 기준을 충족하지 않아 1회 자동 보정했습니다. 결과를 확인해 주세요.', context);
     const repairedViolations = getCandidateViolations(repairedCandidate, index, context);
     if (!repairedViolations.length) {
       repairedConceptIds.add(candidate.conceptId || `concept-${index + 1}`);

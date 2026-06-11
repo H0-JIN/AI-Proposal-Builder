@@ -318,6 +318,8 @@ export interface ConceptMetaphorSource {
   symbolicImage: string;
   proposalWorld: string;
   whyThisCanBecomeAConceptTitle: string;
+  sourceTypes: string[];
+  rfpEvidence: string[];
 }
 
 export interface ConceptMechanism {
@@ -393,6 +395,10 @@ export interface ConceptCandidate {
   whyThisConcept: string;
   conceptMechanism: ConceptMechanism;
   conceptMetaphorSource: ConceptMetaphorSource;
+  rfpGrounding: string[];
+  whyThisNameFitsRfp: string;
+  whyThisIsNotJustPoetic: string;
+  whyThisCanOrganizeProposal: string;
   whyThisNameWorks: string;
   conceptKeywords: [string, string, string];
   keywordExecutionGuide: KeywordExecutionGuide[];

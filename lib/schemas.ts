@@ -334,8 +334,10 @@ const conceptMetaphorSourceSchema = {
     symbolicImage: { type: 'string' },
     proposalWorld: { type: 'string' },
     whyThisCanBecomeAConceptTitle: { type: 'string' },
+    sourceTypes: { type: 'array', minItems: 1, maxItems: 3, items: { type: 'string', enum: ['actual RFP object', 'project type', 'client or brand role', 'product/service logic', 'spatial structure', 'audience behavior', 'content mechanism', 'operational proof', 'evaluation criteria', 'stakeholder relationship'] } },
+    rfpEvidence: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string' } },
   },
-  required: ['metaphorSeed', 'symbolicImage', 'proposalWorld', 'whyThisCanBecomeAConceptTitle'],
+  required: ['metaphorSeed', 'symbolicImage', 'proposalWorld', 'whyThisCanBecomeAConceptTitle', 'sourceTypes', 'rfpEvidence'],
 } as const;
 
 const conceptMechanismSchema = {
@@ -408,6 +410,10 @@ export const conceptCandidatesJsonSchema = {
           whyThisConcept: { type: 'string' },
           conceptMechanism: conceptMechanismSchema,
           conceptMetaphorSource: conceptMetaphorSourceSchema,
+          rfpGrounding: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string' } },
+          whyThisNameFitsRfp: { type: 'string' },
+          whyThisIsNotJustPoetic: { type: 'string' },
+          whyThisCanOrganizeProposal: { type: 'string' },
           whyThisNameWorks: { type: 'string' },
           conceptKeywords: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string' } },
           keywordExecutionGuide: { type: 'array', minItems: 3, maxItems: 3, items: keywordExecutionGuideSchema },
@@ -456,6 +462,10 @@ export const conceptCandidatesJsonSchema = {
           'whyThisConcept',
           'conceptMechanism',
           'conceptMetaphorSource',
+          'rfpGrounding',
+          'whyThisNameFitsRfp',
+          'whyThisIsNotJustPoetic',
+          'whyThisCanOrganizeProposal',
           'whyThisNameWorks',
           'conceptKeywords',
           'keywordExecutionGuide',

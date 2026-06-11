@@ -1111,6 +1111,25 @@ function KeyValueList({ data, evidence }: { data: AnalysisResult; evidence?: Ret
 
 
 
+
+function conceptRfpFitBullets(concept: ConceptCandidate) {
+  const bullets = [
+    ...(concept.rfpGrounding ?? []),
+    concept.whyThisNameFitsRfp,
+    concept.whyThisIsNotJustPoetic,
+  ]
+    .map((item) => item?.trim())
+    .filter(Boolean) as string[];
+
+  const seen = new Set<string>();
+  return bullets.filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 3);
+}
+
 function conceptMechanismRows(concept: ConceptCandidate) {
   const mechanism = concept.conceptMechanism;
   if (!mechanism) return [];
@@ -3517,6 +3536,16 @@ export default function Home() {
                       <div><dt className="font-black text-slate-950">Core Concept Slogan</dt><dd>{getConceptTagline(concept)}</dd></div>
                       <div><dt className="font-black text-slate-950">Core Concept Definition</dt><dd>{getConceptDefinition(concept)}</dd></div>
                       <div><dt className="font-black text-slate-950">Why this is the core concept</dt><dd>{concept.whyThisIsCoreConcept || concept.whyThisNameWorks || concept.whyThisConcept}</dd></div>
+                      {conceptRfpFitBullets(concept).length > 0 && (
+                        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3">
+                          <dt className="font-black text-blue-950">Why this name fits the RFP</dt>
+                          <dd className="mt-1">
+                            <ul className="list-disc space-y-1 pl-5 text-blue-900">
+                              {conceptRfpFitBullets(concept).map((bullet) => <li key={bullet}>{bullet}</li>)}
+                            </ul>
+                          </dd>
+                        </div>
+                      )}
                       <div><dt className="font-black text-slate-950">Experience Principle</dt><dd>{concept.experiencePrinciple || concept.conceptMechanism?.visitorOrAudienceTransformation || concept.experienceLogic}</dd></div>
                       <div><dt className="font-black text-slate-950">Visitor Journey</dt><dd>{concept.visitorJourney || concept.experienceNarrativeFlow?.join(' → ') || concept.conceptMechanism?.interactionMechanism}</dd></div>
                       {executionKeywordRows(concept).length > 0 && (
