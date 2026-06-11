@@ -46,6 +46,36 @@ function compactText(value = '', maxLength = 420) {
   return text.length > maxLength ? `${text.slice(0, maxLength).trim()}…` : text;
 }
 
+function fallbackGrounding(analysis: AnalysisResult, narrative: ProposalNarrative) {
+  return compactList([
+    analysis.productInfo?.[0],
+    analysis.requiredItems?.[0],
+    analysis.requiredScope?.[0],
+    analysis.scopeOfWork?.[0],
+    analysis.evaluationCriteria?.[0],
+    analysis.targetInfo,
+    analysis.spatialCondition,
+    narrative.proposalThesis,
+    'RFP 핵심 요구와 제안 명제 연결',
+    '필수 산출물과 실행 가능성 증명',
+    '평가 기준에 맞춘 선택 이유 제시',
+  ].filter(Boolean), 5, 140);
+}
+
+function fallbackNameSeeds(analysis: AnalysisResult) {
+  const blocked = new Set(['제안', '프로젝트', '사업', '운영', '행사', '콘텐츠', '체험', '전시', '공간', '요구', '평가', '기준', '과업']);
+  return compactList([
+    ...(analysis.productInfo ?? []),
+    ...(analysis.productFeatures ?? []).map((feature) => feature.product || feature.keyFeature),
+    ...(analysis.requiredItems ?? []),
+    ...(analysis.requiredScope ?? []),
+    ...(analysis.scopeOfWork ?? []),
+  ], 12, 40)
+    .flatMap((item) => item.replace(/[^a-zA-Z0-9가-힣\s]/g, ' ').split(/\s+/))
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2 && item.length <= 10 && !blocked.has(item));
+}
+
 function buildCompactAnalysis(analysis: AnalysisResult, differentiationSummary: string, proposalNarrative: ProposalNarrative) {
   return {
     projectOverview: compactText(analysis.projectOverview),
@@ -80,11 +110,14 @@ function buildCompactAnalysis(analysis: AnalysisResult, differentiationSummary: 
 function fallbackCandidate(index: number, name: string, analysis: AnalysisResult, narrative: ProposalNarrative): ConceptCandidate {
   const conceptId = `C${index}`;
   const fallbackPresets = [
-    { keywords: ['문턱', '채집', '목격'] as [string, string, string], slogan: '흩어진 요구를 한 장면 안에서 목격하게 합니다.', definition: `${analysis.clientChallenge || narrative.coreProblem}을 관객이 단계별로 발견하는 상징적 장면으로 바꾸는 콘셉트입니다.`, experienceMechanism: '입구-채집-목격 순서로 과제 맥락을 장면화해 평가자가 제안의 세계를 따라가게 함', recognitionLogic: '흩어진 조건을 하나의 장면으로 보고 각 장치의 역할을 기억함', nameWhy: '메커니즘이 만든 문턱과 채집 이미지를 제목화해 전략 설명이 아닌 제안 세계로 보이게 합니다.' },
-    { keywords: ['등대', '항로', '정박'] as [string, string, string], slogan: '복잡한 판단 조건을 한 방향의 항해 장면으로 묶습니다.', definition: `${narrative.proposalThesis || analysis.projectOverview}를 공간과 콘텐츠가 같은 방향으로 항해하는 경험 프레임으로 전개하는 콘셉트입니다.`, experienceMechanism: '관객이 기준점을 찾고 항로를 따라가며 마지막에 실행 장면에 정박하는 흐름', recognitionLogic: '기준점-이동-도착의 이미지로 핵심 약속을 기억함', nameWhy: 'RFP의 복잡한 판단 흐름을 항해 세계로 바꿔 공간·미디어·운영으로 확장할 수 있습니다.' },
-    { keywords: ['서랍', '표본', '도감'] as [string, string, string], slogan: '각 요소의 고유 역할을 꺼내 보고 하나의 그림으로 완성합니다.', definition: `${analysis.projectOverview || narrative.proposalThesis}의 핵심 요소를 표본처럼 분류하고 조합하는 콘셉트입니다.`, experienceMechanism: '요소별 역할을 서랍처럼 열어 보고 마지막에 하나의 도감 장면으로 통합해 이해시킴', recognitionLogic: '각 요소의 차이와 전체 그림을 동시에 기억함', nameWhy: '다중 제품·서비스 RFP에서도 각 entity를 표본 세계 안에 배치할 수 있는 제목입니다.' },
+    { keywords: ['근거', '판단', '확장'] as [string, string, string], slogan: 'RFP 근거가 바로 제안 구조로 이어지게 합니다.', definition: `RFP의 핵심 요구를 판단 기준과 실행 접점으로 변환해 평가자가 선택 이유를 확인하게 하는 콘셉트입니다.`, experienceMechanism: 'RFP 근거를 도입-판단-확장 순서로 배열해 제안의 논리를 따라가게 함', recognitionLogic: '요구 조건과 실행 근거가 같은 기준으로 연결됨을 기억함', nameWhy: '현재 RFP의 구체 근거를 제안 판단 장치로 바꾸는 이름입니다.' },
+    { keywords: ['대상', '역할', '증명'] as [string, string, string], slogan: '각 대상의 역할을 분명히 나누고 하나의 증명으로 묶습니다.', definition: `RFP에 등장한 대상과 역할을 분리한 뒤 공간·콘텐츠·운영 증거로 재조합하는 콘셉트입니다.`, experienceMechanism: '대상별 역할을 먼저 인식하고 마지막에 통합 증명으로 연결하는 흐름', recognitionLogic: '각 요소의 차이와 전체 제안 명제를 동시에 기억함', nameWhy: 'RFP에 있는 대상·역할·평가 근거를 제목의 출처로 삼습니다.' },
+    { keywords: ['기준', '접점', '운영'] as [string, string, string], slogan: '평가 기준이 현장 접점과 운영 방식으로 보이게 합니다.', definition: `평가 기준을 콘텐츠 접점과 운영 증거로 번역해 제안서 전체의 검증 흐름을 만드는 콘셉트입니다.`, experienceMechanism: '기준-접점-운영 순서로 평가 언어를 실행 장면으로 전환함', recognitionLogic: '추상 평가 항목이 실제 현장 작동 방식으로 확인됨을 기억함', nameWhy: '평가 기준과 운영 증거라는 RFP 근거에서 파생된 이름입니다.' },
   ];
   const preset = fallbackPresets[(index - 1) % fallbackPresets.length];
+  const rfpGrounding = fallbackGrounding(analysis, narrative);
+  const seed = fallbackNameSeeds(analysis)[index - 1] || fallbackNameSeeds(analysis)[0] || '판단';
+  const repairedName = name || `${seed} ${['프로토콜', '렌즈', '매트릭스'][(index - 1) % 3]}`;
   const keywordBase = preset.keywords;
   const definition = compactText(preset.definition, 180);
   const mechanism = {
@@ -100,14 +133,14 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
 
   return {
     conceptId,
-    proposalCoreConceptName: name,
+    proposalCoreConceptName: repairedName,
     proposalCoreConceptSlogan: preset.slogan,
     proposalCoreConceptDefinition: definition,
-    whyThisIsCoreConcept: compactText(`${name}은 관람 순서가 아니라 RFP 과제, 제안 명제, 공간·콘텐츠·운영·증명 방식을 하나의 제안 세계로 묶는 최상위 프레임입니다.`, 220),
+    whyThisIsCoreConcept: compactText(`${repairedName}은 관람 순서가 아니라 RFP 과제, 제안 명제, 공간·콘텐츠·운영·증명 방식을 하나의 제안 세계로 묶는 최상위 프레임입니다.`, 220),
     experiencePrinciple: compactText(`관객이 ${preset.recognitionLogic}으로 인식하도록 경험의 태도와 감정 전환을 설계합니다.`, 180),
     visitorJourney: keywordBase.join(' → '),
     contentMediaImplication: compactText(`${keywordBase.join(', ')} 키워드를 기준으로 콘텐츠, 미디어, 오브젝트의 역할을 나누고 각 접점이 핵심 명제를 증명하게 합니다.`, 180),
-    conceptName: name,
+    conceptName: repairedName,
     conceptSlogan: preset.slogan,
     conceptTagline: preset.slogan,
     conceptDefinition: definition,
@@ -116,11 +149,17 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
     whyThisConcept: compactText(narrative.whyThisConcept || definition, 180),
     conceptMechanism: mechanism,
     conceptMetaphorSource: {
-      metaphorSeed: name,
-      symbolicImage: `${name} 안에서 관객이 요구 조건을 장면으로 발견하는 이미지`,
-      proposalWorld: `${name}을 기준으로 공간, 콘텐츠, 미디어, 운영 접점을 배열하는 제안 세계`,
+      metaphorSeed: repairedName,
+      symbolicImage: `${repairedName} 안에서 RFP 근거가 판단 기준과 실행 접점으로 전환되는 이미지`,
+      proposalWorld: `${repairedName}을 기준으로 공간, 콘텐츠, 미디어, 운영 접점을 배열하는 제안 세계`,
       whyThisCanBecomeAConceptTitle: preset.nameWhy,
+      sourceTypes: ['product/service logic', 'evaluation criteria'],
+      rfpEvidence: rfpGrounding,
     },
+    rfpGrounding,
+    whyThisNameFitsRfp: compactText(rfpGrounding.slice(0, 3).join(' / ') || preset.nameWhy, 220),
+    whyThisIsNotJustPoetic: '임의의 문학적 사물이 아니라 현재 RFP의 대상·역할·평가 근거에서 뽑은 명명입니다.',
+    whyThisCanOrganizeProposal: '이름이 공간, 콘텐츠, 미디어, 운영, 증명 장표의 반복 기준으로 확장됩니다.',
     whyThisNameWorks: preset.nameWhy,
     conceptKeywords: keywordBase,
     keywordExecutionGuide: keywordBase.map((keyword) => ({
@@ -154,10 +193,10 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
       strategicShift: '정보 나열에서 선택 이유 증명으로 전환',
       whyThisConcept: compactText(narrative.whyThisConcept || definition, 140),
     },
-    conceptTitle: name,
+    conceptTitle: repairedName,
     subtitle: preset.slogan,
-    conceptNameKR: name,
-    conceptNameEN: name,
+    conceptNameKR: repairedName,
+    conceptNameEN: repairedName,
     oneLineDefinition: definition,
     coreMessage: compactText(narrative.proposalThesis || definition, 160),
     thesisProof: compactText(narrative.whyThisConcept || 'RFP 요구와 실행 구조가 직접 연결됩니다.', 160),
@@ -229,9 +268,9 @@ function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: Prop
       conceptDevelopmentCriteria: ['RFP 부합', '간결성', '실행 가능성'],
     },
     concepts: [
-      fallbackCandidate(1, '첫문장의 정원', analysis, proposalNarrative),
-      fallbackCandidate(2, '등대의 항로', analysis, proposalNarrative),
-      fallbackCandidate(3, '서랍 속 도감', analysis, proposalNarrative),
+      fallbackCandidate(1, '', analysis, proposalNarrative),
+      fallbackCandidate(2, '', analysis, proposalNarrative),
+      fallbackCandidate(3, '', analysis, proposalNarrative),
     ],
     recommendation: {
       recommendedConceptId: 'C1',
@@ -329,11 +368,15 @@ export async function POST(request: Request) {
       'Experience Principle은 core concept이 관객 인식·참여·감정 전환으로 어떻게 작동하는지 설명한다. awareness/differentiation/immersion/conviction/recognition/comparison/participation/memory는 여기에서 다루고 core concept name으로 쓰지 않는다.',
       'Visitor Journey는 Awareness → Differentiation → Immersion → Conviction 같은 순차 흐름으로만 작성하고 Core Concept을 대체하지 않는다.',
       'Content / Media Execution Idea는 core concept에서 파생된 콘텐츠, 미디어, 인터랙션, 오브젝트 실행 아이디어로만 작성한다.',
-      '각 concepts 항목은 Proposal Core Concept 설계 후 conceptMechanism 8개 필드와 conceptMetaphorSource(metaphorSeed, symbolicImage, proposalWorld, whyThisCanBecomeAConceptTitle)를 정리한다.',
-      'proposalCoreConceptName/conceptName은 Hidden Needs, Strategic Approach, 회피 규칙, 평가 논리, 문제 해결 문구에서 직접 만들지 말고 conceptMetaphorSource의 project-specific metaphor, scene, structure, symbolic frame, experience image에서만 도출한다.',
+      '각 concepts 항목은 Proposal Core Concept 설계 후 conceptMechanism 8개 필드와 conceptMetaphorSource(metaphorSeed, symbolicImage, proposalWorld, whyThisCanBecomeAConceptTitle, sourceTypes, rfpEvidence)를 정리한다.',
+      '각 concepts 항목은 rfpGrounding(3~5개의 현재 RFP 구체 근거), whyThisNameFitsRfp, whyThisIsNotJustPoetic, whyThisCanOrganizeProposal을 반드시 포함한다.',
+      'proposalCoreConceptName/conceptName은 Hidden Needs, Strategic Approach, 회피 규칙, 평가 논리, 문제 해결 문구에서 직접 만들지 말고 conceptMetaphorSource의 RFP-grounded metaphor, scene, structure, symbolic frame, experience image에서만 도출한다.',
+      'Concept Metaphor Source는 actual RFP object, project type, client or brand role, product/service logic, spatial structure, audience behavior, content mechanism, operational proof, evaluation criteria, stakeholder relationship 중 하나 이상에서만 도출한다.',
+      '첫문장의 정원, 등대의 항로, 서랍 속 도감, 기억의 숲, 가능성의 지도, 미래의 정원, 빛의 항해, 경험의 서랍, 가치의 풍경처럼 문학 제목 같은 임의 은유는 RFP 원문 근거가 명시되지 않으면 거부하고 이름만 RFP 대상·역할·메커니즘·공간/콘텐츠 논리 기반으로 수리한다.',
+      'conceptDefinition은 프로젝트명, 기간, 장소, 예산, 클라이언트, 제출 조건 등 RFP 개요를 반복하며 시작하지 말고 콘셉트의 의미, 작동 방식, 생성 경험/제안 논리, 전략 과제 해결 방식을 설명한다.',
       '각 후보별로 내부적으로 이름 5개를 만들고 specificityToCurrentRfp, symbolicPower, memorability, coverTitlePotential, expandability, nonGenericQuality, notStrategyLabel을 1~5점으로 채점한다. 종합 4 미만이거나 섹션 제목/컨설팅 헤딩/전략 부제/문제해결 문구로도 쓸 수 있으면 이름만 재생성하고 최종 1개만 출력한다. 내부 후보와 점수는 출력하지 않는다.',
       '약한 Core Concept 이름 금지: 증거 루트, 가치 신호, 선택의 이유, 인지의 흐름, 확신의 여정, 경험의 경로, 차별화의 단계, Signal to Proof, Route to Value, Evidence Journey, 혁신의 장면, 차별화된 통합, 명확한 구분, 통합된 경험, Distinct Unity, Focused Identity, Scene of Innovation, The Reason to Choose, Connected Future, Innovation Journey, Experience Hub.',
-      'conceptName은 전략 문장/슬라이드 제목/프로젝트 목표/직접 솔루션 문구/캠페인 문구/RFP 요약/회피 규칙 번역처럼 보이면 안 된다.',
+      'conceptName은 전략 문장/슬라이드 제목/프로젝트 목표/직접 솔루션 문구/캠페인 문구/RFP 요약/회피 규칙 번역처럼 보이면 안 되며, 무관한 RFP에 재사용하면 어색해야 한다.',
       '한국어 conceptName은 가치/증거/신호/루트/이유/선택/차별화/통합/연결/혁신/경험/공명/확신/집중/방향/전략/메시지 중심 이름을 거부하고, 현재 RFP에서만 성립하는 상징 세계·구조 이미지·장면 제목으로 작성한다.',
       '영어 conceptName은 value/proof/signal/route/reason/choice/differentiation/connection/innovation/experience/focus/resonance/strategy/identity/unity/synergy/nexus/pulse/vanguard/frontier/spectrum 중심 이름을 거부한다.',
       'conceptSlogan은 평가자가 이해할 수 있게 RFP 목표와 제안 약속을 1문장으로 설명하되, conceptName 자체는 간결하게 유지한다.',
