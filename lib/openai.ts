@@ -13,11 +13,13 @@ export async function createStructuredJson<T>({
   schema,
   system,
   user,
+  timeoutMs,
 }: {
   schemaName: string;
   schema: Record<string, unknown>;
   system: string;
   user: string;
+  timeoutMs?: number;
 }): Promise<T> {
   const client = getOpenAIClient();
   const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -37,7 +39,7 @@ export async function createStructuredJson<T>({
       },
     },
     temperature: 0.4,
-  });
+  }, timeoutMs ? { timeout: timeoutMs } : undefined);
 
   const content = completion.choices[0]?.message?.content;
   if (!content) {

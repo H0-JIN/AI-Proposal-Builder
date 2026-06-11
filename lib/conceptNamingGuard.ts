@@ -467,17 +467,16 @@ export function applyNonBlockingConceptNamingGuard(
     if (!originalViolations.length) return candidate;
 
     allViolations.push(...originalViolations);
-    for (let attempt = 0; attempt < safeNames.length; attempt += 1) {
-      const safeName = safeNames[(safeNameIndex + attempt) % safeNames.length];
-      const repairedCandidate = applyConceptName(candidate, safeName, '일부 콘셉트명이 기준을 충족하지 않아 자동 보정했습니다. 결과를 확인해 주세요.');
-      const repairedViolations = getCandidateViolations(repairedCandidate, index, context);
-      if (!repairedViolations.length) {
-        safeNameIndex += attempt + 1;
-        repairedConceptIds.add(candidate.conceptId || `concept-${index + 1}`);
-        return repairedCandidate;
-      }
+    const safeName = safeNames[safeNameIndex % safeNames.length];
+    safeNameIndex += 1;
+    const repairedCandidate = applyConceptName(candidate, safeName, '일부 콘셉트명이 기준을 충족하지 않아 1회 자동 보정했습니다. 결과를 확인해 주세요.');
+    const repairedViolations = getCandidateViolations(repairedCandidate, index, context);
+    if (!repairedViolations.length) {
+      repairedConceptIds.add(candidate.conceptId || `concept-${index + 1}`);
+      return repairedCandidate;
     }
 
+    allViolations.push(...repairedViolations);
     warningConceptIds.add(candidate.conceptId || `concept-${index + 1}`);
     return {
       ...candidate,
@@ -491,7 +490,7 @@ export function applyNonBlockingConceptNamingGuard(
   return {
     ...guarded,
     namingGuardNotice: {
-      message: '일부 콘셉트명이 기준을 충족하지 않아 자동 보정했습니다. 결과를 확인해 주세요.',
+      message: '일부 콘셉트명을 1회 자동 보정했습니다. 보정되지 않은 후보는 경고만 표시하고 결과는 유지했습니다.',
       repairedConceptIds: Array.from(repairedConceptIds),
       warningConceptIds: Array.from(warningConceptIds),
       violations: allViolations,
@@ -503,7 +502,7 @@ export function buildConceptNamingRetryInstruction(violations: string[]) {
   return [
     'CONCEPT NAMING GUARD REJECTION:',
     ...violations.map((violation) => `- ${violation}`),
-    'Regenerate all 3 concepts. Keep the strategic narrative, but replace rejected naming logic with concise, memorable, proposal-ready names derived from the current RFP strategic tension, client situation, audience barrier, product/service logic, spatial or content mechanism, desired perception shift, evaluation criteria, proposalThesis, and proof logic.',
+    'Regenerate all 2 concepts. Keep the strategic narrative, but replace rejected naming logic with concise, memorable, proposal-ready names derived from the current RFP strategic tension, client situation, audience barrier, product/service logic, spatial or content mechanism, desired perception shift, evaluation criteria, proposalThesis, and proof logic.',
     'Concept Role Guard: conceptName must express the proposal strategic idea, not the execution method. Do not use modular, interactive, value chain, media, zone, pavilion, experience, content, mechanism, spatial layout, booth/column constraints, deliverable categories, or RFP object lists as the main naming device unless transformed into a strong strategic metaphor.',
     'Reject names that read like technical descriptions, combine 2+ execution terms, use modular interactive or value chain as the main naming device, exceed 5 words without a strong reason, sound like slide titles, or start from constraints instead of proposalThesis.',
     'Do not use constraints, columns, booth limits, venue limitations, schedule, budget, deliverable names, equipment, media types, object lists, or floor-plan limitations as conceptName sources.',

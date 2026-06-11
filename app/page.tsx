@@ -1637,6 +1637,7 @@ export default function Home() {
   const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [], dbUploadedDocuments: [] });
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [conceptRetryVisible, setConceptRetryVisible] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
   const [dbSaveStatus, setDbSaveStatus] = useState<DbSaveStatus>('idle');
   const [dbUploadRole, setDbUploadRole] = useState<'rfp' | 'proposal' | 'reference' | 'memo'>('proposal');
@@ -2957,14 +2958,20 @@ export default function Home() {
     }
   };
 
-  const runConcepts = async () => {
+  const runConcepts = async (options: { retryLight?: boolean } = {}) => {
     if (!state.analysis) return;
     setError('');
+    setConceptRetryVisible(false);
     setLoading('제안 내러티브 생성 중...');
     try {
       const proposalNarrative = await postJson<ProposalNarrative>('/api/narrative', { input: analysisInput, analysis: state.analysis, uploadedDocuments: state.uploadedDocuments, documentChunks });
-      setLoading('콘셉트 후보 3안 생성 중...');
-      const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', { input: analysisInput, analysis: state.analysis, proposalNarrative, documentChunks });
+      setLoading(options.retryLight ? '가벼운 콘셉트 후보 2안 생성 중...' : '콘셉트 후보 2안 생성 중...');
+      const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', {
+        input: analysisInput,
+        analysis: state.analysis,
+        proposalNarrative,
+        options: { maxCandidates: 2, maxProposalPatterns: options.retryLight ? 5 : 8, retryLight: options.retryLight },
+      });
       setState((current) => ({
         ...current,
         proposalNarrative,
@@ -2978,7 +2985,13 @@ export default function Home() {
       }));
       setStep('concepts');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '콘셉트 후보 생성 중 오류가 발생했습니다.');
+      setConceptRetryVisible(true);
+      setStep('analysis');
+      const rawMessage = err instanceof Error ? err.message : '콘셉트 후보 생성 중 오류가 발생했습니다.';
+      const friendlyMessage = /FUNCTION_INVOCATION_TIMEOUT|timeout|timed out|non-JSON response/i.test(rawMessage)
+        ? '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.'
+        : rawMessage;
+      setError(friendlyMessage);
     } finally {
       setLoading('');
     }
@@ -3350,6 +3363,12 @@ export default function Home() {
               )}
               <DbSaveStatusIndicator status={dbSaveStatus} />
               <KeyValueList data={state.analysis} evidence={state.retrievalEvidence} />
+              {conceptRetryVisible && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-950">
+                  <p>컨셉 생성 시간이 초과되었습니다. 분석 결과는 유지됩니다.</p>
+                  <button onClick={() => runConcepts({ retryLight: true })} disabled={Boolean(loading)} className="mt-3 rounded-xl bg-amber-600 px-4 py-2 font-black text-white transition hover:bg-amber-700 disabled:opacity-50">가볍게 다시 생성</button>
+                </div>
+              )}
               <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
             </div>
             {hasConfirmationNeeds && (
@@ -3365,10 +3384,10 @@ export default function Home() {
               {hasConfirmationNeeds ? (
                 <>
                   <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
-                  <SecondaryButton onClick={runConcepts} disabled={Boolean(loading)}>콘셉트 생성</SecondaryButton>
+                  <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading)}>콘셉트 생성</SecondaryButton>
                 </>
               ) : (
-                <PrimaryButton onClick={runConcepts} disabled={Boolean(loading)}>콘셉트 후보 생성</PrimaryButton>
+                <PrimaryButton onClick={() => runConcepts()} disabled={Boolean(loading)}>콘셉트 후보 생성</PrimaryButton>
               )}
             </div>
           </SectionCard>
@@ -3378,7 +3397,7 @@ export default function Home() {
           <SectionCard title="콘셉트 후보 선택">
             <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 text-blue-950">
               <p className="text-sm font-black uppercase tracking-[0.2em] text-blue-700">Required Step</p>
-              <h3 className="mt-2 text-xl font-black">제안서 구조 생성 전에 콘셉트 후보 3안 중 하나를 선택해주세요.</h3>
+              <h3 className="mt-2 text-xl font-black">제안서 구조 생성 전에 콘셉트 후보 2개 중 하나를 선택해주세요.</h3>
               <p className="mt-2 text-sm leading-6">
                 선택한 콘셉트는 이후 제안서 구조, 장표별 문안, PPTX의 Core Concept / Key Experience Asset Concept / 공간·콘텐츠 / 미디어·인터랙션 장표 기준으로 저장됩니다.
               </p>
@@ -3451,7 +3470,7 @@ export default function Home() {
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('analysis')}>분석 결과 보기</SecondaryButton>
-              <SecondaryButton onClick={runConcepts} disabled={Boolean(loading)}>콘셉트 다시 생성</SecondaryButton>
+              <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading)}>콘셉트 다시 생성</SecondaryButton>
               <PrimaryButton onClick={runOutline} disabled={Boolean(loading) || !canGenerateProposalStructure}>제안서 구조 생성</PrimaryButton>
             </div>
           </SectionCard>
