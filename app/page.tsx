@@ -1124,6 +1124,19 @@ function conceptMechanismRows(concept: ConceptCandidate) {
   ].filter(([, value]) => Boolean(value?.trim()));
 }
 
+
+function conceptMetaphorSourceRows(concept: ConceptCandidate) {
+  const source = concept.conceptMetaphorSource;
+  if (!source) return [];
+
+  return [
+    ['Seed', source.metaphorSeed],
+    ['Image', source.symbolicImage],
+    ['World', source.proposalWorld],
+    ['Title reason', source.whyThisCanBecomeAConceptTitle],
+  ].filter(([, value]) => Boolean(value?.trim()));
+}
+
 function executionKeywordRows(concept: ConceptCandidate) {
   return (concept.keywordExecutionGuide ?? []).slice(0, 3).map((guide) => ({
     keyword: guide.keyword,
@@ -3436,7 +3449,7 @@ export default function Home() {
           <SectionCard title="콘셉트 후보 선택">
             <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 text-blue-950">
               <p className="text-sm font-black uppercase tracking-[0.2em] text-blue-700">Required Step</p>
-              <h3 className="mt-2 text-xl font-black">제안서 구조 생성 전에 콘셉트 후보 2개 중 하나를 선택해주세요.</h3>
+              <h3 className="mt-2 text-xl font-black">제안서 구조 생성 전에 콘셉트 후보 3개 중 하나를 선택해주세요.</h3>
               <p className="mt-2 text-sm leading-6">
                 선택한 콘셉트는 이후 제안서 구조, 장표별 문안, PPTX의 Core Concept / Key Experience Asset Concept / 공간·콘텐츠 / 미디어·인터랙션 장표 기준으로 저장됩니다.
               </p>
@@ -3466,6 +3479,19 @@ export default function Home() {
                       <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 확인 권장</p>
                     )}
                     <p className="text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
+                    {conceptMetaphorSourceRows(concept).length > 0 && (
+                      <div className="mt-3 rounded-2xl border border-violet-100 bg-violet-50 p-3 text-sm leading-6 text-violet-950">
+                        <p className="font-black text-violet-800">Concept Metaphor Source</p>
+                        <dl className="mt-2 space-y-1">
+                          {conceptMetaphorSourceRows(concept).slice(0, 4).map(([label, value]) => (
+                            <div key={label}>
+                              <dt className="inline font-black">{label}: </dt>
+                              <dd className="inline">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
+                    )}
                     {conceptMechanismRows(concept).length > 0 && (
                       <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm leading-6 text-blue-950">
                         <p className="font-black text-blue-800">Concept Mechanism</p>

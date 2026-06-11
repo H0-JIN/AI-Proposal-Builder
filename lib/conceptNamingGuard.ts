@@ -3,6 +3,18 @@ import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, Proposa
 
 export const GENERIC_CONCEPT_WORD_PENALTY_LIST = [
   'distinct unity',
+  'value',
+  'proof',
+  'signal',
+  'route',
+  'reason',
+  'choice',
+  'connection',
+  'focus',
+  'resonance',
+  'strategy',
+  'frontier',
+  'spectrum',
   'focused identity',
   'differentiated synergy',
   'synergized distinction',
@@ -36,6 +48,8 @@ export const GENERIC_CONCEPT_WORD_PENALTY_LIST = [
 ];
 
 const WEAK_GENERIC_CONCEPT_NAMES = [
+  '증거 루트',
+  '가치 신호',
   '선택의 이유',
   '혁신의 장면',
   '차별화된 통합',
@@ -48,6 +62,18 @@ const WEAK_GENERIC_CONCEPT_NAMES = [
   'innovation journey',
   'experience hub',
   'distinct unity',
+  'value',
+  'proof',
+  'signal',
+  'route',
+  'reason',
+  'choice',
+  'connection',
+  'focus',
+  'resonance',
+  'strategy',
+  'frontier',
+  'spectrum',
   'focused identity',
   'differentiated synergy',
   'synergized distinction',
@@ -62,6 +88,8 @@ const WEAK_GENERIC_CONCEPT_NAMES = [
 ];
 
 const WEAK_GENERIC_TOKEN_COMBINATIONS = [
+  ['증거', '루트'],
+  ['가치', '신호'],
   ['선택의', '이유'],
   ['혁신의', '장면'],
   ['차별화된', '통합'],
@@ -113,6 +141,19 @@ const GENERIC_CATEGORY_WORDS = [
   '차별화',
   '구분',
   '정체성',
+  '가치',
+  '증거',
+  '신호',
+  '루트',
+  '이유',
+  '선택',
+  '연결',
+  '공명',
+  '확신',
+  '집중',
+  '방향',
+  '전략',
+  '메시지',
 ];
 
 
@@ -217,6 +258,47 @@ const EXPLANATORY_PATTERNS = [
   /：/u,
 ];
 
+const FORBIDDEN_ABSTRACT_NAMING_TERMS = [
+  '가치',
+  '증거',
+  '신호',
+  '루트',
+  '이유',
+  '선택',
+  '차별화',
+  '통합',
+  '연결',
+  '혁신',
+  '경험',
+  '공명',
+  '확신',
+  '집중',
+  '방향',
+  '전략',
+  '메시지',
+  'value',
+  'proof',
+  'signal',
+  'route',
+  'reason',
+  'choice',
+  'differentiation',
+  'connection',
+  'innovation',
+  'experience',
+  'focus',
+  'resonance',
+  'strategy',
+  'identity',
+  'unity',
+  'synergy',
+  'nexus',
+  'pulse',
+  'vanguard',
+  'frontier',
+  'spectrum',
+];
+
 const CONSTRAINT_SOURCE_TERMS = [
   'column',
   'columns',
@@ -312,6 +394,10 @@ function hasWeakGenericConceptName(name: string) {
   );
 }
 
+function hasForbiddenAbstractNamingCore(name: string) {
+  return containsAny(name, FORBIDDEN_ABSTRACT_NAMING_TERMS);
+}
+
 function hasGenericConceptPenaltyWord(name: string) {
   const normalized = normalizedText(name);
   const tokens = normalized.split(/[\s/·|+_-]+/).filter(Boolean);
@@ -336,6 +422,8 @@ function isLikelySentence(name: string) {
 function hasStrategyStatementName(name: string) {
   const normalized = normalizedText(name);
   return [
+    /value signal/i,
+    /proof route/i,
     /reason to choose/i,
     /scene of innovation/i,
     /connected future/i,
@@ -343,6 +431,8 @@ function hasStrategyStatementName(name: string) {
     /focused identity/i,
     /distinct unity/i,
     /differentiated unity/i,
+    /증거\s*루트/u,
+    /가치\s*신호/u,
     /선택의\s*이유/u,
     /혁신의\s*장면/u,
     /차별화된\s*통합/u,
@@ -359,13 +449,16 @@ function hasStrategyStatementName(name: string) {
 
 function nameMechanismScore(candidate: ConceptCandidate, name: string) {
   const mechanismText = Object.values(candidate.conceptMechanism ?? {}).join(' ');
-  const rfpSpecificity = significantTokens(`${candidate.hiddenNeedResolved} ${candidate.strategicApproach} ${mechanismText}`).some((token) => normalizedText(name).includes(token)) ? 5 : 3;
+  const metaphorText = Object.values(candidate.conceptMetaphorSource ?? {}).join(' ');
+  const nameText = normalizedText(name);
+  const specificityToCurrentRfp = significantTokens(`${metaphorText} ${mechanismText}`).some((token) => nameText.includes(token)) ? 5 : 4;
+  const symbolicPower = metaphorText.trim() && !hasStrategyStatementName(name) ? 5 : 3;
   const memorability = titleUnitCount(name) <= 3 && name.length <= 24 ? 5 : titleUnitCount(name) <= 5 ? 4 : 2;
-  const mechanismClarity = mechanismText && !hasStrategyStatementName(name) && !hasGenericConceptPenaltyWord(name) ? 4 : 2;
-  const expandability = candidate.keywordExecutionGuide?.length === 3 && mechanismText ? 5 : 3;
-  const nonGeneric = !hasWeakGenericConceptName(name) && !hasGenericMainNamingDevice(name) && !hasGenericConceptPenaltyWord(name) ? 5 : 2;
-  const cover = !isLikelySentence(name) && !hasExecutionDescriptionName(name) ? 5 : 2;
-  const scores = [rfpSpecificity, memorability, mechanismClarity, expandability, nonGeneric, cover];
+  const coverTitlePotential = !isLikelySentence(name) && !hasExecutionDescriptionName(name) ? 5 : 2;
+  const expandability = candidate.keywordExecutionGuide?.length === 3 && mechanismText.trim() && metaphorText.trim() ? 5 : 3;
+  const nonGenericQuality = !hasWeakGenericConceptName(name) && !hasGenericMainNamingDevice(name) && !hasGenericConceptPenaltyWord(name) ? 5 : 2;
+  const notStrategyLabel = !hasStrategyStatementName(name) && !hasDirectAvoidanceRuleEcho(name) ? 5 : 2;
+  const scores = [specificityToCurrentRfp, symbolicPower, memorability, coverTitlePotential, expandability, nonGenericQuality, notStrategyLabel];
   return scores.reduce((sum, score) => sum + score, 0) / scores.length;
 }
 
@@ -420,7 +513,13 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
       proofMechanism: candidate.thesisProof || candidate.executionFeasibility || '',
       whyThisCanBecomeAConcept: candidate.whyThisConcept || candidate.whyThisWorks || '',
     },
-    whyThisNameWorks: candidate.whyThisNameWorks || candidate.whyThisConcept || candidate.whyThisWorks || '',
+    conceptMetaphorSource: candidate.conceptMetaphorSource ?? {
+      metaphorSeed: conceptName,
+      symbolicImage: candidate.conceptMechanism?.experienceMechanism || candidate.experienceStructure || conceptDefinition,
+      proposalWorld: candidate.conceptMechanism?.whyThisCanBecomeAConcept || candidate.keyExperienceAssetDirection || conceptTagline,
+      whyThisCanBecomeAConceptTitle: candidate.whyThisNameWorks || candidate.whyThisConcept || candidate.whyThisWorks || '',
+    },
+    whyThisNameWorks: candidate.whyThisNameWorks || candidate.conceptMetaphorSource?.whyThisCanBecomeAConceptTitle || candidate.whyThisConcept || candidate.whyThisWorks || '',
     keywordExecutionGuide: (candidate.keywordExecutionGuide ?? []).map((guide) => ({
       ...guide,
       contentOrMediaImplication: guide.contentOrMediaImplication || guide.contentImplication || '',
@@ -474,6 +573,7 @@ export function validateConceptNaming(
     if (!name.trim()) violations.push(`${label}: conceptName is empty.`);
     if (unitCount > 5 || name.length > 36) violations.push(`${label}: conceptName is too long for a presentation-ready title.`);
     if (isLikelySentence(name)) violations.push(`${label}: conceptName reads like an explanatory sentence or section heading.`);
+    if (hasForbiddenAbstractNamingCore(name)) violations.push(`${label}: conceptName is centered on a forbidden abstract/corrective naming word rather than a project-specific metaphor source.`);
     if (hasStrategyStatementName(name)) violations.push(`${label}: conceptName reads like a strategy statement, slide title, project objective, direct solution phrase, or avoidance-rule translation instead of a concept mechanism.`);
     if (nameMechanismScore(candidate, name) < 4) violations.push(`${label}: conceptName scores below 4 on specificity, memorability, mechanism clarity, expandability, non-generic quality, or cover-title potential.`);
     if (hasWeakGenericConceptName(name)) violations.push(`${label}: conceptName is a weak generic keyword combination rather than a proposal-ready idea.`);
@@ -500,28 +600,41 @@ function normalizeSafeNameSeed(value: string) {
     .trim();
 }
 
-function buildSafeConceptNames(context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
-  const seeds = normalizeSafeNameSeed([
-    context.input?.projectName,
-    context.analysis?.projectOverview,
-    context.analysis?.clientChallenge,
-    context.proposalNarrative?.proposalThesis,
-    context.proposalNarrative?.strategicOpportunity,
-  ].filter(Boolean).join(' '))
+function extractSymbolicSeeds(value: string, fallbackSeeds: string[] = []) {
+  const blocked = ['제안', '프로젝트', '사업', '운영', '행사', '콘텐츠', '체험', '전시', '공간', '부스', '기둥', '장소', '예산', '일정', '산출물'];
+  const seeds = normalizeSafeNameSeed(value)
     .split(/\s+/)
-    .filter((token) => token.length >= 2 && token.length <= 8 && !['제안', '프로젝트', '사업', '운영', '행사', '콘텐츠', '체험', '전시'].includes(token));
-  const prefix = seeds[0] || seeds[1] || '증거';
-  const second = seeds.find((token) => token !== prefix) || '가치';
+    .filter((token) => token.length >= 2 && token.length <= 8)
+    .filter((token) => !blocked.includes(token))
+    .filter((token) => !FORBIDDEN_ABSTRACT_NAMING_TERMS.some((term) => token.toLowerCase().includes(term.toLowerCase())));
+  return [...seeds, ...fallbackSeeds].filter(Boolean);
+}
+
+function buildSafeConceptNamesFromMetaphor(candidate: ConceptCandidate, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
+  const source = candidate.conceptMetaphorSource;
+  const metaphorSeeds = extractSymbolicSeeds([
+    source?.metaphorSeed,
+    source?.symbolicImage,
+    source?.proposalWorld,
+    source?.whyThisCanBecomeAConceptTitle,
+  ].filter(Boolean).join(' '));
+  const contextSeeds = extractSymbolicSeeds([
+    context.input?.projectName,
+    context.input?.clientName,
+    context.analysis?.projectOverview,
+  ].filter(Boolean).join(' '), ['첫문장', '등대']);
+  const prefix = metaphorSeeds[0] || contextSeeds[0] || '첫문장';
+  const second = metaphorSeeds.find((token) => token !== prefix) || contextSeeds.find((token) => token !== prefix) || '등대';
 
   return [
-    `${prefix} 신호`,
-    `${prefix} 루트`,
-    `${second} 회로`,
-    `${prefix} 필드`,
-    `${second} 스위치`,
-    `${prefix} 리추얼`,
-    `${second} 트랙`,
-    `${prefix} 프레임`,
+    `${prefix}의 정원`,
+    `${second}의 항구`,
+    `${prefix} 서랍`,
+    `${second} 지도`,
+    `${prefix}의 표본실`,
+    `${second} 극장`,
+    `${prefix} 관측소`,
+    `${second}의 문턱`,
   ];
 }
 
@@ -553,7 +666,6 @@ export function applyNonBlockingConceptNamingGuard(
   result: ConceptCandidatesResult,
   context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] } = {},
 ): ConceptCandidatesResult {
-  const safeNames = buildSafeConceptNames(context);
   const repairedConceptIds = new Set<string>();
   const warningConceptIds = new Set<string>();
   const allViolations: string[] = [];
@@ -564,6 +676,7 @@ export function applyNonBlockingConceptNamingGuard(
     if (!originalViolations.length) return candidate;
 
     allViolations.push(...originalViolations);
+    const safeNames = buildSafeConceptNamesFromMetaphor(candidate, context);
     const safeName = safeNames[safeNameIndex % safeNames.length];
     safeNameIndex += 1;
     const repairedCandidate = applyConceptName(candidate, safeName, '일부 콘셉트명이 기준을 충족하지 않아 1회 자동 보정했습니다. 결과를 확인해 주세요.');
@@ -599,10 +712,10 @@ export function buildConceptNamingRetryInstruction(violations: string[]) {
   return [
     'CONCEPT NAMING GUARD REJECTION:',
     ...violations.map((violation) => `- ${violation}`),
-    'Regenerate all 2 concepts. Keep the strategic narrative, but replace rejected naming logic with concise, memorable, proposal-ready names derived from the current RFP strategic tension, client situation, audience barrier, product/service logic, spatial or content mechanism, desired perception shift, evaluation criteria, proposalThesis, and proof logic.',
+    'Regenerate all 3 concepts. Keep the strategic narrative, but replace rejected naming logic with concise, memorable, proposal-ready names derived from each candidate’s Concept Metaphor Source: metaphorSeed, symbolicImage, proposalWorld, and whyThisCanBecomeAConceptTitle. Do not derive names directly from hidden needs, strategic approach, mechanism summary, anti-patterns, evaluation logic, or corrective wording.',
     'Concept Role Guard: conceptName must express the proposal strategic idea, not the execution method. Do not use modular, interactive, value chain, media, zone, pavilion, experience, content, mechanism, spatial layout, booth/column constraints, deliverable categories, or RFP object lists as the main naming device unless transformed into a strong strategic metaphor.',
     'Reject names that read like technical descriptions, combine 2+ execution terms, use modular interactive or value chain as the main naming device, exceed 5 words without a strong reason, sound like slide titles, or start from constraints instead of proposalThesis.',
     'Do not use constraints, columns, booth limits, venue limitations, schedule, budget, deliverable names, equipment, media types, object lists, or floor-plan limitations as conceptName sources.',
-    'Universal Concept Novelty Guard: do not default to Distinct Unity, Focused Identity, Differentiated Synergy, Nexus, Pulse, Vanguard, Synergy, Connect, Future, Innovation, Hub, Platform, Experience, Journey, Alliance, Lab, Studio, Universe, Beyond, Next, Shift, Flow, Differentiation, or Identity as the main concept name. Avoid names that sound like generic tech/event branding or direct correction of a lost-proposal reason. Concept names must be specific to the current brief and not reusable across unrelated RFPs. Do not use external project names or unrelated case names to make naming feel stronger.',
+    'Metaphor Source Naming Guard: first create metaphorSeed, symbolicImage, proposalWorld, and whyThisCanBecomeAConceptTitle; internally generate 5 names, score specificityToCurrentRfp, symbolicPower, memorability, coverTitlePotential, expandability, nonGenericQuality, and notStrategyLabel, then output only the selected name. Universal Concept Novelty Guard: do not default to Distinct Unity, Focused Identity, Differentiated Synergy, Nexus, Pulse, Vanguard, Synergy, Connect, Future, Innovation, Hub, Platform, Experience, Journey, Alliance, Lab, Studio, Universe, Beyond, Next, Shift, Flow, Differentiation, or Identity as the main concept name. Avoid names that sound like generic tech/event branding or direct correction of a lost-proposal reason. Concept names must be specific to the current brief and not reusable across unrelated RFPs. Do not use external project names or unrelated case names to make naming feel stronger.',
   ].join('\n');
 }

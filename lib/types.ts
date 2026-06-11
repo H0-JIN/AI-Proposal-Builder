@@ -313,6 +313,13 @@ export interface AntiPatternValidation {
   validationSummary: string;
 }
 
+export interface ConceptMetaphorSource {
+  metaphorSeed: string;
+  symbolicImage: string;
+  proposalWorld: string;
+  whyThisCanBecomeAConceptTitle: string;
+}
+
 export interface ConceptMechanism {
   experienceMechanism: string;
   spatialMechanism: string;
@@ -378,6 +385,7 @@ export interface ConceptCandidate {
   strategicApproach: string;
   whyThisConcept: string;
   conceptMechanism: ConceptMechanism;
+  conceptMetaphorSource: ConceptMetaphorSource;
   whyThisNameWorks: string;
   conceptKeywords: [string, string, string];
   keywordExecutionGuide: KeywordExecutionGuide[];

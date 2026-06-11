@@ -326,6 +326,18 @@ const antiPatternValidationSchema = {
   required: ['riskToAvoid', 'howThisConceptAvoidsIt', 'validationCheck', 'validationCriteria', 'passed', 'validationSummary'],
 } as const;
 
+const conceptMetaphorSourceSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    metaphorSeed: { type: 'string' },
+    symbolicImage: { type: 'string' },
+    proposalWorld: { type: 'string' },
+    whyThisCanBecomeAConceptTitle: { type: 'string' },
+  },
+  required: ['metaphorSeed', 'symbolicImage', 'proposalWorld', 'whyThisCanBecomeAConceptTitle'],
+} as const;
+
 const conceptMechanismSchema = {
   type: 'object',
   additionalProperties: false,
@@ -373,8 +385,8 @@ export const conceptCandidatesJsonSchema = {
     conceptDevelopmentLogic: conceptDevelopmentLogicSchema,
     concepts: {
       type: 'array',
-      minItems: 2,
-      maxItems: 2,
+      minItems: 3,
+      maxItems: 3,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -388,6 +400,7 @@ export const conceptCandidatesJsonSchema = {
           strategicApproach: { type: 'string' },
           whyThisConcept: { type: 'string' },
           conceptMechanism: conceptMechanismSchema,
+          conceptMetaphorSource: conceptMetaphorSourceSchema,
           whyThisNameWorks: { type: 'string' },
           conceptKeywords: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string' } },
           keywordExecutionGuide: { type: 'array', minItems: 3, maxItems: 3, items: keywordExecutionGuideSchema },
@@ -428,6 +441,7 @@ export const conceptCandidatesJsonSchema = {
           'strategicApproach',
           'whyThisConcept',
           'conceptMechanism',
+          'conceptMetaphorSource',
           'whyThisNameWorks',
           'conceptKeywords',
           'keywordExecutionGuide',
