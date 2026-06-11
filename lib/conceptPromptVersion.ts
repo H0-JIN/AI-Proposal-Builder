@@ -1,1 +1,1 @@
-export const conceptPromptVersion = 'core-concept-hierarchy-v2';
+export const conceptPromptVersion = 'strategic-direction-concepts-v3';

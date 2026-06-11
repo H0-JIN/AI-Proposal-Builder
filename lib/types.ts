@@ -379,6 +379,10 @@ export interface EntityDifferentiationUse {
 
 export interface ConceptCandidate {
   conceptId: string;
+  strategicDirectionType: string;
+  strategicDirectionLabel: string;
+  whatThisDirectionEmphasizes: string;
+  whenToChooseThisDirection: string;
   proposalCoreConceptName: string;
   proposalCoreConceptSlogan: string;
   proposalCoreConceptDefinition: string;
@@ -404,6 +408,8 @@ export interface ConceptCandidate {
   keywordExecutionGuide: KeywordExecutionGuide[];
   experienceNarrativeFlow: string[];
   antiPatternValidation: AntiPatternValidation;
+  mainStrength: string;
+  mainRisk: string;
   entityDifferentiationUse: EntityDifferentiationUse;
   conceptRationale?: ConceptRationale;
   conceptTitle: string;
@@ -433,7 +439,10 @@ export interface ConceptCandidate {
 
 export interface ConceptRecommendation {
   recommendedConceptId: string;
+  recommendedDirectionLabel?: string;
   recommendationReason: string;
+  otherDirectionsUsefulness?: string;
+  tradeOffSummary?: string;
   whyNotOthers: string;
 }
 

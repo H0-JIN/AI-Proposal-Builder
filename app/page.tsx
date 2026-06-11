@@ -1112,6 +1112,17 @@ function KeyValueList({ data, evidence }: { data: AnalysisResult; evidence?: Ret
 
 
 
+
+function conciseText(value = '', maxLength = 120) {
+  const text = value.trim().replace(/\s+/g, ' ');
+  return text.length > maxLength ? `${text.slice(0, maxLength).trim()}…` : text;
+}
+
+function conceptKeywordChips(concept: ConceptCandidate) {
+  const keywords = concept.conceptKeywords?.length ? concept.conceptKeywords : concept.keywordExecutionGuide?.map((guide) => guide.keyword) ?? [];
+  return keywords.filter(Boolean).slice(0, 3);
+}
+
 function conceptRfpFitBullets(concept: ConceptCandidate) {
   const bullets = [
     ...(concept.rfpGrounding ?? []),
@@ -1343,9 +1354,14 @@ function ConceptRecommendationPanel({ recommendation }: { recommendation?: Conce
   return (
     <div className="mt-6 rounded-3xl border border-emerald-100 bg-emerald-50 p-5 text-emerald-950">
       <p className="text-sm font-black uppercase tracking-[0.2em] text-emerald-700">AI Recommendation</p>
-      <h3 className="mt-2 text-xl font-black">AI 추천 콘셉트: {recommendation.recommendedConceptId}</h3>
-      <p className="mt-3 text-sm leading-6"><span className="font-black">추천 이유</span><br />{recommendation.recommendationReason}</p>
-      <p className="mt-3 text-sm leading-6"><span className="font-black">다른 후보 보류 이유</span><br />{recommendation.whyNotOthers}</p>
+      <h3 className="mt-2 text-xl font-black">AI 추천 방향: {recommendation.recommendedDirectionLabel || recommendation.recommendedConceptId}</h3>
+      <p className="mt-3 text-sm leading-6"><span className="font-black">왜 이 방향이 맞는가</span><br />{recommendation.recommendationReason}</p>
+      {(recommendation.otherDirectionsUsefulness || recommendation.whyNotOthers) && (
+        <p className="mt-3 text-sm leading-6"><span className="font-black">다른 방향의 활용성</span><br />{recommendation.otherDirectionsUsefulness || recommendation.whyNotOthers}</p>
+      )}
+      {recommendation.tradeOffSummary && (
+        <p className="mt-3 text-sm leading-6"><span className="font-black">선택 간 트레이드오프</span><br />{recommendation.tradeOffSummary}</p>
+      )}
       <p className="mt-3 rounded-2xl bg-white/80 px-4 py-3 text-sm font-bold text-emerald-800">AI 추천은 참고용이며, 최종 선택은 사용자가 직접 진행합니다.</p>
     </div>
   );
@@ -3529,44 +3545,23 @@ export default function Home() {
                     {concept.namingGuardWarning && (
                       <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 확인 권장</p>
                     )}
-                    <p className="text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
-                    <p className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm font-semibold leading-6 text-slate-700">{getConceptDefinition(concept)}</p>
+                    <p className="mt-2 inline-flex w-fit rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">{concept.strategicDirectionLabel || '전략 옵션'}</p>
+                    <p className="mt-3 text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
-                      <div><dt className="font-black text-slate-950">Core Concept Name</dt><dd>{getPresentationConceptName(concept)}</dd></div>
-                      <div><dt className="font-black text-slate-950">Core Concept Slogan</dt><dd>{getConceptTagline(concept)}</dd></div>
-                      <div><dt className="font-black text-slate-950">Core Concept Definition</dt><dd>{getConceptDefinition(concept)}</dd></div>
-                      <div><dt className="font-black text-slate-950">Why this is the core concept</dt><dd>{concept.whyThisIsCoreConcept || concept.whyThisNameWorks || concept.whyThisConcept}</dd></div>
-                      {conceptRfpFitBullets(concept).length > 0 && (
-                        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3">
-                          <dt className="font-black text-blue-950">Why this name fits the RFP</dt>
-                          <dd className="mt-1">
-                            <ul className="list-disc space-y-1 pl-5 text-blue-900">
-                              {conceptRfpFitBullets(concept).map((bullet) => <li key={bullet}>{bullet}</li>)}
-                            </ul>
-                          </dd>
-                        </div>
-                      )}
-                      <div><dt className="font-black text-slate-950">Experience Principle</dt><dd>{concept.experiencePrinciple || concept.conceptMechanism?.visitorOrAudienceTransformation || concept.experienceLogic}</dd></div>
-                      <div><dt className="font-black text-slate-950">Visitor Journey</dt><dd>{concept.visitorJourney || concept.experienceNarrativeFlow?.join(' → ') || concept.conceptMechanism?.interactionMechanism}</dd></div>
-                      {executionKeywordRows(concept).length > 0 && (
+                      <div><dt className="font-black text-slate-950">방향이 강조하는 것</dt><dd>{conciseText(concept.whatThisDirectionEmphasizes || getConceptDefinition(concept), 130)}</dd></div>
+                      <div><dt className="font-black text-slate-950">선택하면 좋은 경우</dt><dd>{conciseText(concept.whenToChooseThisDirection, 130)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Core Concept</dt><dd>{getPresentationConceptName(concept)}</dd></div>
+                      <div><dt className="font-black text-slate-950">One-line Slogan</dt><dd>{conciseText(getConceptTagline(concept), 120)}</dd></div>
+                      {conceptKeywordChips(concept).length > 0 && (
                         <div>
                           <dt className="font-black text-slate-950">3 Execution Keywords</dt>
-                          <dd className="mt-1 space-y-2">
-                            {executionKeywordRows(concept).map((row) => (
-                              <p key={row.keyword}><span className="font-bold">{row.keyword}: </span>{row.details.join(' / ')}</p>
-                            ))}
+                          <dd className="mt-2 flex flex-wrap gap-2">
+                            {conceptKeywordChips(concept).map((keyword) => <span key={keyword} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{keyword}</span>)}
                           </dd>
                         </div>
                       )}
-                      {antiPatternRows(concept).length > 0 && (
-                        <div>
-                          <dt className="font-black text-slate-950">Anti-pattern validation</dt>
-                          <dd className="mt-1 space-y-1">
-                            {antiPatternRows(concept).map(([label, value]) => <p key={label}><span className="font-bold">{label}: </span>{value}</p>)}
-                          </dd>
-                        </div>
-                      )}
-                      <div><dt className="font-black text-slate-950">평가 점수 요약</dt><dd>{scoreSummary(concept)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Main Strength</dt><dd>{conciseText(concept.mainStrength || concept.strengths?.[0] || concept.evaluationSummary, 120)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Main Risk</dt><dd>{conciseText(concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution, 120)}</dd></div>
                     </dl>
                     <button
                       onClick={() => selectConcept(concept)}

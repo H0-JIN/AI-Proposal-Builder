@@ -714,6 +714,10 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
 
   return {
     ...candidate,
+    strategicDirectionType: candidate.strategicDirectionType || 'proposal_strategy_option',
+    strategicDirectionLabel: candidate.strategicDirectionLabel || '전략 옵션',
+    whatThisDirectionEmphasizes: candidate.whatThisDirectionEmphasizes || candidate.strategicApproach || candidate.whyThisConcept || 'RFP에 맞는 제안 우선순위를 강조합니다.',
+    whenToChooseThisDirection: candidate.whenToChooseThisDirection || '이 전략 우선순위가 평가에서 가장 중요할 때 선택합니다.',
     conceptMechanism: candidate.conceptMechanism ?? {
       experienceMechanism: candidate.experienceStructure || candidate.experienceLogic || '',
       spatialMechanism: candidate.spatialApplication || '',
@@ -752,6 +756,8 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
       passed: candidate.antiPatternValidation?.passed ?? true,
       validationSummary: candidate.antiPatternValidation?.validationSummary || '',
     },
+    mainStrength: candidate.mainStrength || candidate.strengths?.[0] || candidate.evaluationSummary || 'RFP 핵심 우선순위를 선명하게 보여줍니다.',
+    mainRisk: candidate.mainRisk || candidate.risks?.[0] || candidate.riskOrCaution || '선택한 방향 외의 우선순위는 후속 구조에서 보완해야 합니다.',
     entityDifferentiationUse: candidate.entityDifferentiationUse ?? {
       unifyingFrame: '',
       distinctEntityRoles: '',
