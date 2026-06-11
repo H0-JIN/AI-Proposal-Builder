@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
@@ -25,6 +25,7 @@ import {
 } from '@/lib/extractedTextValidation';
 import { DEFAULT_VISION_CHUNK_SIZE, DEFAULT_VISION_MODE } from '@/lib/visionConfig';
 import { getConceptDefinition, getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
+import { conceptPromptVersion } from '@/lib/conceptPromptVersion';
 import { createDocumentChunks, inferDocumentType } from '@/lib/rag';
 import { inferUploadedDocumentRole, mapStorageRoleToDocumentType } from '@/lib/documentRoles';
 import { uploadDbLibraryFileToStorage, type UploadedDbLibraryStorageFile } from '@/lib/supabaseStorageUpload';
@@ -321,7 +322,8 @@ async function parseJsonResponse<T>(response: Response, context: string): Promis
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    cache: 'no-store',
     body: JSON.stringify(body),
   });
 
@@ -1689,6 +1691,7 @@ export default function Home() {
   const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [], dbUploadedDocuments: [] });
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const conceptGenerationAttemptRef = useRef(0);
   const [conceptRetryVisible, setConceptRetryVisible] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
   const [dbSaveStatus, setDbSaveStatus] = useState<DbSaveStatus>('idle');
@@ -3012,17 +3015,38 @@ export default function Home() {
 
   const runConcepts = async (options: { retryLight?: boolean } = {}) => {
     if (!state.analysis) return;
+    const generationAttempt = conceptGenerationAttemptRef.current + 1;
+    conceptGenerationAttemptRef.current = generationAttempt;
+    const requestedAt = new Date().toISOString();
+    const regenerationId = `${requestedAt}-${generationAttempt}-${crypto.randomUUID()}`;
+
     setError('');
     setConceptRetryVisible(false);
-    setLoading('제안 내러티브 생성 중...');
+    setStep('concepts');
+    setLoading('새 후보 생성 중...');
+    setState((current) => ({
+      ...current,
+      conceptDevelopmentLogic: undefined,
+      conceptCandidates: undefined,
+      conceptRecommendation: undefined,
+      conceptGenerationResult: undefined,
+      selectedConcept: undefined,
+      outline: undefined,
+      slides: undefined,
+    }));
+
     try {
       const proposalNarrative = await postJson<ProposalNarrative>('/api/narrative', { input: analysisInput, analysis: state.analysis, uploadedDocuments: state.uploadedDocuments, documentChunks });
-      setLoading(options.retryLight ? '가벼운 콘셉트 후보 2안 생성 중...' : '콘셉트 후보 2안 생성 중...');
+      setLoading(options.retryLight ? '가벼운 새 후보 생성 중...' : '새 후보 생성 중...');
       const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', {
         input: analysisInput,
         analysis: state.analysis,
         proposalNarrative,
-        options: { maxCandidates: 2, maxProposalPatterns: options.retryLight ? 5 : 8, retryLight: options.retryLight },
+        conceptPromptVersion,
+        regenerationId,
+        timestamp: requestedAt,
+        attempt: generationAttempt,
+        options: { maxCandidates: 3, maxProposalPatterns: options.retryLight ? 5 : 8, retryLight: options.retryLight },
       });
       setState((current) => ({
         ...current,
@@ -3445,7 +3469,7 @@ export default function Home() {
           </SectionCard>
         )}
 
-        {step === 'concepts' && state.analysis && (state.conceptCandidates?.length || state.selectedConcept) && (
+        {step === 'concepts' && state.analysis && (state.conceptCandidates?.length || state.selectedConcept || loading.includes('새 후보')) && (
           <SectionCard title="콘셉트 후보 선택">
             <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 text-blue-950">
               <p className="text-sm font-black uppercase tracking-[0.2em] text-blue-700">Required Step</p>
@@ -3453,12 +3477,20 @@ export default function Home() {
               <p className="mt-2 text-sm leading-6">
                 선택한 콘셉트는 이후 제안서 구조, 장표별 문안, PPTX의 Core Concept / Key Experience Asset Concept / 공간·콘텐츠 / 미디어·인터랙션 장표 기준으로 저장됩니다.
               </p>
+              <p className="mt-3 text-xs font-bold text-blue-700">
+                prompt {state.conceptGenerationResult?.conceptPromptVersion || conceptPromptVersion} · attempt {(state.conceptGenerationResult?.generationAttempt ?? conceptGenerationAttemptRef.current) || '-'} · generated {state.conceptGenerationResult?.generatedAt || (loading.includes('새 후보') ? 'generating...' : '-')}
+              </p>
               {state.selectedConcept && (
                 <p className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm font-black text-blue-800">
                   선택된 콘셉트: {getPresentationConceptName(state.selectedConcept)}
                 </p>
               )}
             </div>
+            {loading.includes('새 후보') && !(state.conceptCandidates?.length) && (
+              <div className="mt-4 rounded-2xl border border-blue-200 bg-white p-4 text-sm font-bold text-blue-800">
+                이전 콘셉트 후보를 비우고 새 /api/concepts 응답을 기다리는 중입니다.
+              </div>
+            )}
             {state.conceptGenerationResult?.namingGuardNotice && (
               <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900">
                 {state.conceptGenerationResult.namingGuardNotice.message}
@@ -3519,7 +3551,7 @@ export default function Home() {
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('analysis')}>분석 결과 보기</SecondaryButton>
-              <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading)}>콘셉트 다시 생성</SecondaryButton>
+              <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading)}>{loading.includes('새 후보') ? '새 후보 생성 중' : '콘셉트 다시 생성'}</SecondaryButton>
               <PrimaryButton onClick={runOutline} disabled={Boolean(loading) || !canGenerateProposalStructure}>제안서 구조 생성</PrimaryButton>
             </div>
           </SectionCard>

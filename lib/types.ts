@@ -439,6 +439,10 @@ export interface ConceptNamingGuardNotice {
 }
 
 export interface ConceptCandidatesResult {
+  conceptPromptVersion?: string;
+  regenerationId?: string;
+  generationAttempt?: number;
+  generatedAt?: string;
   hiddenNeeds: HiddenNeedsLayer;
   strategicApproach: StrategicApproachLayer;
   entityDifferentiationMatrix: EntityDifferentiationItem[];
