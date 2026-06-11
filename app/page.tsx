@@ -3479,43 +3479,14 @@ export default function Home() {
                       <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 확인 권장</p>
                     )}
                     <p className="text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
-                    {conceptMetaphorSourceRows(concept).length > 0 && (
-                      <div className="mt-3 rounded-2xl border border-violet-100 bg-violet-50 p-3 text-sm leading-6 text-violet-950">
-                        <p className="font-black text-violet-800">Concept Metaphor Source</p>
-                        <dl className="mt-2 space-y-1">
-                          {conceptMetaphorSourceRows(concept).slice(0, 4).map(([label, value]) => (
-                            <div key={label}>
-                              <dt className="inline font-black">{label}: </dt>
-                              <dd className="inline">{value}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      </div>
-                    )}
-                    {conceptMechanismRows(concept).length > 0 && (
-                      <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm leading-6 text-blue-950">
-                        <p className="font-black text-blue-800">Concept Mechanism</p>
-                        <dl className="mt-2 space-y-1">
-                          {conceptMechanismRows(concept).slice(0, 4).map(([label, value]) => (
-                            <div key={label}>
-                              <dt className="inline font-black">{label}: </dt>
-                              <dd className="inline">{value}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      </div>
-                    )}
                     <p className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm font-semibold leading-6 text-slate-700">{getConceptDefinition(concept)}</p>
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
-                      <div><dt className="font-black text-slate-950">Why this name works</dt><dd>{concept.whyThisNameWorks || concept.whyThisConcept}</dd></div>
-                      {entityDifferentiationUseRows(concept).length > 0 && (
-                        <div>
-                          <dt className="font-black text-slate-950">Entity Matrix 활용</dt>
-                          <dd className="mt-1 space-y-1">
-                            {entityDifferentiationUseRows(concept).map(([label, value]) => <p key={label}><span className="font-bold">{label}: </span>{value}</p>)}
-                          </dd>
-                        </div>
-                      )}
+                      <div><dt className="font-black text-slate-950">Core Concept Name</dt><dd>{getPresentationConceptName(concept)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Core Concept Slogan</dt><dd>{getConceptTagline(concept)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Core Concept Definition</dt><dd>{getConceptDefinition(concept)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Why this is the core concept</dt><dd>{concept.whyThisIsCoreConcept || concept.whyThisNameWorks || concept.whyThisConcept}</dd></div>
+                      <div><dt className="font-black text-slate-950">Experience Principle</dt><dd>{concept.experiencePrinciple || concept.conceptMechanism?.visitorOrAudienceTransformation || concept.experienceLogic}</dd></div>
+                      <div><dt className="font-black text-slate-950">Visitor Journey</dt><dd>{concept.visitorJourney || concept.experienceNarrativeFlow?.join(' → ') || concept.conceptMechanism?.interactionMechanism}</dd></div>
                       {executionKeywordRows(concept).length > 0 && (
                         <div>
                           <dt className="font-black text-slate-950">3 Execution Keywords</dt>
