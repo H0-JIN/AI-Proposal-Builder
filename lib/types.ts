@@ -300,12 +300,28 @@ export interface KeywordExecutionGuide {
   spatialUXImplication: string;
   designImplication: string;
   contentImplication: string;
+  contentOrMediaImplication?: string;
+  operationImplication?: string;
 }
 
 export interface AntiPatternValidation {
+  riskToAvoid: string;
+  howThisConceptAvoidsIt: string;
+  validationCheck: string;
   validationCriteria: string[];
   passed: boolean;
   validationSummary: string;
+}
+
+export interface ConceptMechanism {
+  experienceMechanism: string;
+  spatialMechanism: string;
+  contentMechanism: string;
+  interactionMechanism: string;
+  recognitionLogic: string;
+  visitorOrAudienceTransformation: string;
+  proofMechanism: string;
+  whyThisCanBecomeAConcept: string;
 }
 
 export interface ConceptDevelopmentLogic {
@@ -361,6 +377,8 @@ export interface ConceptCandidate {
   hiddenNeedResolved: string;
   strategicApproach: string;
   whyThisConcept: string;
+  conceptMechanism: ConceptMechanism;
+  whyThisNameWorks: string;
   conceptKeywords: [string, string, string];
   keywordExecutionGuide: KeywordExecutionGuide[];
   experienceNarrativeFlow: string[];

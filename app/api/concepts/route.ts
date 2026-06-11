@@ -61,10 +61,20 @@ function buildCompactAnalysis(analysis: AnalysisResult, differentiationSummary: 
 
 function fallbackCandidate(index: number, name: string, analysis: AnalysisResult, narrative: ProposalNarrative): ConceptCandidate {
   const conceptId = `C${index}`;
-  const keywordBase: [string, string, string] = index === 1 ? ['명확성', '전환', '증명'] : ['몰입', '연결', '확신'];
+  const keywordBase: [string, string, string] = index === 1 ? ['증거 루트', '인지 순서', '판단 장치'] : ['가치 신호', '참여 루프', '실행 증명'];
   const definition = index === 1
     ? compactText(`${analysis.clientChallenge || narrative.coreProblem}을 평가자가 이해하기 쉬운 경험 약속으로 바꾸는 콘셉트입니다.`, 180)
     : compactText(`${narrative.proposalThesis || analysis.projectOverview}를 관객 인식 변화와 실행 흐름으로 연결하는 콘셉트입니다.`, 180);
+  const mechanism = {
+    experienceMechanism: index === 1 ? '요구 근거를 발견-비교-판단 순서로 펼쳐 평가자가 선택 논리를 따라가게 함' : '핵심 가치를 신호-참여-증명 루프로 반복 확인하게 함',
+    spatialMechanism: compactText(analysis.spatialCondition || '도입, 핵심 확인, 증명 구간으로 동선을 구분', 140),
+    contentMechanism: compactText(analysis.contentCondition || '메시지, 사례, 실행 근거를 역할별 콘텐츠로 분리', 140),
+    interactionMechanism: compactText(analysis.operationCondition || '관객 행동이 다음 이해 단계로 이어지는 간단한 확인 접점 제공', 140),
+    recognitionLogic: index === 1 ? '무엇이 문제인지 먼저 보고, 왜 필요한지 이해한 뒤, 어떻게 증명되는지 확인' : '핵심 신호를 인지하고 직접 참여한 뒤 실행 가능성을 확인',
+    visitorOrAudienceTransformation: compactText(narrative.whyThisConcept || '막연한 관심에서 평가 가능한 확신으로 전환', 140),
+    proofMechanism: compactText(analysis.evaluationCriteria?.[0] || '필수 산출물과 평가 기준에 맞춰 가치와 실행성을 증명', 140),
+    whyThisCanBecomeAConcept: '공간, 콘텐츠, 상호작용, 운영 기준으로 반복 적용 가능한 작동 원리를 갖기 때문',
+  };
 
   return {
     conceptId,
@@ -75,15 +85,22 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
     hiddenNeedResolved: compactText(narrative.strategicOpportunity || analysis.clientChallenge, 160),
     strategicApproach: compactText(narrative.proposalThesis || 'RFP 핵심 요구를 간결한 경험 구조로 증명합니다.', 180),
     whyThisConcept: compactText(narrative.whyThisConcept || definition, 180),
+    conceptMechanism: mechanism,
+    whyThisNameWorks: index === 1 ? 'RFP 근거를 판단 동선으로 바꾸는 작동 원리를 짧게 암시합니다.' : '가치 인지와 참여 증명의 반복 구조를 짧게 암시합니다.',
     conceptKeywords: keywordBase,
     keywordExecutionGuide: keywordBase.map((keyword) => ({
       keyword,
       spatialUXImplication: `${keyword}를 한눈에 이해하는 동선`,
       designImplication: `${keyword}가 보이는 간결한 시각 언어`,
       contentImplication: `${keyword}를 증명하는 짧은 메시지`,
+      contentOrMediaImplication: `${keyword}의 역할이 분명한 콘텐츠/미디어 단서`,
+      operationImplication: `${keyword}가 현장에서 유지되는 운영 체크`,
     })),
     experienceNarrativeFlow: ['문제 인식', '가치 이해', '선택 확신'],
     antiPatternValidation: {
+      riskToAvoid: '콘셉트명이 전략 문장이나 회피 규칙의 번역처럼 보이는 리스크',
+      howThisConceptAvoidsIt: '이름보다 먼저 경험 작동 원리를 정의하고 이름은 그 메커니즘의 표지로 제한합니다.',
+      validationCheck: '각 콘텐츠 요소가 특정 역할, 관객 가치, 증명 포인트를 갖는가?',
       validationCriteria: ['RFP 근거 없는 확장 금지', '장황한 후보 설명 축소', '실행 가능성 확인'],
       passed: true,
       validationSummary: '시간 초과 방지를 위해 핵심 검증 기준만 적용한 경량 후보입니다.',
@@ -173,8 +190,8 @@ function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: Prop
       conceptDevelopmentCriteria: ['RFP 부합', '간결성', '실행 가능성'],
     },
     concepts: [
-      fallbackCandidate(1, '선택의 이유', analysis, proposalNarrative),
-      fallbackCandidate(2, '확신의 장면', analysis, proposalNarrative),
+      fallbackCandidate(1, '증거 루트', analysis, proposalNarrative),
+      fallbackCandidate(2, '가치 신호', analysis, proposalNarrative),
     ],
     recommendation: {
       recommendedConceptId: 'C1',
@@ -223,11 +240,18 @@ export async function POST(request: Request) {
       `정확히 ${maxCandidates}개의 콘셉트 후보만 생성한다. 후보를 3개로 늘리지 말라.`,
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
       '출력은 hiddenNeeds, strategicApproach, entityDifferentiationMatrix, conceptDevelopmentLogic, concepts, recommendation을 포함한다.',
-      '생성 범위는 Hidden Needs, Strategic Approach, concept candidates, slogan, 3 keywords, keywordExecutionGuide, flexible experienceNarrativeFlow, antiPatternValidation로 제한한다.',
-      'conceptName은 실행 방식/공간 요소/미디어 타입/제약 조건/산출물명이 아니라 전략적 약속 또는 은유로 짧게 작성한다.',
-      'keywordExecutionGuide는 keyword별 spatialUXImplication, designImplication, contentImplication을 각각 1개의 짧은 구로 작성한다.',
+      '필수 생성 순서: (1) Current RFP evidence (2) Hidden Needs (3) Strategic Approach (4) entity/content/audience differentiation if applicable (5) conceptMechanism (6) conceptName candidates (7) conceptSlogan (8) conceptDefinition (9) execution keywords (10) antiPatternValidation.',
+      '각 concepts 항목은 conceptName 전에 conceptMechanism 8개 필드를 먼저 설계한 뒤, 그 메커니즘에서 이름을 도출한다.',
+      'conceptName은 Hidden Needs, Strategic Approach, 회피 규칙, 일반 목표, 일반 산업어에서 직접 만들지 말고 experience/spatial/content/interaction/recognition/proof mechanism에서만 도출한다.',
+      '각 후보별로 내부적으로 이름 5개를 만들고 specificityToCurrentRfp, memorability, mechanismClarity, expandabilityToSpaceContentMedia, nonGenericQuality, coverTitlePotential을 1~5점으로 채점한 뒤 평균 4 미만은 1회 보정하고 최종 1개만 출력한다. 내부 후보와 점수는 출력하지 않는다.',
+      '약한 이름 금지: 선택의 이유, 혁신의 장면, 차별화된 통합, 명확한 구분, 통합된 경험, Distinct Unity, Focused Identity, Scene of Innovation, The Reason to Choose, Connected Future, Innovation Journey, Experience Hub.',
+      'conceptName은 전략 문장/슬라이드 제목/프로젝트 목표/직접 솔루션 문구/캠페인 문구/RFP 요약/회피 규칙 번역처럼 보이면 안 된다.',
+      '한국어 이름은 추상 명사구보다 action, system, route, field, signal, ritual, sequence, transformation, experience structure를 암시하는 짧은 이름을 선호한다.',
+      '영어 이름은 Nexus, Pulse, Vanguard, Synergy, Future, Innovation, Experience, Journey, Platform, Hub, Connect, Beyond, Next, Shift, Flow를 피한다.',
+      'conceptSlogan은 평가자가 이해할 수 있게 RFP 목표와 제안 약속을 1문장으로 설명하되, conceptName 자체는 간결하게 유지한다.',
+      'keywordExecutionGuide는 keyword별 spatialUXImplication, designImplication, contentImplication, contentOrMediaImplication, operationImplication을 각각 1개의 짧은 구로 작성하고 conceptMechanism에서 파생한다.',
       'experienceNarrativeFlow는 3~4개의 짧은 단계만 작성한다.',
-      'antiPatternValidation은 proposal_patterns의 회피 규칙을 기준으로만 사용하고 naming source로 쓰지 않는다.',
+      'antiPatternValidation은 riskToAvoid, howThisConceptAvoidsIt, validationCheck를 포함하고 proposal_patterns 회피 규칙을 검증 기준으로만 사용하며 naming source로 쓰지 않는다.',
       'proposal_patterns에 포함된 과거 프로젝트명, 클라이언트명, 파일명, 고유 상세를 추정하거나 재사용하지 않는다.',
       isEventOperationType ? '행사 운영형 콘셉트도 시스템명/카테고리명이 아니라 행사 목적과 비즈니스 기회를 압축한 이름으로 작성한다.' : '각 후보는 서로 다른 전략 관점과 경험 흐름을 가진다.',
     ].join('\n');
@@ -252,7 +276,9 @@ proposal_patterns compact diagnostics:
 ${proposalPatternDiagnostics}
 
 proposal_patterns compact JSON (최대 ${maxProposalPatterns}개, source_text/summary/과거 고유명 없음):
-${proposalPatternContext}`;
+${proposalPatternContext}
+
+Generation order reminder: Current RFP evidence → Hidden Needs → Strategic Approach → Entity/content/audience differentiation if applicable → Concept Mechanism → internal 5-name scoring → selected Concept Name → Concept Slogan → Concept Definition → exactly 3 Execution Keywords → Anti-pattern Validation.`;
 
     try {
       const generated = await createStructuredJson<ConceptCandidatesResult>({

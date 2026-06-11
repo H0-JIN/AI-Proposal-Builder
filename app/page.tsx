@@ -1108,6 +1108,45 @@ function KeyValueList({ data, evidence }: { data: AnalysisResult; evidence?: Ret
 
 
 
+
+function conceptMechanismRows(concept: ConceptCandidate) {
+  const mechanism = concept.conceptMechanism;
+  if (!mechanism) return [];
+
+  return [
+    ['Experience', mechanism.experienceMechanism],
+    ['Spatial', mechanism.spatialMechanism],
+    ['Content/Media', mechanism.contentMechanism],
+    ['Interaction', mechanism.interactionMechanism],
+    ['Recognition', mechanism.recognitionLogic],
+    ['Transformation', mechanism.visitorOrAudienceTransformation],
+    ['Proof', mechanism.proofMechanism],
+  ].filter(([, value]) => Boolean(value?.trim()));
+}
+
+function executionKeywordRows(concept: ConceptCandidate) {
+  return (concept.keywordExecutionGuide ?? []).slice(0, 3).map((guide) => ({
+    keyword: guide.keyword,
+    details: [
+      guide.spatialUXImplication && `공간/UX: ${guide.spatialUXImplication}`,
+      guide.designImplication && `디자인: ${guide.designImplication}`,
+      (guide.contentOrMediaImplication || guide.contentImplication) && `콘텐츠/미디어: ${guide.contentOrMediaImplication || guide.contentImplication}`,
+      guide.operationImplication && `운영: ${guide.operationImplication}`,
+    ].filter(Boolean),
+  })).filter((row) => row.keyword || row.details.length);
+}
+
+function antiPatternRows(concept: ConceptCandidate) {
+  const validation = concept.antiPatternValidation;
+  if (!validation) return [];
+
+  return [
+    ['Risk to avoid', validation.riskToAvoid || concept.riskOrCaution],
+    ['How it avoids it', validation.howThisConceptAvoidsIt || validation.validationSummary],
+    ['Validation check', validation.validationCheck || validation.validationCriteria?.[0]],
+  ].filter(([, value]) => Boolean(value?.trim()));
+}
+
 function conceptRationaleRows(concept: ConceptCandidate) {
   const rationale = concept.conceptRationale;
   if (!rationale) return [];
@@ -3427,11 +3466,11 @@ export default function Home() {
                       <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 확인 권장</p>
                     )}
                     <p className="text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
-                    {conceptRationaleRows(concept).length > 0 && (
+                    {conceptMechanismRows(concept).length > 0 && (
                       <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm leading-6 text-blue-950">
-                        <p className="font-black text-blue-800">왜 이 컨셉인가</p>
+                        <p className="font-black text-blue-800">Concept Mechanism</p>
                         <dl className="mt-2 space-y-1">
-                          {conceptRationaleRows(concept).map(([label, value]) => (
+                          {conceptMechanismRows(concept).slice(0, 4).map(([label, value]) => (
                             <div key={label}>
                               <dt className="inline font-black">{label}: </dt>
                               <dd className="inline">{value}</dd>
@@ -3442,8 +3481,7 @@ export default function Home() {
                     )}
                     <p className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm font-semibold leading-6 text-slate-700">{getConceptDefinition(concept)}</p>
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
-                      <div><dt className="font-black text-slate-950">핵심 메시지</dt><dd>{concept.coreMessage}</dd></div>
-                      <div><dt className="font-black text-slate-950">명제 증명</dt><dd>{concept.thesisProof || concept.whyThisWorks}</dd></div>
+                      <div><dt className="font-black text-slate-950">Why this name works</dt><dd>{concept.whyThisNameWorks || concept.whyThisConcept}</dd></div>
                       {entityDifferentiationUseRows(concept).length > 0 && (
                         <div>
                           <dt className="font-black text-slate-950">Entity Matrix 활용</dt>
@@ -3452,10 +3490,24 @@ export default function Home() {
                           </dd>
                         </div>
                       )}
-                      <div><dt className="font-black text-slate-950">경험 구조</dt><dd>{concept.experienceStructure || concept.experienceLogic}</dd></div>
-                      <div><dt className="font-black text-slate-950">예상 핵심 체험 자산 방향</dt><dd>{concept.keyExperienceAssetDirection}</dd></div>
-                      <div><dt className="font-black text-slate-950">강점</dt><dd>{concept.strengths?.length ? concept.strengths.join(' / ') : concept.whyThisWorks}</dd></div>
-                      <div><dt className="font-black text-slate-950">리스크</dt><dd>{concept.risks?.length ? concept.risks.join(' / ') : concept.riskOrCaution}</dd></div>
+                      {executionKeywordRows(concept).length > 0 && (
+                        <div>
+                          <dt className="font-black text-slate-950">3 Execution Keywords</dt>
+                          <dd className="mt-1 space-y-2">
+                            {executionKeywordRows(concept).map((row) => (
+                              <p key={row.keyword}><span className="font-bold">{row.keyword}: </span>{row.details.join(' / ')}</p>
+                            ))}
+                          </dd>
+                        </div>
+                      )}
+                      {antiPatternRows(concept).length > 0 && (
+                        <div>
+                          <dt className="font-black text-slate-950">Anti-pattern validation</dt>
+                          <dd className="mt-1 space-y-1">
+                            {antiPatternRows(concept).map(([label, value]) => <p key={label}><span className="font-bold">{label}: </span>{value}</p>)}
+                          </dd>
+                        </div>
+                      )}
                       <div><dt className="font-black text-slate-950">평가 점수 요약</dt><dd>{scoreSummary(concept)}</dd></div>
                     </dl>
                     <button

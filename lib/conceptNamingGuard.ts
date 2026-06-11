@@ -36,6 +36,17 @@ export const GENERIC_CONCEPT_WORD_PENALTY_LIST = [
 ];
 
 const WEAK_GENERIC_CONCEPT_NAMES = [
+  '선택의 이유',
+  '혁신의 장면',
+  '차별화된 통합',
+  '명확한 구분',
+  '통합된 경험',
+  'the reason to choose',
+  'scene of innovation',
+  'differentiated unity',
+  'connected future',
+  'innovation journey',
+  'experience hub',
   'distinct unity',
   'focused identity',
   'differentiated synergy',
@@ -51,6 +62,16 @@ const WEAK_GENERIC_CONCEPT_NAMES = [
 ];
 
 const WEAK_GENERIC_TOKEN_COMBINATIONS = [
+  ['선택의', '이유'],
+  ['혁신의', '장면'],
+  ['차별화된', '통합'],
+  ['명확한', '구분'],
+  ['통합된', '경험'],
+  ['reason', 'choose'],
+  ['scene', 'innovation'],
+  ['connected', 'future'],
+  ['innovation', 'journey'],
+  ['experience', 'hub'],
   ['distinct', 'unity'],
   ['focused', 'identity'],
   ['differentiated', 'synergy'],
@@ -86,6 +107,12 @@ const GENERIC_CATEGORY_WORDS = [
   '체험',
   '전시',
   '여정',
+  '혁신',
+  '미래',
+  '통합',
+  '차별화',
+  '구분',
+  '정체성',
 ];
 
 
@@ -305,6 +332,43 @@ function isLikelySentence(name: string) {
   return SENTENCE_ENDINGS.test(trimmed) || /[.!?。]$/.test(trimmed) || EXPLANATORY_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
+
+function hasStrategyStatementName(name: string) {
+  const normalized = normalizedText(name);
+  return [
+    /reason to choose/i,
+    /scene of innovation/i,
+    /connected future/i,
+    /innovation journey/i,
+    /focused identity/i,
+    /distinct unity/i,
+    /differentiated unity/i,
+    /선택의\s*이유/u,
+    /혁신의\s*장면/u,
+    /차별화된\s*통합/u,
+    /명확한\s*구분/u,
+    /통합된\s*경험/u,
+    /구현$/u,
+    /전략$/u,
+    /방향$/u,
+    /솔루션$/u,
+    /제안$/u,
+    /목표$/u,
+  ].some((pattern) => pattern.test(normalized));
+}
+
+function nameMechanismScore(candidate: ConceptCandidate, name: string) {
+  const mechanismText = Object.values(candidate.conceptMechanism ?? {}).join(' ');
+  const rfpSpecificity = significantTokens(`${candidate.hiddenNeedResolved} ${candidate.strategicApproach} ${mechanismText}`).some((token) => normalizedText(name).includes(token)) ? 5 : 3;
+  const memorability = titleUnitCount(name) <= 3 && name.length <= 24 ? 5 : titleUnitCount(name) <= 5 ? 4 : 2;
+  const mechanismClarity = mechanismText && !hasStrategyStatementName(name) && !hasGenericConceptPenaltyWord(name) ? 4 : 2;
+  const expandability = candidate.keywordExecutionGuide?.length === 3 && mechanismText ? 5 : 3;
+  const nonGeneric = !hasWeakGenericConceptName(name) && !hasGenericMainNamingDevice(name) && !hasGenericConceptPenaltyWord(name) ? 5 : 2;
+  const cover = !isLikelySentence(name) && !hasExecutionDescriptionName(name) ? 5 : 2;
+  const scores = [rfpSpecificity, memorability, mechanismClarity, expandability, nonGeneric, cover];
+  return scores.reduce((sum, score) => sum + score, 0) / scores.length;
+}
+
 function collectConstraintTerms(analysis?: AnalysisResult) {
   const dynamicTerms = [
     ...(analysis?.constraints ?? []),
@@ -346,6 +410,30 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
 
   return {
     ...candidate,
+    conceptMechanism: candidate.conceptMechanism ?? {
+      experienceMechanism: candidate.experienceStructure || candidate.experienceLogic || '',
+      spatialMechanism: candidate.spatialApplication || '',
+      contentMechanism: candidate.mediaInteractionPotential || '',
+      interactionMechanism: candidate.experienceNarrativeFlow?.join(' → ') || '',
+      recognitionLogic: candidate.coreMessage || '',
+      visitorOrAudienceTransformation: candidate.targetRelevance || '',
+      proofMechanism: candidate.thesisProof || candidate.executionFeasibility || '',
+      whyThisCanBecomeAConcept: candidate.whyThisConcept || candidate.whyThisWorks || '',
+    },
+    whyThisNameWorks: candidate.whyThisNameWorks || candidate.whyThisConcept || candidate.whyThisWorks || '',
+    keywordExecutionGuide: (candidate.keywordExecutionGuide ?? []).map((guide) => ({
+      ...guide,
+      contentOrMediaImplication: guide.contentOrMediaImplication || guide.contentImplication || '',
+      operationImplication: guide.operationImplication || candidate.executionFeasibility || '',
+    })),
+    antiPatternValidation: {
+      riskToAvoid: candidate.antiPatternValidation?.riskToAvoid || candidate.riskOrCaution || 'Generic proposal language',
+      howThisConceptAvoidsIt: candidate.antiPatternValidation?.howThisConceptAvoidsIt || candidate.antiPatternValidation?.validationSummary || '',
+      validationCheck: candidate.antiPatternValidation?.validationCheck || candidate.antiPatternValidation?.validationCriteria?.[0] || '',
+      validationCriteria: candidate.antiPatternValidation?.validationCriteria ?? [],
+      passed: candidate.antiPatternValidation?.passed ?? true,
+      validationSummary: candidate.antiPatternValidation?.validationSummary || '',
+    },
     entityDifferentiationUse: candidate.entityDifferentiationUse ?? {
       unifyingFrame: '',
       distinctEntityRoles: '',
@@ -386,6 +474,8 @@ export function validateConceptNaming(
     if (!name.trim()) violations.push(`${label}: conceptName is empty.`);
     if (unitCount > 5 || name.length > 36) violations.push(`${label}: conceptName is too long for a presentation-ready title.`);
     if (isLikelySentence(name)) violations.push(`${label}: conceptName reads like an explanatory sentence or section heading.`);
+    if (hasStrategyStatementName(name)) violations.push(`${label}: conceptName reads like a strategy statement, slide title, project objective, direct solution phrase, or avoidance-rule translation instead of a concept mechanism.`);
+    if (nameMechanismScore(candidate, name) < 4) violations.push(`${label}: conceptName scores below 4 on specificity, memorability, mechanism clarity, expandability, non-generic quality, or cover-title potential.`);
     if (hasWeakGenericConceptName(name)) violations.push(`${label}: conceptName is a weak generic keyword combination rather than a proposal-ready idea.`);
     if (hasGenericConceptPenaltyWord(name)) violations.push(`${label}: conceptName uses a generic tech/event branding word from the universal penalty list without current-RFP-specific justification.`);
     if (hasGenericMainNamingDevice(name)) violations.push(`${label}: conceptName uses a generic category word as the main naming device.`);
@@ -411,20 +501,27 @@ function normalizeSafeNameSeed(value: string) {
 }
 
 function buildSafeConceptNames(context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
-  const projectSeed = normalizeSafeNameSeed(context.input?.projectName || context.analysis?.projectOverview || context.analysis?.clientChallenge || '').split(/\s+/).find((token) => token.length >= 2 && token.length <= 10);
-  const clientSeed = normalizeSafeNameSeed(context.input?.clientName || '').split(/\s+/).find((token) => token.length >= 2 && token.length <= 10);
-  const thesisSeed = normalizeSafeNameSeed(context.proposalNarrative?.proposalThesis || context.analysis?.clientChallenge || '').split(/\s+/).find((token) => token.length >= 2 && token.length <= 10);
-  const prefix = projectSeed || clientSeed || thesisSeed || '제안';
+  const seeds = normalizeSafeNameSeed([
+    context.input?.projectName,
+    context.analysis?.projectOverview,
+    context.analysis?.clientChallenge,
+    context.proposalNarrative?.proposalThesis,
+    context.proposalNarrative?.strategicOpportunity,
+  ].filter(Boolean).join(' '))
+    .split(/\s+/)
+    .filter((token) => token.length >= 2 && token.length <= 8 && !['제안', '프로젝트', '사업', '운영', '행사', '콘텐츠', '체험', '전시'].includes(token));
+  const prefix = seeds[0] || seeds[1] || '증거';
+  const second = seeds.find((token) => token !== prefix) || '가치';
 
   return [
-    `${prefix}의 이유`,
-    `${prefix}의 증명`,
-    `${prefix}의 전환`,
-    `${prefix}의 약속`,
-    `${prefix}의 기준`,
-    '믿음의 설계',
-    '선택의 이유',
-    '관계의 증명',
+    `${prefix} 신호`,
+    `${prefix} 루트`,
+    `${second} 회로`,
+    `${prefix} 필드`,
+    `${second} 스위치`,
+    `${prefix} 리추얼`,
+    `${second} 트랙`,
+    `${prefix} 프레임`,
   ];
 }
 
