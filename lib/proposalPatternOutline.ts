@@ -331,6 +331,69 @@ export async function retrieveProposalPatternsForOutline(options: RetrievePropos
   }
 }
 
+function truncatePromptField(value: string | null | undefined, maxLength = 160) {
+  const text = normalizeText(value);
+  if (!text) return null;
+  return text.length > maxLength ? `${text.slice(0, maxLength).trim()}…` : text;
+}
+
+function isLostQualityPattern(pattern: OutlineProposalPattern) {
+  return pattern.outcome === 'lost' && (pattern.outcome_reason_type === 'quality' || pattern.outcome_reason_type === 'mixed');
+}
+
+function conceptPatternPriority(pattern: OutlineProposalPattern) {
+  if (pattern.outcome === 'won') return 4;
+  if (pattern.outcome === 'lost' && pattern.outcome_reason_type === 'external') return 3;
+  if (pattern.outcome === 'unknown' || !pattern.outcome) return 2;
+  if (isLostQualityPattern(pattern)) return 1;
+  return 0;
+}
+
+export function formatProposalPatternsForConceptPrompt(patterns: OutlineProposalPattern[], rules: string[] = [], maxPatterns = 8) {
+  const safeLimit = Math.max(1, Math.min(8, maxPatterns));
+  const ordered = [...patterns]
+    .sort((a, b) => conceptPatternPriority(b) - conceptPatternPriority(a))
+    .slice(0, safeLimit);
+
+  if (!ordered.length && !rules.length) return '사용 가능한 compact proposal_patterns 없음';
+
+  const compactPatterns = ordered.map((pattern, index) => {
+    const avoidanceRule = isLostQualityPattern(pattern)
+      ? buildAvoidanceRuleFromOutcomeReason(pattern.why_it_matters || pattern.reusable_principle, pattern.outcome_reason_type, pattern.failure_areas)
+      : '';
+
+    if (isLostQualityPattern(pattern)) {
+      return {
+        pattern_index: index + 1,
+        slide_role: truncatePromptField(pattern.slide_role, 60),
+        narrative_stage: truncatePromptField(pattern.narrative_stage, 60),
+        outcome: pattern.outcome,
+        outcome_reason_type: pattern.outcome_reason_type,
+        failure_areas: pattern.failure_areas,
+        avoidanceRule: truncatePromptField(avoidanceRule || '해당 실패 영역을 반복하지 않도록 콘셉트 근거와 실행 연결을 간결히 검증할 것', 180),
+      };
+    }
+
+    return {
+      pattern_index: index + 1,
+      slide_role: truncatePromptField(pattern.slide_role, 60),
+      narrative_stage: truncatePromptField(pattern.narrative_stage, 60),
+      reusable_principle: truncatePromptField(pattern.reusable_principle, 180),
+      why_it_matters: truncatePromptField(pattern.why_it_matters, 160),
+      outcome: pattern.outcome,
+      outcome_reason_type: pattern.outcome_reason_type,
+      failure_areas: pattern.failure_areas,
+    };
+  });
+
+  const compactAvoidanceRules = rules.slice(0, safeLimit).map((rule, index) => ({
+    rule_index: index + 1,
+    avoidanceRule: truncatePromptField(rule, 180),
+  }));
+
+  return JSON.stringify({ patterns: compactPatterns, antiPatternNotes: compactAvoidanceRules }, null, 2);
+}
+
 export function formatProposalPatternsForOutlinePrompt(patterns: OutlineProposalPattern[]) {
   if (!patterns.length) return '사용 가능한 proposal_patterns 없음';
   return JSON.stringify(

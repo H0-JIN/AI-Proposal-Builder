@@ -352,8 +352,8 @@ export const conceptCandidatesJsonSchema = {
     conceptDevelopmentLogic: conceptDevelopmentLogicSchema,
     concepts: {
       type: 'array',
-      minItems: 3,
-      maxItems: 3,
+      minItems: 2,
+      maxItems: 2,
       items: {
         type: 'object',
         additionalProperties: false,
