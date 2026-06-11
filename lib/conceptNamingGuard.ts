@@ -736,10 +736,11 @@ export function applyNonBlockingConceptNamingGuard(
     }
 
     allViolations.push(...repairedViolations);
+    repairedConceptIds.add(candidate.conceptId || `concept-${index + 1}`);
     warningConceptIds.add(candidate.conceptId || `concept-${index + 1}`);
     return {
-      ...candidate,
-      namingGuardWarning: '콘셉트명 기준 확인이 필요하지만 전략 레이어는 유지했습니다.',
+      ...repairedCandidate,
+      namingGuardWarning: '콘셉트명이 약한 여정/전략 라벨로 감지되어 대체 이름으로 자동 보정했습니다. 세부 기준은 추가 확인이 필요합니다.',
     };
   });
 

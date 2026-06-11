@@ -9,11 +9,29 @@ import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/propo
 import { applyNonBlockingConceptNamingGuard, normalizeConceptCandidatesResult } from '@/lib/conceptNamingGuard';
 import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
 import { formatProposalPatternDiagnostics, formatProposalPatternsForConceptPrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
+import { conceptPromptVersion } from '@/lib/conceptPromptVersion';
 
 const DEFAULT_CONCEPT_COUNT = 3;
 const DEFAULT_PATTERN_LIMIT = 8;
 const RETRY_PATTERN_LIMIT = 5;
 const CONCEPT_GENERATION_TIMEOUT_MS = Number(process.env.CONCEPT_GENERATION_TIMEOUT_MS ?? 18_000);
+
+export const dynamic = 'force-dynamic';
+
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate',
+  Pragma: 'no-cache',
+};
+
+function conceptsJson(body: unknown, init?: ResponseInit) {
+  return NextResponse.json(body, {
+    ...init,
+    headers: {
+      ...NO_STORE_HEADERS,
+      ...(init?.headers ?? {}),
+    },
+  });
+}
 
 function compactList(items: string[] = [], limit = 8, itemLimit = 160) {
   return items
@@ -168,7 +186,7 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
   };
 }
 
-function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: ProposalNarrative, reason: string): ConceptCandidatesResult {
+function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: ProposalNarrative, reason: string, metadata?: ConceptGenerationMetadata): ConceptCandidatesResult {
   const hiddenNeeds = {
     surfaceRequest: compactText(analysis.projectOverview, 180),
     hiddenNeed: compactText(proposalNarrative.strategicOpportunity || analysis.clientChallenge, 180),
@@ -186,6 +204,10 @@ function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: Prop
   };
 
   return {
+    conceptPromptVersion,
+    regenerationId: metadata?.regenerationId,
+    generationAttempt: metadata?.generationAttempt,
+    generatedAt: metadata?.generatedAt,
     hiddenNeeds,
     strategicApproach,
     entityDifferentiationMatrix: proposalNarrative.entityDifferentiationMatrix ?? [],
@@ -225,6 +247,24 @@ function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: Prop
   };
 }
 
+interface ConceptGenerationMetadata {
+  conceptPromptVersion?: string;
+  regenerationId?: string;
+  generationAttempt?: number;
+  requestedAt?: string;
+  generatedAt?: string;
+}
+
+function attachGenerationMetadata(result: ConceptCandidatesResult, metadata: ConceptGenerationMetadata): ConceptCandidatesResult {
+  return {
+    ...result,
+    conceptPromptVersion,
+    regenerationId: metadata.regenerationId,
+    generationAttempt: metadata.generationAttempt,
+    generatedAt: metadata.generatedAt,
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
@@ -233,10 +273,31 @@ export async function POST(request: Request) {
       proposalNarrative?: ProposalNarrative;
       documentChunks?: DocumentChunk[];
       options?: { retryLight?: boolean; maxCandidates?: number; maxProposalPatterns?: number };
+      conceptPromptVersion?: string;
+      regenerationId?: string;
+      timestamp?: string;
+      attempt?: number;
+      generationAttempt?: number;
     };
 
     if (!body.input || !body.analysis) {
-      return NextResponse.json({ error: '프로젝트 입력값과 분석 결과가 필요합니다.' }, { status: 400 });
+      return conceptsJson({ error: '프로젝트 입력값과 분석 결과가 필요합니다.' }, { status: 400 });
+    }
+
+    const metadata: ConceptGenerationMetadata = {
+      conceptPromptVersion: body.conceptPromptVersion,
+      regenerationId: body.regenerationId,
+      generationAttempt: body.generationAttempt ?? body.attempt,
+      requestedAt: body.timestamp,
+      generatedAt: new Date().toISOString(),
+    };
+
+    if (metadata.conceptPromptVersion && metadata.conceptPromptVersion !== conceptPromptVersion) {
+      return conceptsJson({
+        error: `지원하지 않는 콘셉트 프롬프트 버전입니다. expected=${conceptPromptVersion}, received=${metadata.conceptPromptVersion}`,
+        conceptPromptVersion,
+        receivedConceptPromptVersion: metadata.conceptPromptVersion,
+      }, { status: 409 });
     }
 
     const inputQuality = assessInputQuality(body.input, body.analysis);
@@ -254,6 +315,7 @@ export async function POST(request: Request) {
     const proposalPatternContext = formatProposalPatternsForConceptPrompt(proposalPatternGuidance.patterns, proposalPatternGuidance.avoidanceRules, maxProposalPatterns);
 
     const systemPrompt = [
+      `Concept Prompt Version: ${conceptPromptVersion}. 이 버전의 Proposal Core Concept hierarchy만 사용한다.`,
       '너는 한국어 제안서 콘셉트를 빠르게 설계하는 크리에이티브 디렉터다.',
       `정확히 ${maxCandidates}개의 콘셉트 후보를 생성한다. 최소 3개의 usable concept를 반환하고, 내부 네이밍 후보 5개는 절대 노출하지 말라.`,
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
@@ -283,6 +345,9 @@ export async function POST(request: Request) {
     ].join('\n');
 
     const userPrompt = `제안서 유형: ${proposalTypeLabels[effectiveProposalType]}
+
+Request Debug Metadata (캐시 방지 및 재생성 추적):
+${JSON.stringify(metadata, null, 2)}
 
 Compact RFP Analysis JSON (이 필드만 RFP 근거로 사용):
 ${JSON.stringify(compactAnalysis, null, 2)}
@@ -317,20 +382,24 @@ Generation order reminder: Hidden Needs → Strategic Approach → Entity/Conten
 
       let result = normalizeConceptCandidatesResult({
         ...generated,
+        conceptPromptVersion,
+        regenerationId: metadata.regenerationId,
+        generationAttempt: metadata.generationAttempt,
+        generatedAt: metadata.generatedAt,
         concepts: generated.concepts.slice(0, maxCandidates),
         entityDifferentiationMatrix: differentiationStrategy.hasMultipleEntities
           ? (generated.entityDifferentiationMatrix?.length ? generated.entityDifferentiationMatrix : differentiationStrategy.entityDifferentiationMatrix)
           : [],
       });
       result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules });
-      return NextResponse.json(result);
+      return conceptsJson(attachGenerationMetadata(result, metadata));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'generation timeout';
-      const fallback = applyNonBlockingConceptNamingGuard(buildFallbackConcepts(body.analysis, proposalNarrative, reason), { input: body.input, analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules });
-      return NextResponse.json(fallback);
+      const fallback = applyNonBlockingConceptNamingGuard(buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata), { input: body.input, analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules });
+      return conceptsJson(attachGenerationMetadata(fallback, metadata));
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return conceptsJson({ error: message, conceptPromptVersion }, { status: 500 });
   }
 }
