@@ -306,19 +306,40 @@ const keywordExecutionGuideSchema = {
     spatialUXImplication: { type: 'string' },
     designImplication: { type: 'string' },
     contentImplication: { type: 'string' },
+    contentOrMediaImplication: { type: 'string' },
+    operationImplication: { type: 'string' },
   },
-  required: ['keyword', 'spatialUXImplication', 'designImplication', 'contentImplication'],
+  required: ['keyword', 'spatialUXImplication', 'designImplication', 'contentImplication', 'contentOrMediaImplication', 'operationImplication'],
 } as const;
 
 const antiPatternValidationSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    riskToAvoid: { type: 'string' },
+    howThisConceptAvoidsIt: { type: 'string' },
+    validationCheck: { type: 'string' },
     validationCriteria: stringArray,
     passed: { type: 'boolean' },
     validationSummary: { type: 'string' },
   },
-  required: ['validationCriteria', 'passed', 'validationSummary'],
+  required: ['riskToAvoid', 'howThisConceptAvoidsIt', 'validationCheck', 'validationCriteria', 'passed', 'validationSummary'],
+} as const;
+
+const conceptMechanismSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    experienceMechanism: { type: 'string' },
+    spatialMechanism: { type: 'string' },
+    contentMechanism: { type: 'string' },
+    interactionMechanism: { type: 'string' },
+    recognitionLogic: { type: 'string' },
+    visitorOrAudienceTransformation: { type: 'string' },
+    proofMechanism: { type: 'string' },
+    whyThisCanBecomeAConcept: { type: 'string' },
+  },
+  required: ['experienceMechanism', 'spatialMechanism', 'contentMechanism', 'interactionMechanism', 'recognitionLogic', 'visitorOrAudienceTransformation', 'proofMechanism', 'whyThisCanBecomeAConcept'],
 } as const;
 
 const conceptEvaluationScoresSchema = {
@@ -366,6 +387,8 @@ export const conceptCandidatesJsonSchema = {
           hiddenNeedResolved: { type: 'string' },
           strategicApproach: { type: 'string' },
           whyThisConcept: { type: 'string' },
+          conceptMechanism: conceptMechanismSchema,
+          whyThisNameWorks: { type: 'string' },
           conceptKeywords: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string' } },
           keywordExecutionGuide: { type: 'array', minItems: 3, maxItems: 3, items: keywordExecutionGuideSchema },
           experienceNarrativeFlow: { type: 'array', minItems: 3, items: { type: 'string' } },
@@ -404,6 +427,8 @@ export const conceptCandidatesJsonSchema = {
           'hiddenNeedResolved',
           'strategicApproach',
           'whyThisConcept',
+          'conceptMechanism',
+          'whyThisNameWorks',
           'conceptKeywords',
           'keywordExecutionGuide',
           'experienceNarrativeFlow',
