@@ -377,6 +377,13 @@ export interface EntityDifferentiationUse {
 
 export interface ConceptCandidate {
   conceptId: string;
+  proposalCoreConceptName: string;
+  proposalCoreConceptSlogan: string;
+  proposalCoreConceptDefinition: string;
+  whyThisIsCoreConcept: string;
+  experiencePrinciple: string;
+  visitorJourney: string;
+  contentMediaImplication: string;
   conceptName: string;
   conceptSlogan: string;
   conceptTagline: string;

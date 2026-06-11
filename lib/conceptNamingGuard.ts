@@ -51,6 +51,10 @@ const WEAK_GENERIC_CONCEPT_NAMES = [
   '증거 루트',
   '가치 신호',
   '선택의 이유',
+  '인지의 흐름',
+  '확신의 여정',
+  '경험의 경로',
+  '차별화의 단계',
   '혁신의 장면',
   '차별화된 통합',
   '명확한 구분',
@@ -60,6 +64,9 @@ const WEAK_GENERIC_CONCEPT_NAMES = [
   'differentiated unity',
   'connected future',
   'innovation journey',
+  'signal to proof',
+  'route to value',
+  'evidence journey',
   'experience hub',
   'distinct unity',
   'value',
@@ -91,6 +98,10 @@ const WEAK_GENERIC_TOKEN_COMBINATIONS = [
   ['증거', '루트'],
   ['가치', '신호'],
   ['선택의', '이유'],
+  ['인지의', '흐름'],
+  ['확신의', '여정'],
+  ['경험의', '경로'],
+  ['차별화의', '단계'],
   ['혁신의', '장면'],
   ['차별화된', '통합'],
   ['명확한', '구분'],
@@ -99,6 +110,9 @@ const WEAK_GENERIC_TOKEN_COMBINATIONS = [
   ['scene', 'innovation'],
   ['connected', 'future'],
   ['innovation', 'journey'],
+  ['signal', 'proof'],
+  ['route', 'value'],
+  ['evidence', 'journey'],
   ['experience', 'hub'],
   ['distinct', 'unity'],
   ['focused', 'identity'],
@@ -154,6 +168,10 @@ const GENERIC_CATEGORY_WORDS = [
   '방향',
   '전략',
   '메시지',
+  '인지',
+  '흐름',
+  '경로',
+  '단계',
 ];
 
 
@@ -447,6 +465,28 @@ function hasStrategyStatementName(name: string) {
   ].some((pattern) => pattern.test(normalized));
 }
 
+
+function isJourneyOrExecutionOnlyName(name: string) {
+  const normalized = normalizedText(name);
+  return [
+    /journey/i,
+    /route/i,
+    /path/i,
+    /flow/i,
+    /sequence/i,
+    /step/i,
+    /signal\s*(to|→)\s*proof/i,
+    /route\s*(to|→)\s*value/i,
+    /evidence\s*journey/i,
+    /인지\s*의?\s*흐름/u,
+    /확신\s*의?\s*여정/u,
+    /경험\s*의?\s*경로/u,
+    /차별화\s*의?\s*단계/u,
+    /증거\s*루트/u,
+    /가치\s*신호/u,
+  ].some((pattern) => pattern.test(normalized));
+}
+
 function nameMechanismScore(candidate: ConceptCandidate, name: string) {
   const mechanismText = Object.values(candidate.conceptMechanism ?? {}).join(' ');
   const metaphorText = Object.values(candidate.conceptMetaphorSource ?? {}).join(' ');
@@ -478,28 +518,28 @@ function collectConstraintTerms(analysis?: AnalysisResult) {
 }
 
 function candidateName(candidate: ConceptCandidate) {
-  return candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
+  return candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
 }
 
 export function getPresentationConceptName(candidate?: ConceptCandidate) {
   if (!candidate) return '';
-  return candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
+  return candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
 }
 
 export function getConceptTagline(candidate?: ConceptCandidate) {
   if (!candidate) return '';
-  return candidate.conceptSlogan || candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition || '';
+  return candidate.proposalCoreConceptSlogan || candidate.conceptSlogan || candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition || '';
 }
 
 export function getConceptDefinition(candidate?: ConceptCandidate) {
   if (!candidate) return '';
-  return candidate.conceptDefinition || candidate.oneLineDefinition || candidate.whyThisWorks || '';
+  return candidate.proposalCoreConceptDefinition || candidate.conceptDefinition || candidate.oneLineDefinition || candidate.whyThisWorks || '';
 }
 
 export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptCandidate {
-  const conceptName = (candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR).trim();
-  const conceptTagline = (candidate.conceptSlogan || candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition).trim();
-  const conceptDefinition = (candidate.conceptDefinition || candidate.oneLineDefinition || candidate.whyThisWorks).trim();
+  const conceptName = (candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR).trim();
+  const conceptTagline = (candidate.proposalCoreConceptSlogan || candidate.conceptSlogan || candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition).trim();
+  const conceptDefinition = (candidate.proposalCoreConceptDefinition || candidate.conceptDefinition || candidate.oneLineDefinition || candidate.whyThisWorks).trim();
 
   return {
     ...candidate,
@@ -540,8 +580,15 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
       proofByEntity: '',
       riskCheck: '',
     },
+    proposalCoreConceptName: conceptName,
+    proposalCoreConceptSlogan: candidate.proposalCoreConceptSlogan || conceptTagline,
+    proposalCoreConceptDefinition: conceptDefinition,
+    whyThisIsCoreConcept: candidate.whyThisIsCoreConcept || candidate.whyThisNameWorks || candidate.whyThisConcept || candidate.whyThisWorks || '',
+    experiencePrinciple: candidate.experiencePrinciple || candidate.conceptMechanism?.visitorOrAudienceTransformation || candidate.experienceLogic || candidate.experienceStructure || '',
+    visitorJourney: candidate.visitorJourney || candidate.experienceNarrativeFlow?.join(' → ') || candidate.conceptMechanism?.interactionMechanism || '',
+    contentMediaImplication: candidate.contentMediaImplication || candidate.conceptMechanism?.contentMechanism || candidate.mediaInteractionPotential || '',
     conceptName,
-    conceptSlogan: candidate.conceptSlogan || conceptTagline,
+    conceptSlogan: candidate.conceptSlogan || candidate.proposalCoreConceptSlogan || conceptTagline,
     conceptTagline,
     conceptDefinition,
     conceptTitle: conceptName,
@@ -576,7 +623,8 @@ export function validateConceptNaming(
     if (hasForbiddenAbstractNamingCore(name)) violations.push(`${label}: conceptName is centered on a forbidden abstract/corrective naming word rather than a project-specific metaphor source.`);
     if (hasStrategyStatementName(name)) violations.push(`${label}: conceptName reads like a strategy statement, slide title, project objective, direct solution phrase, or avoidance-rule translation instead of a concept mechanism.`);
     if (nameMechanismScore(candidate, name) < 4) violations.push(`${label}: conceptName scores below 4 on specificity, memorability, mechanism clarity, expandability, non-generic quality, or cover-title potential.`);
-    if (hasWeakGenericConceptName(name)) violations.push(`${label}: conceptName is a weak generic keyword combination rather than a proposal-ready idea.`);
+    if (hasWeakGenericConceptName(name)) violations.push(`${label}: proposalCoreConceptName is a weak generic keyword combination rather than a proposal-ready idea.`);
+    if (isJourneyOrExecutionOnlyName(name)) violations.push(`${label}: proposalCoreConceptName reads like a visitor journey, sequence, interaction mechanism, content section, slide title, strategic instruction, or anti-pattern correction rather than the proposal's organizing idea.`);
     if (hasGenericConceptPenaltyWord(name)) violations.push(`${label}: conceptName uses a generic tech/event branding word from the universal penalty list without current-RFP-specific justification.`);
     if (hasGenericMainNamingDevice(name)) violations.push(`${label}: conceptName uses a generic category word as the main naming device.`);
     if (hasUntransformedConceptRoleTerm(name)) violations.push(`${label}: conceptName uses execution methods, content categories, spatial solutions, constraints, or RFP keywords as the main naming device instead of a transformed strategic metaphor.`);
@@ -641,6 +689,7 @@ function buildSafeConceptNamesFromMetaphor(candidate: ConceptCandidate, context:
 function applyConceptName(candidate: ConceptCandidate, conceptName: string, warning?: string): ConceptCandidate {
   return normalizeConceptCandidate({
     ...candidate,
+    proposalCoreConceptName: conceptName,
     conceptName,
     conceptTitle: conceptName,
     conceptNameKR: conceptName,
@@ -713,6 +762,8 @@ export function buildConceptNamingRetryInstruction(violations: string[]) {
     'CONCEPT NAMING GUARD REJECTION:',
     ...violations.map((violation) => `- ${violation}`),
     'Regenerate all 3 concepts. Keep the strategic narrative, but replace rejected naming logic with concise, memorable, proposal-ready names derived from each candidate’s Concept Metaphor Source: metaphorSeed, symbolicImage, proposalWorld, and whyThisCanBecomeAConceptTitle. Do not derive names directly from hidden needs, strategic approach, mechanism summary, anti-patterns, evaluation logic, or corrective wording.',
+    'Concept Level Guard: proposalCoreConceptName/conceptName must express the highest-level organizing idea for the whole proposal, not an Experience Principle, Visitor Journey, content section, interaction mechanism, slide title, strategic instruction, or anti-pattern correction.',
+    'Reject journey-like names such as 증거 루트, 가치 신호, 선택의 이유, 인지의 흐름, 확신의 여정, 경험의 경로, 차별화의 단계, Signal to Proof, Route to Value, and Evidence Journey. These can only appear under visitorJourney or section labels, never as the core concept name.',
     'Concept Role Guard: conceptName must express the proposal strategic idea, not the execution method. Do not use modular, interactive, value chain, media, zone, pavilion, experience, content, mechanism, spatial layout, booth/column constraints, deliverable categories, or RFP object lists as the main naming device unless transformed into a strong strategic metaphor.',
     'Reject names that read like technical descriptions, combine 2+ execution terms, use modular interactive or value chain as the main naming device, exceed 5 words without a strong reason, sound like slide titles, or start from constraints instead of proposalThesis.',
     'Do not use constraints, columns, booth limits, venue limitations, schedule, budget, deliverable names, equipment, media types, object lists, or floor-plan limitations as conceptName sources.',

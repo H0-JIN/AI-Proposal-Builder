@@ -82,6 +82,13 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
 
   return {
     conceptId,
+    proposalCoreConceptName: name,
+    proposalCoreConceptSlogan: preset.slogan,
+    proposalCoreConceptDefinition: definition,
+    whyThisIsCoreConcept: compactText(`${name}은 관람 순서가 아니라 RFP 과제, 제안 명제, 공간·콘텐츠·운영·증명 방식을 하나의 제안 세계로 묶는 최상위 프레임입니다.`, 220),
+    experiencePrinciple: compactText(`관객이 ${preset.recognitionLogic}으로 인식하도록 경험의 태도와 감정 전환을 설계합니다.`, 180),
+    visitorJourney: keywordBase.join(' → '),
+    contentMediaImplication: compactText(`${keywordBase.join(', ')} 키워드를 기준으로 콘텐츠, 미디어, 오브젝트의 역할을 나누고 각 접점이 핵심 명제를 증명하게 합니다.`, 180),
     conceptName: name,
     conceptSlogan: preset.slogan,
     conceptTagline: preset.slogan,
@@ -206,7 +213,7 @@ function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: Prop
     ],
     recommendation: {
       recommendedConceptId: 'C1',
-      recommendationReason: '가장 빠르게 RFP 문제와 선택 이유를 연결하는 경량 후보입니다.',
+      recommendationReason: '방문 흐름보다 RFP 문제, 공간·콘텐츠·운영·증명 구조를 가장 명확하게 묶는 Core Concept 후보입니다.',
       whyNotOthers: 'C2는 경험 확장성이 있으나 세부 연출 보완이 더 필요합니다.',
     },
     namingGuardNotice: {
@@ -251,18 +258,26 @@ export async function POST(request: Request) {
       `정확히 ${maxCandidates}개의 콘셉트 후보를 생성한다. 최소 3개의 usable concept를 반환하고, 내부 네이밍 후보 5개는 절대 노출하지 말라.`,
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
       '출력은 hiddenNeeds, strategicApproach, entityDifferentiationMatrix, conceptDevelopmentLogic, concepts, recommendation을 포함한다.',
-      '필수 생성 순서: (1) Current RFP evidence (2) Hidden Needs (3) Strategic Approach (4) Concept Mechanism (5) Concept Metaphor Source (6) internal conceptName candidates/scoring (7) selected Concept Name (8) conceptSlogan (9) execution keywords (10) antiPatternValidation.',
-      '각 concepts 항목은 conceptName 전에 conceptMechanism 8개 필드와 conceptMetaphorSource(metaphorSeed, symbolicImage, proposalWorld, whyThisCanBecomeAConceptTitle)를 먼저 설계한다.',
-      'conceptName은 Hidden Needs, Strategic Approach, 회피 규칙, 평가 논리, 문제 해결 문구에서 직접 만들지 말고 conceptMetaphorSource의 project-specific metaphor, scene, structure, symbolic frame, experience image에서만 도출한다.',
+      '필수 생성 순서: (1) Hidden Needs (2) Strategic Approach (3) Entity/Content/Audience Differentiation if applicable (4) Proposal Core Concept (5) Experience Principle (6) Visitor Journey (7) Content/Media Execution (8) Anti-pattern Validation.',
+      'Visitor Journey를 Proposal Core Concept보다 먼저 만들거나 Core Concept의 이름으로 승격하지 않는다.',
+      '각 concepts 항목은 proposalCoreConceptName, proposalCoreConceptSlogan, proposalCoreConceptDefinition, whyThisIsCoreConcept, experiencePrinciple, visitorJourney, contentMediaImplication을 반드시 분리한다.',
+      'legacy 호환을 위해 conceptName은 proposalCoreConceptName과 동일하게, conceptDefinition은 proposalCoreConceptDefinition과 동일하게 출력한다.',
+      'Proposal Core Concept은 전체 제안서의 최상위 전략·창의 프레임이며 client objective, RFP challenge, brand/product meaning, space, content, operation, proof를 연결하고 제안서 표지 제목이 될 수 있어야 한다.',
+      'Proposal Core Concept은 visitor path, interaction flow, content sequence, audience recognition flow, media mechanism으로 축소되면 안 된다.',
+      'Experience Principle은 core concept이 관객 인식·참여·감정 전환으로 어떻게 작동하는지 설명한다. awareness/differentiation/immersion/conviction/recognition/comparison/participation/memory는 여기에서 다루고 core concept name으로 쓰지 않는다.',
+      'Visitor Journey는 Awareness → Differentiation → Immersion → Conviction 같은 순차 흐름으로만 작성하고 Core Concept을 대체하지 않는다.',
+      'Content / Media Execution Idea는 core concept에서 파생된 콘텐츠, 미디어, 인터랙션, 오브젝트 실행 아이디어로만 작성한다.',
+      '각 concepts 항목은 Proposal Core Concept 설계 후 conceptMechanism 8개 필드와 conceptMetaphorSource(metaphorSeed, symbolicImage, proposalWorld, whyThisCanBecomeAConceptTitle)를 정리한다.',
+      'proposalCoreConceptName/conceptName은 Hidden Needs, Strategic Approach, 회피 규칙, 평가 논리, 문제 해결 문구에서 직접 만들지 말고 conceptMetaphorSource의 project-specific metaphor, scene, structure, symbolic frame, experience image에서만 도출한다.',
       '각 후보별로 내부적으로 이름 5개를 만들고 specificityToCurrentRfp, symbolicPower, memorability, coverTitlePotential, expandability, nonGenericQuality, notStrategyLabel을 1~5점으로 채점한다. 종합 4 미만이거나 섹션 제목/컨설팅 헤딩/전략 부제/문제해결 문구로도 쓸 수 있으면 이름만 재생성하고 최종 1개만 출력한다. 내부 후보와 점수는 출력하지 않는다.',
-      '약한 이름 금지: 증거 루트, 가치 신호, 선택의 이유, 혁신의 장면, 차별화된 통합, 명확한 구분, 통합된 경험, Distinct Unity, Focused Identity, Scene of Innovation, The Reason to Choose, Connected Future, Innovation Journey, Experience Hub.',
+      '약한 Core Concept 이름 금지: 증거 루트, 가치 신호, 선택의 이유, 인지의 흐름, 확신의 여정, 경험의 경로, 차별화의 단계, Signal to Proof, Route to Value, Evidence Journey, 혁신의 장면, 차별화된 통합, 명확한 구분, 통합된 경험, Distinct Unity, Focused Identity, Scene of Innovation, The Reason to Choose, Connected Future, Innovation Journey, Experience Hub.',
       'conceptName은 전략 문장/슬라이드 제목/프로젝트 목표/직접 솔루션 문구/캠페인 문구/RFP 요약/회피 규칙 번역처럼 보이면 안 된다.',
       '한국어 conceptName은 가치/증거/신호/루트/이유/선택/차별화/통합/연결/혁신/경험/공명/확신/집중/방향/전략/메시지 중심 이름을 거부하고, 현재 RFP에서만 성립하는 상징 세계·구조 이미지·장면 제목으로 작성한다.',
       '영어 conceptName은 value/proof/signal/route/reason/choice/differentiation/connection/innovation/experience/focus/resonance/strategy/identity/unity/synergy/nexus/pulse/vanguard/frontier/spectrum 중심 이름을 거부한다.',
       'conceptSlogan은 평가자가 이해할 수 있게 RFP 목표와 제안 약속을 1문장으로 설명하되, conceptName 자체는 간결하게 유지한다.',
       'keywordExecutionGuide는 keyword별 spatialUXImplication, designImplication, contentImplication, contentOrMediaImplication, operationImplication을 각각 1개의 짧은 구로 작성하고 conceptMechanism에서 파생한다.',
       'experienceNarrativeFlow는 3~4개의 짧은 단계만 작성한다.',
-      'antiPatternValidation은 riskToAvoid, howThisConceptAvoidsIt, validationCheck를 포함하고 proposal_patterns 회피 규칙을 검증 기준으로만 사용하며 naming source로 쓰지 않는다.',
+      'antiPatternValidation은 Core Concept name이 visitor journey label, experience sequence, interaction mechanism, content section title, slide title, strategic instruction, anti-pattern correction인지 점검하고, proposal_patterns 회피 규칙은 검증 기준으로만 사용하며 naming source로 쓰지 않는다.',
       'proposal_patterns에 포함된 과거 프로젝트명, 클라이언트명, 파일명, 고유 상세를 추정하거나 재사용하지 않는다.',
       isEventOperationType ? '행사 운영형 콘셉트도 시스템명/카테고리명이 아니라 행사 목적과 비즈니스 기회를 압축한 이름으로 작성한다.' : '각 후보는 서로 다른 전략 관점과 경험 흐름을 가진다.',
     ].join('\n');
@@ -289,7 +304,7 @@ ${proposalPatternDiagnostics}
 proposal_patterns compact JSON (최대 ${maxProposalPatterns}개, source_text/summary/과거 고유명 없음):
 ${proposalPatternContext}
 
-Generation order reminder: Current RFP evidence → Hidden Needs → Strategic Approach → Concept Mechanism → Concept Metaphor Source → internal 5-name scoring → selected Concept Name → one-line Slogan → concise Concept Mechanism → concise Concept Metaphor Source → exactly 3 Execution Keywords → Anti-pattern Validation.`;
+Generation order reminder: Hidden Needs → Strategic Approach → Entity/Content/Audience Differentiation if applicable → Proposal Core Concept → Experience Principle → Visitor Journey → Content/Media Execution → Anti-pattern Validation. Do not generate Visitor Journey before Proposal Core Concept, and choose recommendation by strategic fit, RFP specificity, originality, whole-proposal organizing power, expandability to space/content/media/operation, evaluator clarity, and anti-pattern avoidance.`;
 
     try {
       const generated = await createStructuredJson<ConceptCandidatesResult>({
