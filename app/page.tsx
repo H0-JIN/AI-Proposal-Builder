@@ -3551,10 +3551,11 @@ export default function Home() {
                     )}
                     <p className="mt-3 text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
-                      <div><dt className="font-black text-slate-950">방향이 강조하는 것</dt><dd>{conciseText(concept.whatThisDirectionEmphasizes || getConceptDefinition(concept), 130)}</dd></div>
-                      <div><dt className="font-black text-slate-950">선택하면 좋은 경우</dt><dd>{conciseText(concept.whenToChooseThisDirection, 130)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Winning Thesis</dt><dd>{conciseText(concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach, 115)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Concept Leap</dt><dd>{conciseText(concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept), 115)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Signature Proof Idea</dt><dd>{conciseText(concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.keyExperienceAssetDirection, 115)}</dd></div>
                       <div><dt className="font-black text-slate-950">Core Concept Name</dt><dd>{getPresentationConceptName(concept)}</dd></div>
-                      <div><dt className="font-black text-slate-950">One-line Slogan</dt><dd>{conciseText(getConceptTagline(concept), 120)}</dd></div>
+                      <div><dt className="font-black text-slate-950">One-line Slogan</dt><dd>{conciseText(getConceptTagline(concept), 110)}</dd></div>
                       {conceptKeywordChips(concept).length > 0 && (
                         <div>
                           <dt className="font-black text-slate-950">3 Execution Keywords</dt>

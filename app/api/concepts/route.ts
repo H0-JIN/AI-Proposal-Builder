@@ -173,6 +173,45 @@ function formatStrategicDirectionPlanForPrompt(plan: StrategicDirectionPlanItem[
   return plan.map((item, index) => `C${index + 1}: ${item.label} (${item.type})\n- emphasis: ${item.emphasis}\n- chooseWhen: ${item.chooseWhen}`).join('\n');
 }
 
+function buildFallbackWinningThesis(analysis: AnalysisResult, narrative: ProposalNarrative) {
+  const challenge = compactText(analysis.clientChallenge || narrative.coreProblem || '평가자가 기존 정보 나열만으로는 선택 이유를 확신하기 어려움', 150);
+  const thesis = compactText(narrative.proposalThesis || '현재 요구를 실행 가능한 증거와 기억되는 장면으로 증명', 150);
+  return {
+    contextShift: compactText(narrative.strategicOpportunity || challenge, 150),
+    previousBaseline: compactText(analysis.projectOverview || '기존 이해는 요구사항과 산출물 확인에 머물러 있음', 150),
+    newReality: compactText(challenge, 150),
+    clientUniquePosition: compactText(narrative.differentiationPrinciple || 'RFP 요구를 통합하고 실행 접점으로 전환할 수 있는 주체', 150),
+    audiencePerceptionGap: compactText(analysis.targetInfo || '대상이 왜 지금 이 제안을 믿어야 하는지 아직 선명하지 않음', 150),
+    winningClaim: thesis,
+    whyNow: compactText(analysis.evaluationCriteria?.[0] || '평가 시점에 전략과 실행 증거를 동시에 보여줘야 함', 150),
+    whyThisClient: compactText(narrative.unifyingFrame || narrative.differentiationPrinciple || '현재 과제의 요구와 증거를 가장 직접적으로 연결할 수 있음', 150),
+    whatMustBeProven: compactText(analysis.requiredDeliverables?.[0] || analysis.requiredScope?.[0] || '공간·콘텐츠·운영 접점에서 핵심 주장이 실제로 작동함', 150),
+  };
+}
+
+function buildFallbackConceptLeap(thesis: ReturnType<typeof buildFallbackWinningThesis>, direction: StrategicDirectionPlanItem) {
+  return {
+    fromStatement: compactText(`기존에는 ${thesis.previousBaseline}`, 150),
+    toStatement: compactText(`이제는 ${thesis.newReality}`, 150),
+    conceptLeap: compactText(`${direction.label} 관점에서 ${thesis.winningClaim}을 기억되는 대표 장면으로 바꿉니다.`, 170),
+    corePromise: compactText(thesis.winningClaim, 140),
+    emotionalTakeaway: '막연한 이해가 아니라 지금 선택할 수 있다는 확신',
+    evaluatorTakeaway: compactText(`${direction.emphasis}이 평가 기준과 실행 증거로 연결됨`, 140),
+  };
+}
+
+function buildFallbackSignatureProofIdea(analysis: AnalysisResult, direction: StrategicDirectionPlanItem, keywordBase: [string, string, string]) {
+  const proofTarget = compactText(analysis.requiredScope?.[0] || analysis.requiredItems?.[0] || analysis.evaluationCriteria?.[0] || '핵심 요구', 90);
+  return {
+    signatureScene: `${proofTarget}이 한눈에 판단되는 대표 증명 장면`,
+    signatureContent: `${keywordBase[0]}·${keywordBase[1]}·${keywordBase[2]}를 순서대로 확인하는 핵심 메시지와 증거`,
+    signatureSpatialMove: '도입부에서 주장, 중심부에서 증거, 마무리에서 선택 이유가 보이는 압축 동선',
+    signatureMediaOrInteraction: '평가자가 하나의 선택 근거를 직접 확인하는 짧은 비교·검증 접점',
+    whyThisProvesTheConcept: `${direction.label} 방향의 약속을 추상 설명이 아니라 실제 판단 장면으로 보여줍니다.`,
+    whyThisIsNotGeneric: '단순 영상벽이나 키오스크가 아니라 RFP 핵심 요구를 선택 근거로 전환하는 장면이기 때문입니다.',
+  };
+}
+
 function fallbackCandidate(index: number, name: string, analysis: AnalysisResult, narrative: ProposalNarrative): ConceptCandidate {
   const conceptId = `C${index}`;
   const direction = buildStrategicDirectionPlan(analysis, narrative, Boolean(narrative.entityDifferentiationMatrix?.length && narrative.entityDifferentiationMatrix.length > 1))[(index - 1) % 3];
@@ -186,6 +225,9 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
   const seed = fallbackNameSeeds(analysis)[index - 1] || fallbackNameSeeds(analysis)[0] || '판단';
   const repairedName = name || `${seed} ${['프레임', '필드', '아레나'][(index - 1) % 3]}`;
   const keywordBase = preset.keywords;
+  const winningThesisUse = buildFallbackWinningThesis(analysis, narrative);
+  const conceptLeap = buildFallbackConceptLeap(winningThesisUse, direction);
+  const signatureProofIdea = buildFallbackSignatureProofIdea(analysis, direction, keywordBase);
   const definition = compactText(preset.definition, 180);
   const mechanism = {
     experienceMechanism: preset.experienceMechanism,
@@ -207,6 +249,9 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
     proposalCoreConceptName: repairedName,
     proposalCoreConceptSlogan: preset.slogan,
     proposalCoreConceptDefinition: definition,
+    winningThesisUse,
+    conceptLeap,
+    signatureProofIdea,
     whyThisIsCoreConcept: compactText(`${repairedName}은 관람 순서가 아니라 RFP 과제, 제안 명제, 공간·콘텐츠·운영·증명 방식을 하나의 제안 세계로 묶는 최상위 프레임입니다.`, 220),
     experiencePrinciple: compactText(`관객이 ${preset.recognitionLogic}으로 인식하도록 경험의 태도와 감정 전환을 설계합니다.`, 180),
     visitorJourney: keywordBase.join(' → '),
@@ -480,6 +525,12 @@ export async function POST(request: Request) {
       '추천은 가장 적합한 방향을 설명하되 다른 후보를 나쁘다/부적합하다/틀렸다로 말하지 않는다. 다른 방향의 쓰임과 선택 간 trade-off를 중립적으로 설명한다.',
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
       '출력은 hiddenNeeds, strategicApproach, entityDifferentiationMatrix, conceptDevelopmentLogic, concepts, recommendation을 포함한다.',
+      'Concept candidates 생성 전에 Winning Thesis를 먼저 만들고, 그 다음 Concept Leap을 만든 뒤, 그 논리에서 proposalCoreConceptName을 도출한다.',
+      'Winning Thesis 필드(contextShift, previousBaseline, newReality, clientUniquePosition, audiencePerceptionGap, winningClaim, whyNow, whyThisClient, whatMustBeProven)를 각 concepts 항목의 winningThesisUse에 반드시 포함한다.',
+      'Concept Leap 필드(fromStatement, toStatement, conceptLeap, corePromise, emotionalTakeaway, evaluatorTakeaway)를 각 concepts 항목에 반드시 포함한다. From/To/Leap은 RFP를 해석해야 하며 기간·장소·예산·제출요건 복사가 아니어야 한다.',
+      '각 후보는 signatureProofIdea(signatureScene, signatureContent, signatureSpatialMove, signatureMediaOrInteraction, whyThisProvesTheConcept, whyThisIsNotGeneric)를 반드시 포함한다. generic immersive video/kiosk/media wall/showcase 같은 표현은 구체 대표 장면으로 변환한다.',
+      'proposalCoreConceptName은 conceptLeap과 corePromise에서 나와야 하며 classification label, diagram label, section title, product module, generic metaphor, content mechanism, visitor journey label이면 안 된다.',
+      'proposalCoreConceptSlogan은 시적 문구보다 전략적 claim, why this client, proposal promise를 명확히 설명한다.',
       '필수 생성 순서: (1) Hidden Needs (2) Strategic Approach (3) Entity/Content/Audience Differentiation if applicable (4) Proposal Core Concept (5) Experience Principle (6) Visitor Journey (7) Content/Media Execution (8) Anti-pattern Validation.',
       'Visitor Journey를 Proposal Core Concept보다 먼저 만들거나 Core Concept의 이름으로 승격하지 않는다.',
       '각 concepts 항목은 proposalCoreConceptName, proposalCoreConceptSlogan, proposalCoreConceptDefinition, whyThisIsCoreConcept, experiencePrinciple, visitorJourney, contentMediaImplication을 반드시 분리한다.',
@@ -547,7 +598,7 @@ ${proposalPatternDiagnostics}
 proposal_patterns compact JSON (최대 ${maxProposalPatterns}개, source_text/summary/과거 고유명 없음):
 ${proposalPatternContext}
 
-Generation order reminder: Hidden Needs → Strategic Approach → Entity/Content/Audience Differentiation if applicable → Strategic Direction Option → Proposal Core Concept → Experience Principle → Visitor Journey → Content/Media Execution → Anti-pattern Validation. Do not generate Visitor Journey before Proposal Core Concept. Choose recommendation by best-fit strategic direction, RFP specificity, originality, whole-proposal organizing power, expandability to space/content/media/operation, evaluator clarity, and anti-pattern avoidance. recommendation.whyNotOthers must use neutral trade-off language and must explain what the other directions are useful for, not why they are bad.`;
+Generation order reminder: Hidden Needs → Strategic Approach → Winning Thesis → Concept Leap → Signature Proof Idea → Entity/Content/Audience Differentiation if applicable → Strategic Direction Option → Winning Thesis → Concept Leap → Signature Proof Idea → Proposal Core Concept → Experience Principle → Visitor Journey → Content/Media Execution → Anti-pattern Validation. Do not generate Visitor Journey before Proposal Core Concept. Choose recommendation by best-fit strategic direction, RFP specificity, originality, whole-proposal organizing power, expandability to space/content/media/operation, evaluator clarity, and anti-pattern avoidance. recommendation.whyNotOthers must use neutral trade-off language and must explain what the other directions are useful for, not why they are bad.`;
 
     try {
       const generated = await createStructuredJson<ConceptCandidatesResult>({

@@ -731,6 +731,33 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
   const conceptName = (candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR).trim();
   const conceptTagline = (candidate.proposalCoreConceptSlogan || candidate.conceptSlogan || candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition).trim();
   const conceptDefinition = (candidate.proposalCoreConceptDefinition || candidate.conceptDefinition || candidate.oneLineDefinition || candidate.whyThisWorks).trim();
+  const winningThesisUse = candidate.winningThesisUse ?? {
+    contextShift: candidate.conceptRationale?.strategicShift || candidate.strategicApproach || '',
+    previousBaseline: candidate.conceptRationale?.problemInsight || '',
+    newReality: candidate.conceptRationale?.clientNeed || candidate.hiddenNeedResolved || '',
+    clientUniquePosition: candidate.conceptRationale?.whyThisConcept || candidate.whyThisNameFitsRfp || '',
+    audiencePerceptionGap: candidate.conceptRationale?.audienceBarrier || candidate.targetRelevance || '',
+    winningClaim: candidate.coreMessage || candidate.strategicApproach || conceptTagline,
+    whyNow: candidate.hiddenNeedResolved || candidate.whyThisConcept || '',
+    whyThisClient: candidate.whyThisNameFitsRfp || candidate.whyThisNameWorks || '',
+    whatMustBeProven: candidate.thesisProof || candidate.executionFeasibility || '',
+  };
+  const conceptLeap = candidate.conceptLeap ?? {
+    fromStatement: winningThesisUse.previousBaseline || '',
+    toStatement: winningThesisUse.newReality || '',
+    conceptLeap: candidate.whyThisConcept || candidate.whyThisCanOrganizeProposal || conceptDefinition,
+    corePromise: winningThesisUse.winningClaim || conceptTagline,
+    emotionalTakeaway: candidate.conceptMechanism?.visitorOrAudienceTransformation || candidate.targetRelevance || '',
+    evaluatorTakeaway: candidate.conceptMechanism?.proofMechanism || candidate.thesisProof || '',
+  };
+  const signatureProofIdea = candidate.signatureProofIdea ?? {
+    signatureScene: candidate.keyExperienceAssetDirection || candidate.experienceStructure || '',
+    signatureContent: candidate.contentMediaImplication || candidate.conceptMechanism?.contentMechanism || '',
+    signatureSpatialMove: candidate.spatialApplication || candidate.conceptMechanism?.spatialMechanism || '',
+    signatureMediaOrInteraction: candidate.mediaInteractionPotential || candidate.conceptMechanism?.interactionMechanism || '',
+    whyThisProvesTheConcept: candidate.thesisProof || candidate.conceptMechanism?.proofMechanism || '',
+    whyThisIsNotGeneric: candidate.whyThisNameFitsRfp || candidate.whyThisIsNotJustPoetic || '',
+  };
 
   return {
     ...candidate,
@@ -791,6 +818,9 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
     conceptNameKoreanSubtitle: candidate.conceptNameKoreanSubtitle || (/^[\x00-\x7F]+$/.test(conceptName) ? candidate.subtitle || conceptTagline : ''),
     conceptSloganKorean: candidate.conceptSloganKorean || conceptTagline,
     conceptSloganEnglish: candidate.conceptSloganEnglish || '',
+    winningThesisUse,
+    conceptLeap,
+    signatureProofIdea,
     proposalCoreConceptName: conceptName,
     proposalCoreConceptSlogan: candidate.proposalCoreConceptSlogan || conceptTagline,
     proposalCoreConceptDefinition: conceptDefinition,
