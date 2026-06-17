@@ -373,6 +373,8 @@ const conceptScopeValidationSchema = {
   required: ['coversWholeProposal', 'coversMainEntitiesOrScope', 'expandableToSpace', 'expandableToContent', 'expandableToMediaOrInteraction', 'expandableToOperationOrProof', 'notProductSpecificOnly', 'notSectionTitleOnly'],
 } as const;
 
+const conceptNameScopeClassificationEnum = ['proposal_level', 'section_level', 'content_module_level', 'product_specific_level', 'generic_label'] as const;
+
 const conceptEvaluationScoresSchema = {
   type: 'object',
   additionalProperties: false,
@@ -453,6 +455,7 @@ export const conceptCandidatesJsonSchema = {
           conceptSloganKorean: { type: 'string' },
           conceptSloganEnglish: { type: 'string' },
           conceptScopeValidation: conceptScopeValidationSchema,
+          conceptNameScopeClassification: { type: 'string', enum: conceptNameScopeClassificationEnum },
           oneLineDefinition: { type: 'string' },
           coreMessage: { type: 'string' },
           thesisProof: { type: 'string' },
@@ -516,6 +519,7 @@ export const conceptCandidatesJsonSchema = {
           'conceptSloganKorean',
           'conceptSloganEnglish',
           'conceptScopeValidation',
+          'conceptNameScopeClassification',
           'oneLineDefinition',
           'coreMessage',
           'thesisProof',
