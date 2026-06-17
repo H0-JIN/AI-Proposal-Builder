@@ -606,6 +606,14 @@ export interface ConceptCandidatesResult {
   brandExperienceMatrix?: BrandExperienceMatrixItem[];
   selectedDirectionLensSet?: string[];
   activeMatrixSummary?: string;
+  rawPrimaryRfpConceptType?: RfpConceptType;
+  rawMatrixType?: MatrixType;
+  activeMatrixType?: MatrixType;
+  hasEntityDifferentiationMatrix?: boolean;
+  entityMatrixActive?: boolean;
+  brandMatrixActive?: boolean;
+  sanitizerApplied?: boolean;
+  sanitizerReason?: string;
   primaryRfpConceptType?: RfpConceptType;
   entityDifferentiationMatrix: EntityDifferentiationItem[];
   conceptDevelopmentLogic: ConceptDevelopmentLogic;

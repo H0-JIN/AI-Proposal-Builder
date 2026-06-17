@@ -10,6 +10,7 @@ import { applyNonBlockingConceptNamingGuard, normalizeConceptCandidatesResult } 
 import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
 import { formatProposalPatternDiagnostics, formatProposalPatternsForConceptPrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
 import { conceptPromptVersion } from '@/lib/conceptPromptVersion';
+import { getActiveMatrix, sanitizeConceptContextByRfpType, matrixTypeForRfpConceptType } from '@/lib/conceptContextSanitizer';
 
 const DEFAULT_CONCEPT_COUNT = 3;
 const DEFAULT_PATTERN_LIMIT = 8;
@@ -372,11 +373,7 @@ function hasMultiEntityPavilionEvidence(evidenceText: string, hasMultipleEntitie
 }
 
 function matrixTypeForRfp(primaryType: RfpConceptType): MatrixType {
-  if (primaryType === 'multi_entity_pavilion') return 'entityDifferentiationMatrix';
-  if (primaryType === 'single_brand_experience' || primaryType === 'visitor_center_or_tour') return 'brandExperienceMatrix';
-  if (primaryType === 'product_experience_space' || primaryType === 'technology_showcase') return 'productExperienceMatrix';
-  if (primaryType === 'operation_heavy_event') return 'operationTrustMatrix';
-  return 'none';
+  return matrixTypeForRfpConceptType(primaryType);
 }
 
 function buildBrandExperienceMatrix(analysis: AnalysisResult, narrative: ProposalNarrative): BrandExperienceMatrixItem[] {
@@ -483,13 +480,21 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
 }
 
 
-function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { primaryType: RfpConceptType; matrixType: MatrixType; plan: StrategicDirectionPlanItem[]; brandExperienceMatrix: BrandExperienceMatrixItem[]; entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix'] }): ConceptCandidatesResult {
+function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { primaryType: RfpConceptType; matrixType: MatrixType; plan: StrategicDirectionPlanItem[]; brandExperienceMatrix: BrandExperienceMatrixItem[]; entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix']; sanitizerApplied?: boolean; sanitizerReason?: string; rawMatrixType?: MatrixType; rawPrimaryRfpConceptType?: RfpConceptType }): ConceptCandidatesResult {
   const activeMatrixSummary = summarizeActiveMatrix(params.matrixType, { entityCount: params.matrixType === 'entityDifferentiationMatrix' ? params.entityMatrix.length : 0, brandExperienceMatrix: params.brandExperienceMatrix });
   const concepts = result.concepts.map((concept, index) => enforceStrategicDirectionGate(concept, params.plan[index] ?? params.plan[0]));
   return {
     ...result,
+    rawPrimaryRfpConceptType: params.rawPrimaryRfpConceptType ?? result.rawPrimaryRfpConceptType ?? params.primaryType,
     primaryRfpConceptType: params.primaryType,
+    rawMatrixType: params.rawMatrixType ?? result.rawMatrixType ?? result.matrixType,
     matrixType: params.matrixType,
+    activeMatrixType: params.matrixType,
+    hasEntityDifferentiationMatrix: params.matrixType === 'entityDifferentiationMatrix' && Boolean((result.entityDifferentiationMatrix?.length ? result.entityDifferentiationMatrix : params.entityMatrix).length),
+    entityMatrixActive: params.matrixType === 'entityDifferentiationMatrix',
+    brandMatrixActive: params.matrixType === 'brandExperienceMatrix',
+    sanitizerApplied: Boolean(params.sanitizerApplied),
+    sanitizerReason: params.sanitizerReason ?? 'matrix gate enforced from primaryRfpConceptType',
     selectedDirectionLensSet: selectedDirectionLensSet(params.plan),
     activeMatrixSummary,
     brandExperienceMatrix: params.matrixType === 'brandExperienceMatrix' ? params.brandExperienceMatrix : [],
@@ -847,11 +852,16 @@ export async function POST(request: Request) {
     const rfpConceptTypes = classifyRfpConceptTypes(body.analysis, proposalNarrative, hasMultipleEntities);
     const selectedRfpConceptType = primaryRfpConceptType(rfpConceptTypes);
     const strategicDirectionPlan = buildStrategicDirectionPlan(body.analysis, proposalNarrative, hasMultipleEntities);
-    const selectedMatrixType = matrixTypeForRfp(selectedRfpConceptType);
-    const brandExperienceMatrix = selectedMatrixType === 'brandExperienceMatrix' ? buildBrandExperienceMatrix(body.analysis, proposalNarrative) : [];
+    const rawMatrixType = body.analysis.matrixType;
+    const preliminaryMatrixType = matrixTypeForRfp(selectedRfpConceptType);
+    const preliminaryBrandExperienceMatrix = preliminaryMatrixType === 'brandExperienceMatrix' ? buildBrandExperienceMatrix(body.analysis, proposalNarrative) : [];
+    const sanitizedContext = sanitizeConceptContextByRfpType({ primaryRfpConceptType: selectedRfpConceptType, rawPrimaryRfpConceptType: body.analysis.primaryRfpConceptType, matrixType: rawMatrixType ?? preliminaryMatrixType, rawMatrixType, entityDifferentiationMatrix: differentiationStrategy.entityDifferentiationMatrix, brandExperienceMatrix: preliminaryBrandExperienceMatrix });
+    const selectedMatrixType = sanitizedContext.matrixType;
+    const brandExperienceMatrix = selectedMatrixType === 'brandExperienceMatrix' ? preliminaryBrandExperienceMatrix : [];
+    const activeMatrix = getActiveMatrix(sanitizedContext);
     const directionLensSet = selectedDirectionLensSet(strategicDirectionPlan);
     const activeMatrixSummary = summarizeActiveMatrix(selectedMatrixType, { entityCount: selectedMatrixType === 'entityDifferentiationMatrix' ? differentiationStrategy.entityDifferentiationMatrix.length : 0, brandExperienceMatrix });
-    console.info('[concepts:gating]', { primaryRfpConceptType: selectedRfpConceptType, matrixType: selectedMatrixType, selectedDirectionLensSet: directionLensSet, activeMatrixSummary });
+    console.info('[concepts:gating]', { primaryRfpConceptType: selectedRfpConceptType, matrixType: selectedMatrixType, activeMatrixType: sanitizedContext.activeMatrixType, selectedDirectionLensSet: directionLensSet, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, activeMatrixSummary });
     const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, hasMultipleEntities);
     const proposalPatternContext = formatProposalPatternsForConceptPrompt(proposalPatternGuidance.patterns, proposalPatternGuidance.avoidanceRules, maxProposalPatterns);
 
@@ -925,7 +935,12 @@ RFP Concept Type Classification (current RFP evidence only):
 - primaryRfpConceptType: ${selectedRfpConceptType}
 - secondaryRfpConceptTypes: ${rfpConceptTypes.filter((type) => type !== selectedRfpConceptType).join(' / ') || 'none'}
 - selectedDirectionLensSet: ${directionLensSet.join(' / ')}
+- rawPrimaryRfpConceptType: ${sanitizedContext.rawPrimaryRfpConceptType}
+- rawMatrixType: ${sanitizedContext.rawMatrixType || 'none'}
 - matrixType: ${selectedMatrixType}
+- activeMatrixType: ${sanitizedContext.activeMatrixType}
+- sanitizerApplied: ${sanitizedContext.sanitizerApplied}
+- sanitizerReason: ${sanitizedContext.sanitizerReason}
 - hasMultipleEntities: ${hasMultipleEntities}
 
 Strategic Direction Plan (이 순서로 C1/C2/C3를 생성하되 RFP에 맞게 이름과 실행은 구체화):
@@ -949,7 +964,7 @@ Balanced RFP Evidence Summary (entity balancing only; core concept naming은 cor
 ${JSON.stringify(balancedEvidenceSummary, null, 2)}
 
 RFP Matrix Gate (${selectedMatrixType}):
-${selectedMatrixType === 'entityDifferentiationMatrix' ? compactText(differentiationSummary, 700) : selectedMatrixType === 'brandExperienceMatrix' ? `Brand Experience Matrix JSON to use as the only matrix reasoning source: ${JSON.stringify(brandExperienceMatrix, null, 2)}. Fields: brandMeaning, visitorQuestion, experienceStage, processOrProofPoint, spatialMoment, sensoryOrEmotionalCue, memoryAfterVisit. Entity Differentiation Matrix를 출력하거나 전략 방향 렌즈로 사용하지 않는다.` : '현재 RFP primary type상 Entity Differentiation Matrix를 전략 방향 렌즈로 사용하지 않는다.'}
+${selectedMatrixType === 'entityDifferentiationMatrix' ? `Active Matrix JSON: ${JSON.stringify(activeMatrix, null, 2)}` : selectedMatrixType === 'brandExperienceMatrix' ? `Brand Experience Matrix JSON to use as the only matrix reasoning source: ${JSON.stringify(activeMatrix, null, 2)}. Fields: brandMeaning, visitorQuestion, experienceStage, processOrProofPoint, spatialMoment, sensoryOrEmotionalCue, memoryAfterVisit. Entity Differentiation Matrix를 출력하거나 전략 방향 렌즈로 사용하지 않는다.` : selectedMatrixType === 'productExperienceMatrix' || selectedMatrixType === 'operationTrustMatrix' ? `Active matrix type is ${selectedMatrixType}; Entity Differentiation Matrix를 전략 방향 렌즈로 사용하지 않는다.` : '현재 RFP primary type상 Entity Differentiation Matrix를 전략 방향 렌즈로 사용하지 않는다.'}
 
 proposal_patterns compact diagnostics:
 ${proposalPatternDiagnostics}
@@ -975,14 +990,14 @@ Generation order reminder: Hidden Needs → Strategic Approach → Winning Thesi
         generationAttempt: metadata.generationAttempt,
         generatedAt: metadata.generatedAt,
         concepts: generated.concepts.slice(0, maxCandidates),
-      }, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix })));
+      }, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType })));
       result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules });
       result = repairEntityBalance(result, balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(result, metadata));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'generation timeout';
       const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata);
-      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation(enforceResultMatrixGate(fallbackBase, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix })), { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
+      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation(enforceResultMatrixGate(fallbackBase, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType })), { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(fallback, metadata));
     }
   } catch (error) {
