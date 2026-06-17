@@ -198,10 +198,16 @@ const CONCEPT_ROLE_GUARD_TERMS = [
   'rfp object',
   'rfp',
   'module',
+  'protocol',
+  'matrix',
+  'feature',
   'zoning',
   'object list',
   '모듈러',
   '인터랙티브',
+  '프로토콜',
+  '매트릭스',
+  '기능',
   '밸류체인',
   '가치사슬',
   '미디어',
@@ -211,6 +217,10 @@ const CONCEPT_ROLE_GUARD_TERMS = [
   '콘텐츠',
   '컨텐츠',
   '메커니즘',
+  '프로토콜',
+  '매트릭스',
+  '조준경',
+  '개인병사용',
   '공간',
   '레이아웃',
   '부스',
@@ -235,9 +245,15 @@ const EXECUTION_NAMING_DEVICE_TERMS = [
   'columns',
   'deliverable',
   'module',
+  'protocol',
+  'matrix',
+  'feature',
   'zoning',
   '모듈러',
   '인터랙티브',
+  '프로토콜',
+  '매트릭스',
+  '기능',
   '미디어',
   '존',
   '파빌리온',
@@ -245,6 +261,10 @@ const EXECUTION_NAMING_DEVICE_TERMS = [
   '콘텐츠',
   '컨텐츠',
   '메커니즘',
+  '프로토콜',
+  '매트릭스',
+  '조준경',
+  '개인병사용',
   '공간',
   '레이아웃',
   '부스',
@@ -765,6 +785,11 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
       proofByEntity: '',
       riskCheck: '',
     },
+    conceptScopeValidation: candidate.conceptScopeValidation ?? buildScopeValidation(candidate),
+    conceptNameEnglish: candidate.conceptNameEnglish || candidate.conceptNameEN || (/^[\x00-\x7F]+$/.test(conceptName) ? conceptName : ''),
+    conceptNameKoreanSubtitle: candidate.conceptNameKoreanSubtitle || (/^[\x00-\x7F]+$/.test(conceptName) ? candidate.subtitle || conceptTagline : ''),
+    conceptSloganKorean: candidate.conceptSloganKorean || conceptTagline,
+    conceptSloganEnglish: candidate.conceptSloganEnglish || '',
     proposalCoreConceptName: conceptName,
     proposalCoreConceptSlogan: candidate.proposalCoreConceptSlogan || conceptTagline,
     proposalCoreConceptDefinition: conceptDefinition,
@@ -790,6 +815,68 @@ export function normalizeConceptCandidatesResult(result: ConceptCandidatesResult
   };
 }
 
+
+function compactNameKey(name: string) {
+  return normalizedText(name).replace(/[^a-z0-9가-힣]/giu, '');
+}
+
+function areNearDuplicateNames(a: string, b: string) {
+  const left = compactNameKey(a);
+  const right = compactNameKey(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const leftTokens = new Set(significantTokens(a));
+  const rightTokens = significantTokens(b);
+  if (leftTokens.size && rightTokens.length) {
+    const overlap = rightTokens.filter((token) => leftTokens.has(token)).length;
+    if (overlap >= Math.min(leftTokens.size, rightTokens.length)) return true;
+  }
+  return (left.length >= 6 && right.includes(left)) || (right.length >= 6 && left.includes(right));
+}
+
+const NARROW_SCOPE_NAME_PATTERNS = [
+  /protocol|matrix|feature|module|zone|section|interaction|interface|engine|system/i,
+  /프로토콜|매트릭스|모듈|기능|존|섹션|인터랙션|시스템|조준경|개인병사용/u,
+];
+
+function isNarrowProposalScopeName(name: string) {
+  return NARROW_SCOPE_NAME_PATTERNS.some((pattern) => pattern.test(name));
+}
+
+function hasProposalLevelScope(candidate: ConceptCandidate) {
+  const validation = candidate.conceptScopeValidation;
+  if (validation) return Object.values(validation).every(Boolean);
+
+  const mechanism = candidate.conceptMechanism;
+  return Boolean(
+    mechanism?.spatialMechanism?.trim()
+      && mechanism?.contentMechanism?.trim()
+      && mechanism?.interactionMechanism?.trim()
+      && mechanism?.proofMechanism?.trim()
+      && candidate.whyThisCanOrganizeProposal?.trim()
+  );
+}
+
+function buildScopeValidation(candidate: ConceptCandidate) {
+  const mechanism = candidate.conceptMechanism;
+  const name = candidateName(candidate);
+  return {
+    coversWholeProposal: Boolean(candidate.whyThisCanOrganizeProposal || mechanism?.whyThisCanBecomeAConcept),
+    coversMainEntitiesOrScope: Boolean(candidate.entityDifferentiationUse?.unifyingFrame || candidate.rfpGrounding?.length),
+    expandableToSpace: Boolean(mechanism?.spatialMechanism || candidate.spatialApplication),
+    expandableToContent: Boolean(mechanism?.contentMechanism || candidate.contentMediaImplication),
+    expandableToMediaOrInteraction: Boolean(mechanism?.interactionMechanism || candidate.mediaInteractionPotential),
+    expandableToOperationOrProof: Boolean(mechanism?.proofMechanism || candidate.executionFeasibility),
+    notProductSpecificOnly: !isNarrowProposalScopeName(name),
+    notSectionTitleOnly: !isLikelySentence(name) && !hasUntransformedConceptRoleTerm(name),
+  };
+}
+
+function inferGlobalNamingMode(context: { analysis?: AnalysisResult }) {
+  const evidence = analysisEvidenceText(context.analysis);
+  return /overseas|global|international|trade show|buyer|b2b|showcase|pavilion|expo|해외|글로벌|국제|바이어|수출|파빌리온|쇼케이스/i.test(evidence);
+}
+
 export function validateConceptNaming(
   result: ConceptCandidatesResult,
   context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] } = {},
@@ -803,6 +890,8 @@ export function validateConceptNaming(
     const unitCount = titleUnitCount(name);
     const label = `${candidate.conceptId || `concept-${index + 1}`} (${name || 'empty name'})`;
 
+    if (!hasProposalLevelScope(candidate)) violations.push(`${label}: conceptScopeValidation must prove proposal-level coverage across strategy, space, content, media/interaction, operation/proof, main entities/scope, and non-section naming.`);
+    if (isNarrowProposalScopeName(name)) violations.push(`${label}: conceptName is too narrow for proposal level and reads like a product, module, zone, interaction, feature, protocol, matrix, or section title.`);
     if (!name.trim()) violations.push(`${label}: conceptName is empty.`);
     if (unitCount > 5 || name.length > 36) violations.push(`${label}: conceptName is too long for a presentation-ready title.`);
     if (isLikelySentence(name)) violations.push(`${label}: conceptName reads like an explanatory sentence or section heading.`);
@@ -821,6 +910,14 @@ export function validateConceptNaming(
     if (!hasExplicitRfpGrounding(candidate)) violations.push(`${label}: concept candidate must include 3-5 concrete rfpGrounding evidence points and a valid conceptMetaphorSource.sourceTypes value.`);
     if (conceptDefinitionCopiesOverview(getConceptDefinition(candidate), context)) violations.push(`${label}: conceptDefinition appears to restate the RFP overview or administrative facts instead of explaining the concept mechanism.`);
   });
+
+  for (let i = 0; i < result.concepts.length; i += 1) {
+    for (let j = i + 1; j < result.concepts.length; j += 1) {
+      const left = candidateName(result.concepts[i]);
+      const right = candidateName(result.concepts[j]);
+      if (areNearDuplicateNames(left, right)) violations.push(`${result.concepts[i].conceptId || `concept-${i + 1}`} and ${result.concepts[j].conceptId || `concept-${j + 1}`}: concept names are duplicate or near-duplicate; keep strategic directions distinct and repair the weaker name.`);
+    }
+  }
 
   return {
     ok: violations.length === 0,
@@ -893,14 +990,14 @@ function buildSafeConceptNamesFromMetaphor(candidate: ConceptCandidate, context:
   const third = seeds.find((seed) => seed !== first && seed !== second) || '판단';
 
   return [
-    `${first} 프로토콜`,
-    `${first} 렌즈`,
-    `${second} 트리거`,
-    `${first} 매트릭스`,
-    `${second} 루프`,
-    `${third} 인덱스`,
-    `${first} 스위치`,
-    `${second} 그리드`,
+    `${first} ${second} 프레임`,
+    `${first} ${third} 필드`,
+    `${second} ${third} 아레나`,
+    `${first} ${second} 씬`,
+    `${second} ${first} 하우스`,
+    `${third} ${first} 스테이지`,
+    `${first} ${third} 캐노피`,
+    `${second} ${third} 마켓`,
   ];
 }
 
@@ -919,8 +1016,13 @@ function applyConceptName(candidate: ConceptCandidate, conceptName: string, warn
     conceptDefinition,
     oneLineDefinition: conceptDefinition,
     conceptTitle: conceptName,
-    conceptNameKR: conceptName,
-    conceptNameEN: conceptName,
+    conceptNameKR: /^[\x00-\x7F]+$/.test(conceptName) ? (candidate.conceptNameKoreanSubtitle || conceptName) : conceptName,
+    conceptNameEN: /^[\x00-\x7F]+$/.test(conceptName) ? conceptName : (candidate.conceptNameEnglish || conceptName),
+    conceptNameEnglish: /^[\x00-\x7F]+$/.test(conceptName) ? conceptName : (candidate.conceptNameEnglish || ''),
+    conceptNameKoreanSubtitle: /^[\x00-\x7F]+$/.test(conceptName) ? (candidate.conceptNameKoreanSubtitle || getConceptTagline(candidate)) : '',
+    conceptSloganKorean: candidate.conceptSloganKorean || getConceptTagline(candidate),
+    conceptSloganEnglish: candidate.conceptSloganEnglish || '',
+    conceptScopeValidation: buildScopeValidation({ ...candidate, proposalCoreConceptName: conceptName, conceptName } as ConceptCandidate),
     rfpGrounding: candidate.rfpGrounding?.length ? candidate.rfpGrounding : rfpGrounding,
     conceptMetaphorSource: {
       ...(candidate.conceptMetaphorSource ?? {

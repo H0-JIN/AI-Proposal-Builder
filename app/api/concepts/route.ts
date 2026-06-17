@@ -184,7 +184,7 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
   const preset = fallbackPresets[(index - 1) % fallbackPresets.length];
   const rfpGrounding = fallbackGrounding(analysis, narrative);
   const seed = fallbackNameSeeds(analysis)[index - 1] || fallbackNameSeeds(analysis)[0] || '판단';
-  const repairedName = name || `${seed} ${['프로토콜', '렌즈', '매트릭스'][(index - 1) % 3]}`;
+  const repairedName = name || `${seed} ${['프레임', '필드', '아레나'][(index - 1) % 3]}`;
   const keywordBase = preset.keywords;
   const definition = compactText(preset.definition, 180);
   const mechanism = {
@@ -270,6 +270,20 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
     subtitle: preset.slogan,
     conceptNameKR: repairedName,
     conceptNameEN: repairedName,
+    conceptNameEnglish: '',
+    conceptNameKoreanSubtitle: '',
+    conceptSloganKorean: preset.slogan,
+    conceptSloganEnglish: '',
+    conceptScopeValidation: {
+      coversWholeProposal: true,
+      coversMainEntitiesOrScope: true,
+      expandableToSpace: true,
+      expandableToContent: true,
+      expandableToMediaOrInteraction: true,
+      expandableToOperationOrProof: true,
+      notProductSpecificOnly: true,
+      notSectionTitleOnly: true,
+    },
     oneLineDefinition: definition,
     coreMessage: compactText(narrative.proposalThesis || definition, 160),
     thesisProof: compactText(narrative.whyThisConcept || 'RFP 요구와 실행 구조가 직접 연결됩니다.', 160),
@@ -471,6 +485,13 @@ export async function POST(request: Request) {
       '각 concepts 항목은 proposalCoreConceptName, proposalCoreConceptSlogan, proposalCoreConceptDefinition, whyThisIsCoreConcept, experiencePrinciple, visitorJourney, contentMediaImplication을 반드시 분리한다.',
       'legacy 호환을 위해 conceptName은 proposalCoreConceptName과 동일하게, conceptDefinition은 proposalCoreConceptDefinition과 동일하게 출력한다.',
       'Proposal Core Concept은 전체 제안서의 최상위 전략·창의 프레임이며 client objective, RFP challenge, brand/product meaning, space, content, operation, proof를 연결하고 제안서 표지 제목이 될 수 있어야 한다.',
+      'Proposal Core Concept scope validation을 각 후보에 포함한다: coversWholeProposal, coversMainEntitiesOrScope, expandableToSpace, expandableToContent, expandableToMediaOrInteraction, expandableToOperationOrProof, notProductSpecificOnly, notSectionTitleOnly는 모두 true여야 한다. false가 하나라도 있으면 이름과 정의를 수리한 뒤 true 상태만 출력한다.',
+      '콘셉트명은 전체 제안 전략, 공간 경험, 콘텐츠 방향, 미디어/인터랙션, 운영/실행 논리, 증명/평가 논리, 최종 발표 스토리라인을 조직할 수 있어야 한다.',
+      '제품명 하나, 특정 기술, 특정 존, 특정 체험 모듈, 특정 콘텐츠 섹션, 운영 프로세스명, 개인 병사용 프로토콜, 조준경 매트릭스 같은 이름은 제안 레벨 콘셉트가 아니므로 거부하고 전체 프레임으로 수리한다.',
+      'RFP에 여러 기업·제품·존·대상·콘텐츠 카테고리가 있으면 RFP가 명시한 전체 hero가 아닌 한 하나의 제품군이나 섹션만 대표하는 이름을 금지한다.',
+      '3개 후보의 conceptName은 중복/근접 중복이면 안 된다. 유사하면 약한 후보 이름만 재생성하되 전략 방향 차이는 유지한다.',
+      'RFP 맥락에 따라 naming language를 선택한다. 해외 전시, 국제 파빌리온, 글로벌 트레이드쇼, 기술 쇼케이스, B2B 글로벌 이벤트, 영어 용어가 많은 프로젝트, 해외 방문객/바이어 대상이면 English concept name을 우선하고 Korean subtitle/explanation을 제공한다. 국내 브랜드, 로컬 팝업, 한국 공공 캠페인, 한국 소비자 행사, 한국어 단독 대상이면 Korean concept name을 허용하고 English subtitle은 선택 사항이다.',
+      '각 후보는 conceptNameEnglish, conceptNameKoreanSubtitle, conceptSloganKorean, conceptSloganEnglish(if useful)를 포함한다. 단 영어/한국어를 모든 RFP에 강제하지 말고 맥락에 맞춰 비워도 된다.',
       'Proposal Core Concept은 visitor path, interaction flow, content sequence, audience recognition flow, media mechanism으로 축소되면 안 된다.',
       'Experience Principle은 core concept이 관객 인식·참여·감정 전환으로 어떻게 작동하는지 설명한다. awareness/differentiation/immersion/conviction/recognition/comparison/participation/memory는 여기에서 다루고 core concept name으로 쓰지 않는다.',
       'Visitor Journey는 Awareness → Differentiation → Immersion → Conviction 같은 순차 흐름으로만 작성하고 Core Concept을 대체하지 않는다.',

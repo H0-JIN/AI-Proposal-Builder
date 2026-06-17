@@ -356,6 +356,23 @@ const conceptMechanismSchema = {
   required: ['experienceMechanism', 'spatialMechanism', 'contentMechanism', 'interactionMechanism', 'recognitionLogic', 'visitorOrAudienceTransformation', 'proofMechanism', 'whyThisCanBecomeAConcept'],
 } as const;
 
+
+const conceptScopeValidationSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    coversWholeProposal: { type: 'boolean' },
+    coversMainEntitiesOrScope: { type: 'boolean' },
+    expandableToSpace: { type: 'boolean' },
+    expandableToContent: { type: 'boolean' },
+    expandableToMediaOrInteraction: { type: 'boolean' },
+    expandableToOperationOrProof: { type: 'boolean' },
+    notProductSpecificOnly: { type: 'boolean' },
+    notSectionTitleOnly: { type: 'boolean' },
+  },
+  required: ['coversWholeProposal', 'coversMainEntitiesOrScope', 'expandableToSpace', 'expandableToContent', 'expandableToMediaOrInteraction', 'expandableToOperationOrProof', 'notProductSpecificOnly', 'notSectionTitleOnly'],
+} as const;
+
 const conceptEvaluationScoresSchema = {
   type: 'object',
   additionalProperties: false,
@@ -431,6 +448,11 @@ export const conceptCandidatesJsonSchema = {
           subtitle: { type: 'string' },
           conceptNameKR: { type: 'string' },
           conceptNameEN: { type: 'string' },
+          conceptNameEnglish: { type: 'string' },
+          conceptNameKoreanSubtitle: { type: 'string' },
+          conceptSloganKorean: { type: 'string' },
+          conceptSloganEnglish: { type: 'string' },
+          conceptScopeValidation: conceptScopeValidationSchema,
           oneLineDefinition: { type: 'string' },
           coreMessage: { type: 'string' },
           thesisProof: { type: 'string' },
@@ -489,6 +511,11 @@ export const conceptCandidatesJsonSchema = {
           'subtitle',
           'conceptNameKR',
           'conceptNameEN',
+          'conceptNameEnglish',
+          'conceptNameKoreanSubtitle',
+          'conceptSloganKorean',
+          'conceptSloganEnglish',
+          'conceptScopeValidation',
           'oneLineDefinition',
           'coreMessage',
           'thesisProof',

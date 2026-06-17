@@ -377,6 +377,17 @@ export interface EntityDifferentiationUse {
   riskCheck: string;
 }
 
+export interface ConceptScopeValidation {
+  coversWholeProposal: boolean;
+  coversMainEntitiesOrScope: boolean;
+  expandableToSpace: boolean;
+  expandableToContent: boolean;
+  expandableToMediaOrInteraction: boolean;
+  expandableToOperationOrProof: boolean;
+  notProductSpecificOnly: boolean;
+  notSectionTitleOnly: boolean;
+}
+
 export interface ConceptCandidate {
   conceptId: string;
   strategicDirectionType: string;
@@ -416,6 +427,11 @@ export interface ConceptCandidate {
   subtitle: string;
   conceptNameKR: string;
   conceptNameEN: string;
+  conceptNameEnglish?: string;
+  conceptNameKoreanSubtitle?: string;
+  conceptSloganKorean?: string;
+  conceptSloganEnglish?: string;
+  conceptScopeValidation?: ConceptScopeValidation;
   oneLineDefinition: string;
   coreMessage: string;
   thesisProof: string;
