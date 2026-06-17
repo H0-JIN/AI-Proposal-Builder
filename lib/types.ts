@@ -473,6 +473,7 @@ export type RfpConceptType =
 export interface ConceptCandidate {
   conceptId: string;
   rfpConceptType: RfpConceptType;
+  secondaryRfpConceptTypes?: RfpConceptType[];
   strategicDirectionType: string;
   strategicDirectionLabel: string;
   whatThisDirectionEmphasizes: string;
