@@ -271,6 +271,9 @@ export interface AnalysisResult {
   contentCondition: string;
   operationCondition: string;
   kpiScheduleConstraints: string[];
+  primaryRfpConceptType?: RfpConceptType;
+  matrixType?: MatrixType;
+  selectedDirectionLensSet?: string[];
   missingInfo: string[];
   rfpRequirements: AnalysisSection;
   clientTask: AnalysisSection;
@@ -601,6 +604,9 @@ export interface ConceptCandidatesResult {
   strategicApproach: StrategicApproachLayer;
   matrixType?: MatrixType;
   brandExperienceMatrix?: BrandExperienceMatrixItem[];
+  selectedDirectionLensSet?: string[];
+  activeMatrixSummary?: string;
+  primaryRfpConceptType?: RfpConceptType;
   entityDifferentiationMatrix: EntityDifferentiationItem[];
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
