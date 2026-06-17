@@ -1258,8 +1258,8 @@ function ProposalNarrativePanel({ narrative }: { narrative?: ProposalNarrative }
 }
 
 
-function EntityDifferentiationMatrixPanel({ matrix }: { matrix?: ConceptCandidatesResult['entityDifferentiationMatrix'] }) {
-  if (!matrix?.length) return null;
+function EntityDifferentiationMatrixPanel({ matrix, matrixType }: { matrix?: ConceptCandidatesResult['entityDifferentiationMatrix']; matrixType?: ConceptCandidatesResult['matrixType'] }) {
+  if (matrixType !== 'entityDifferentiationMatrix' || !matrix?.length) return null;
 
   return (
     <div className="mt-6 rounded-3xl border border-emerald-100 bg-emerald-50 p-5 text-emerald-950">
@@ -1283,6 +1283,36 @@ function EntityDifferentiationMatrixPanel({ matrix }: { matrix?: ConceptCandidat
                 <td className="px-3 py-2">{entity.distinctMessage}</td>
                 <td className="px-3 py-2">{entity.proofPoint}</td>
                 <td className="px-3 py-2">{entity.experienceMechanism || entity.spatialOrContentRole}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function BrandExperienceMatrixPanel({ matrix, matrixType }: { matrix?: ConceptCandidatesResult['brandExperienceMatrix']; matrixType?: ConceptCandidatesResult['matrixType'] }) {
+  if (matrixType !== 'brandExperienceMatrix' || !matrix?.length) return null;
+  return (
+    <div className="mt-6 rounded-3xl border border-sky-100 bg-sky-50 p-5 text-sky-950">
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-sky-700">Brand Experience Matrix</p>
+      <h3 className="mt-2 text-xl font-black">브랜드 경험 설계 매트릭스</h3>
+      <div className="mt-4 overflow-x-auto rounded-2xl bg-white/85">
+        <table className="min-w-full text-left text-xs leading-5">
+          <thead className="bg-sky-100 text-sky-900">
+            <tr>{['Brand Meaning', 'Visitor Question', 'Stage', 'Proof Point', 'Spatial Moment', 'Cue', 'Memory'].map((header) => <th key={header} className="whitespace-nowrap px-3 py-2 font-black">{header}</th>)}</tr>
+          </thead>
+          <tbody>
+            {matrix.slice(0, 8).map((item, index) => (
+              <tr key={`${item.experienceStage}-${index}`} className="border-t border-sky-100 align-top">
+                <td className="px-3 py-2 font-black text-sky-900">{item.brandMeaning}</td>
+                <td className="px-3 py-2">{item.visitorQuestion}</td>
+                <td className="px-3 py-2">{item.experienceStage}</td>
+                <td className="px-3 py-2">{item.processOrProofPoint}</td>
+                <td className="px-3 py-2">{item.spatialMoment}</td>
+                <td className="px-3 py-2">{item.sensoryOrEmotionalCue}</td>
+                <td className="px-3 py-2">{item.memoryAfterVisit}</td>
               </tr>
             ))}
           </tbody>
@@ -3123,7 +3153,7 @@ export default function Home() {
     setLoading('컨셉명 후보 생성 중...');
     try {
       const selectedDirection = state.selectedStrategicDirection ?? state.selectedConcept.selectedDirection ?? state.selectedConcept;
-      const result = await postJson<ConceptNameOptionsResult>('/api/concept-names', { input: analysisInput, analysis: state.analysis, selectedDirection, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, entityDifferentiationMatrix: state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
+      const result = await postJson<ConceptNameOptionsResult>('/api/concept-names', { input: analysisInput, analysis: state.analysis, selectedDirection, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: state.conceptGenerationResult?.matrixType ?? (selectedDirection.rfpConceptType === 'multi_entity_pavilion' ? 'entityDifferentiationMatrix' : (selectedDirection.rfpConceptType === 'visitor_center_or_tour' || selectedDirection.rfpConceptType === 'single_brand_experience') ? 'brandExperienceMatrix' : 'none'), relevantMatrix: state.conceptGenerationResult?.matrixType === 'brandExperienceMatrix' ? state.conceptGenerationResult?.brandExperienceMatrix : state.conceptGenerationResult?.entityDifferentiationMatrix, entityDifferentiationMatrix: state.conceptGenerationResult?.matrixType === 'entityDifferentiationMatrix' ? (state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix) : undefined, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
       setState((current) => ({ ...current, conceptNameOptions: result.options, outline: undefined, slides: undefined }));
     } catch (err) {
       setError(err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.');
@@ -3572,7 +3602,8 @@ export default function Home() {
             )}
             <ProposalNarrativePanel narrative={state.proposalNarrative} />
             <ConceptDevelopmentLogicPanel logic={state.conceptDevelopmentLogic} />
-            <EntityDifferentiationMatrixPanel matrix={state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix} />
+            <EntityDifferentiationMatrixPanel matrix={state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix} matrixType={state.conceptGenerationResult?.matrixType} />
+            <BrandExperienceMatrixPanel matrix={state.conceptGenerationResult?.brandExperienceMatrix} matrixType={state.conceptGenerationResult?.matrixType} />
             <ConceptRecommendationPanel recommendation={state.conceptRecommendation} />
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
               {(state.conceptCandidates ?? []).map((concept) => {
@@ -3593,7 +3624,7 @@ export default function Home() {
                     )}
                     <p className="mt-2 inline-flex w-fit rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">Direction: {concept.strategicDirectionLabel || '전략 옵션'}</p>
                     <p className="mt-2 text-[11px] font-bold leading-5 text-slate-400">
-                      primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · secondaryRfpConceptTypes: {concept.secondaryRfpConceptTypes?.length ? concept.secondaryRfpConceptTypes.join(' / ') : 'none'} · selectedDirectionLensSet: {concept.strategicDirectionType || concept.strategicDirectionLabel || 'unknown'} · matrixType: {concept.rfpConceptType === 'multi_entity_pavilion' ? 'entityDifferentiationMatrix' : (concept.rfpConceptType === 'visitor_center_or_tour' || concept.rfpConceptType === 'single_brand_experience') ? 'brandExperienceMatrix' : 'none'}
+                      primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · secondaryRfpConceptTypes: {concept.secondaryRfpConceptTypes?.length ? concept.secondaryRfpConceptTypes.join(' / ') : 'none'} · selectedDirectionLensSet: {concept.strategicDirectionType || concept.strategicDirectionLabel || 'unknown'} · matrixType: {state.conceptGenerationResult?.matrixType || (concept.rfpConceptType === 'multi_entity_pavilion' ? 'entityDifferentiationMatrix' : (concept.rfpConceptType === 'visitor_center_or_tour' || concept.rfpConceptType === 'single_brand_experience') ? 'brandExperienceMatrix' : 'none')}
                     </p>
                     {concept.entityBalanceStatus && (
                       <p className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold leading-5 text-slate-600">
