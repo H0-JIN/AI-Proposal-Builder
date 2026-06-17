@@ -621,6 +621,10 @@ export interface ConceptCandidatesResult {
   brandMatrixActive?: boolean;
   sanitizerApplied?: boolean;
   sanitizerReason?: string;
+  proposalPatternsUsedForDirections?: boolean;
+  currentRfpOnlyMode?: boolean;
+  contaminationCheckPassed?: boolean;
+  blockedTerms?: string[];
   primaryRfpConceptType?: RfpConceptType;
   entityDifferentiationMatrix: EntityDifferentiationItem[];
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
