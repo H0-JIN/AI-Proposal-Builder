@@ -3639,6 +3639,11 @@ export default function Home() {
                     <p className="mt-2 text-[11px] font-bold leading-5 text-slate-400">
                       primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · secondaryRfpConceptTypes: {concept.secondaryRfpConceptTypes?.length ? concept.secondaryRfpConceptTypes.join(' / ') : 'none'} · selectedDirectionLensSet: {concept.strategicDirectionType || concept.strategicDirectionLabel || 'unknown'} · matrixType: {state.conceptGenerationResult?.matrixType || (concept.rfpConceptType === 'multi_entity_pavilion' ? 'entityDifferentiationMatrix' : (concept.rfpConceptType === 'visitor_center_or_tour' || concept.rfpConceptType === 'single_brand_experience') ? 'brandExperienceMatrix' : 'none')}
                     </p>
+                    {(concept.directionDebug || concept.directionSource || concept.failurePatternAvoided || concept.winningPatternUsed) && (
+                      <p className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold leading-5 text-slate-500">
+                        Direction source: {concept.directionDebug?.source || (concept.directionSource ? 'mixed' : 'RFP')} · Failure avoided: {conciseText(concept.directionDebug?.failurePatternAvoided || concept.failurePatternAvoided || concept.directionSource?.lostPatternAvoidance || 'no strong lost pattern', 70)} · Winning pattern: {conciseText(concept.directionDebug?.winningPatternUsed || concept.winningPatternUsed || concept.directionSource?.proposalPatternLearning || 'no strong pattern used', 70)} · Confidence: {concept.directionDebug?.confidence || 'medium'}
+                      </p>
+                    )}
                     {concept.entityBalanceStatus && (
                       <p className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold leading-5 text-slate-600">
                         evidence balance: {concept.entityBalanceStatus}

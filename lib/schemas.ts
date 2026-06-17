@@ -444,6 +444,29 @@ const signatureProofIdeaSchema = {
   required: ['signatureScene', 'signatureContent', 'signatureSpatialMove', 'signatureMediaOrInteraction', 'whyThisProvesTheConcept', 'whyThisIsNotGeneric'],
 } as const;
 
+
+const directionSourceSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    rfpEvidence: { type: 'string' },
+    proposalPatternLearning: { type: 'string' },
+    lostPatternAvoidance: { type: 'string' },
+  },
+  required: ['rfpEvidence', 'proposalPatternLearning', 'lostPatternAvoidance'],
+} as const;
+
+const directionDebugSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    source: { type: 'string' },
+    failurePatternAvoided: { type: 'string' },
+    winningPatternUsed: { type: 'string' },
+    confidence: { type: 'string' },
+  },
+  required: ['source', 'failurePatternAvoided', 'winningPatternUsed', 'confidence'],
+} as const;
 export const conceptCandidatesJsonSchema = {
   type: 'object',
   additionalProperties: false,
@@ -467,6 +490,10 @@ export const conceptCandidatesJsonSchema = {
           strategicDirectionLabel: { type: 'string' },
           whatThisDirectionEmphasizes: { type: 'string' },
           whenToChooseThisDirection: { type: 'string' },
+          directionSource: directionSourceSchema,
+          failurePatternAvoided: { type: 'string' },
+          winningPatternUsed: { type: 'string' },
+          directionDebug: directionDebugSchema,
           proposalCoreConceptName: { type: 'string' },
           proposalCoreConceptSlogan: { type: 'string' },
           proposalCoreConceptDefinition: { type: 'string' },
@@ -545,6 +572,10 @@ export const conceptCandidatesJsonSchema = {
           'strategicDirectionLabel',
           'whatThisDirectionEmphasizes',
           'whenToChooseThisDirection',
+          'directionSource',
+          'failurePatternAvoided',
+          'winningPatternUsed',
+          'directionDebug',
           'proposalCoreConceptName',
           'proposalCoreConceptSlogan',
           'proposalCoreConceptDefinition',
