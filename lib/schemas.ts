@@ -396,6 +396,51 @@ const conceptEvaluationScoresSchema = {
   ],
 } as const;
 
+const winningThesisSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    contextShift: { type: 'string' },
+    previousBaseline: { type: 'string' },
+    newReality: { type: 'string' },
+    clientUniquePosition: { type: 'string' },
+    audiencePerceptionGap: { type: 'string' },
+    winningClaim: { type: 'string' },
+    whyNow: { type: 'string' },
+    whyThisClient: { type: 'string' },
+    whatMustBeProven: { type: 'string' },
+  },
+  required: ['contextShift', 'previousBaseline', 'newReality', 'clientUniquePosition', 'audiencePerceptionGap', 'winningClaim', 'whyNow', 'whyThisClient', 'whatMustBeProven'],
+} as const;
+
+const conceptLeapSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    fromStatement: { type: 'string' },
+    toStatement: { type: 'string' },
+    conceptLeap: { type: 'string' },
+    corePromise: { type: 'string' },
+    emotionalTakeaway: { type: 'string' },
+    evaluatorTakeaway: { type: 'string' },
+  },
+  required: ['fromStatement', 'toStatement', 'conceptLeap', 'corePromise', 'emotionalTakeaway', 'evaluatorTakeaway'],
+} as const;
+
+const signatureProofIdeaSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    signatureScene: { type: 'string' },
+    signatureContent: { type: 'string' },
+    signatureSpatialMove: { type: 'string' },
+    signatureMediaOrInteraction: { type: 'string' },
+    whyThisProvesTheConcept: { type: 'string' },
+    whyThisIsNotGeneric: { type: 'string' },
+  },
+  required: ['signatureScene', 'signatureContent', 'signatureSpatialMove', 'signatureMediaOrInteraction', 'whyThisProvesTheConcept', 'whyThisIsNotGeneric'],
+} as const;
+
 export const conceptCandidatesJsonSchema = {
   type: 'object',
   additionalProperties: false,
@@ -420,6 +465,9 @@ export const conceptCandidatesJsonSchema = {
           proposalCoreConceptName: { type: 'string' },
           proposalCoreConceptSlogan: { type: 'string' },
           proposalCoreConceptDefinition: { type: 'string' },
+          winningThesisUse: winningThesisSchema,
+          conceptLeap: conceptLeapSchema,
+          signatureProofIdea: signatureProofIdeaSchema,
           whyThisIsCoreConcept: { type: 'string' },
           experiencePrinciple: { type: 'string' },
           visitorJourney: { type: 'string' },
@@ -484,6 +532,9 @@ export const conceptCandidatesJsonSchema = {
           'proposalCoreConceptName',
           'proposalCoreConceptSlogan',
           'proposalCoreConceptDefinition',
+          'winningThesisUse',
+          'conceptLeap',
+          'signatureProofIdea',
           'whyThisIsCoreConcept',
           'experiencePrinciple',
           'visitorJourney',

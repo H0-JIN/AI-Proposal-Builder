@@ -390,6 +390,37 @@ export interface ConceptScopeValidation {
   notSectionTitleOnly: boolean;
 }
 
+
+export interface WinningThesis {
+  contextShift: string;
+  previousBaseline: string;
+  newReality: string;
+  clientUniquePosition: string;
+  audiencePerceptionGap: string;
+  winningClaim: string;
+  whyNow: string;
+  whyThisClient: string;
+  whatMustBeProven: string;
+}
+
+export interface ConceptLeap {
+  fromStatement: string;
+  toStatement: string;
+  conceptLeap: string;
+  corePromise: string;
+  emotionalTakeaway: string;
+  evaluatorTakeaway: string;
+}
+
+export interface SignatureProofIdea {
+  signatureScene: string;
+  signatureContent: string;
+  signatureSpatialMove: string;
+  signatureMediaOrInteraction: string;
+  whyThisProvesTheConcept: string;
+  whyThisIsNotGeneric: string;
+}
+
 export interface ConceptCandidate {
   conceptId: string;
   strategicDirectionType: string;
@@ -399,6 +430,9 @@ export interface ConceptCandidate {
   proposalCoreConceptName: string;
   proposalCoreConceptSlogan: string;
   proposalCoreConceptDefinition: string;
+  winningThesisUse: WinningThesis;
+  conceptLeap: ConceptLeap;
+  signatureProofIdea: SignatureProofIdea;
   whyThisIsCoreConcept: string;
   experiencePrinciple: string;
   visitorJourney: string;
