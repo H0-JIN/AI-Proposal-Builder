@@ -377,6 +377,8 @@ export interface EntityDifferentiationUse {
   riskCheck: string;
 }
 
+export type ConceptNameScopeClassification = 'proposal_level' | 'section_level' | 'content_module_level' | 'product_specific_level' | 'generic_label';
+
 export interface ConceptScopeValidation {
   coversWholeProposal: boolean;
   coversMainEntitiesOrScope: boolean;
@@ -432,6 +434,7 @@ export interface ConceptCandidate {
   conceptSloganKorean?: string;
   conceptSloganEnglish?: string;
   conceptScopeValidation?: ConceptScopeValidation;
+  conceptNameScopeClassification?: ConceptNameScopeClassification;
   oneLineDefinition: string;
   coreMessage: string;
   thesisProof: string;

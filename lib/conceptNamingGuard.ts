@@ -1,4 +1,4 @@
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProposalNarrative } from './types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptNameScopeClassification, ProposalNarrative } from './types';
 
 
 export const GENERIC_CONCEPT_WORD_PENALTY_LIST = [
@@ -786,6 +786,7 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
       riskCheck: '',
     },
     conceptScopeValidation: candidate.conceptScopeValidation ?? buildScopeValidation(candidate),
+    conceptNameScopeClassification: candidate.conceptNameScopeClassification ?? classifyConceptNameScope(candidate),
     conceptNameEnglish: candidate.conceptNameEnglish || candidate.conceptNameEN || (/^[\x00-\x7F]+$/.test(conceptName) ? conceptName : ''),
     conceptNameKoreanSubtitle: candidate.conceptNameKoreanSubtitle || (/^[\x00-\x7F]+$/.test(conceptName) ? candidate.subtitle || conceptTagline : ''),
     conceptSloganKorean: candidate.conceptSloganKorean || conceptTagline,
@@ -835,12 +836,64 @@ function areNearDuplicateNames(a: string, b: string) {
 }
 
 const NARROW_SCOPE_NAME_PATTERNS = [
-  /protocol|matrix|feature|module|zone|section|interaction|interface|engine|system/i,
-  /프로토콜|매트릭스|모듈|기능|존|섹션|인터랙션|시스템|조준경|개인병사용/u,
+  /protocol|matrix|feature|module|zone|section|interaction|interface|engine|system|field|arena|frame/i,
+  /프로토콜|매트릭스|모듈|기능|존|섹션|인터랙션|시스템|조준경|개인병사용|야간투시경|공학장비|광학장비|야전시경|필드|아레나|프레임/u,
+];
+
+const CONTENT_MODULE_SCOPE_TERMS = [
+  'module', 'content', 'media', 'interaction', 'interface', 'demo', 'asset', 'scene', 'journey', 'flow',
+  '모듈', '콘텐츠', '컨텐츠', '미디어', '인터랙션', '데모', '에셋', '장면', '여정', '흐름',
+];
+
+const SECTION_SCOPE_TERMS = [
+  'zone', 'section', 'pavilion', 'booth', 'field', 'arena', 'stage', 'layout', 'spatial',
+  '존', '섹션', '파빌리온', '부스', '필드', '아레나', '스테이지', '레이아웃', '공간',
 ];
 
 function isNarrowProposalScopeName(name: string) {
   return NARROW_SCOPE_NAME_PATTERNS.some((pattern) => pattern.test(name));
+}
+
+function centralHeroTerms(context: { analysis?: AnalysisResult }) {
+  const analysis = context.analysis;
+  const overview = normalizedText([analysis?.projectOverview, analysis?.clientChallenge, analysis?.proposalStructureGuard].filter(Boolean).join(' '));
+  const candidates = [
+    ...(analysis?.productInfo ?? []),
+    ...(analysis?.productFeatures ?? []).map((feature) => feature.product),
+  ].map((item) => normalizeSafeNameSeed(item).trim()).filter((item) => item.length >= 2);
+  return candidates.filter((term) => {
+    const count = overview.split(term.toLowerCase()).length - 1;
+    return count >= 2 && candidates.length <= 1;
+  });
+}
+
+function productSpecificTerms(context: { analysis?: AnalysisResult }) {
+  const analysis = context.analysis;
+  return compactUnique([
+    ...(analysis?.productInfo ?? []),
+    ...(analysis?.productFeatures ?? []).flatMap((feature) => [feature.product, feature.keyFeature]),
+    ...(analysis?.requiredItems ?? []),
+  ].flatMap((value) => normalizeSafeNameSeed(String(value ?? '')).split(/\s+/)), 40)
+    .filter((token) => token.length >= 2 && token.length <= 14)
+    .filter((token) => !centralHeroTerms(context).some((hero) => normalizedText(hero).includes(normalizedText(token))));
+}
+
+function isProductSpecificName(name: string, context: { analysis?: AnalysisResult }) {
+  const normalized = normalizedText(name);
+  const terms = productSpecificTerms(context);
+  const hits = terms.filter((term) => normalized.includes(term.toLowerCase()));
+  return hits.length > 0 && (hits.length >= Math.max(1, titleUnitCount(name) - 1) || isNarrowProposalScopeName(name));
+}
+
+export function classifyConceptNameScope(candidate: ConceptCandidate, context: { analysis?: AnalysisResult } = {}): ConceptNameScopeClassification {
+  const name = candidateName(candidate);
+  if (!name.trim()) return 'generic_label';
+  if (isProductSpecificName(name, context)) return 'product_specific_level';
+  if (containsAny(name, CONTENT_MODULE_SCOPE_TERMS) || isJourneyOrExecutionOnlyName(name)) return 'content_module_level';
+  if (containsAny(name, SECTION_SCOPE_TERMS) || isNarrowProposalScopeName(name) || isLikelySentence(name)) return 'section_level';
+  if (hasWeakGenericConceptName(name) || hasGenericConceptPenaltyWord(name) || hasGenericMainNamingDevice(name) || hasForbiddenAbstractNamingCore(name)) return 'generic_label';
+  if (hasProposalLevelScope(candidate)) return 'proposal_level';
+  return 'generic_label';
 }
 
 function hasProposalLevelScope(candidate: ConceptCandidate) {
@@ -867,7 +920,7 @@ function buildScopeValidation(candidate: ConceptCandidate) {
     expandableToContent: Boolean(mechanism?.contentMechanism || candidate.contentMediaImplication),
     expandableToMediaOrInteraction: Boolean(mechanism?.interactionMechanism || candidate.mediaInteractionPotential),
     expandableToOperationOrProof: Boolean(mechanism?.proofMechanism || candidate.executionFeasibility),
-    notProductSpecificOnly: !isNarrowProposalScopeName(name),
+    notProductSpecificOnly: !isNarrowProposalScopeName(name) && !isProductSpecificName(name, {}),
     notSectionTitleOnly: !isLikelySentence(name) && !hasUntransformedConceptRoleTerm(name),
   };
 }
@@ -890,7 +943,10 @@ export function validateConceptNaming(
     const unitCount = titleUnitCount(name);
     const label = `${candidate.conceptId || `concept-${index + 1}`} (${name || 'empty name'})`;
 
+    const scopeClassification = classifyConceptNameScope(candidate, context);
+    if (scopeClassification !== 'proposal_level') violations.push(`${label}: conceptNameScopeClassification is ${scopeClassification}; only proposal_level is valid for proposalCoreConceptName.`);
     if (!hasProposalLevelScope(candidate)) violations.push(`${label}: conceptScopeValidation must prove proposal-level coverage across strategy, space, content, media/interaction, operation/proof, main entities/scope, and non-section naming.`);
+    if (isProductSpecificName(name, context)) violations.push(`${label}: conceptName is based mainly on one product, equipment type, technology, zone, content module, interaction, participant entity, or RFP subsection instead of the whole proposal.`);
     if (isNarrowProposalScopeName(name)) violations.push(`${label}: conceptName is too narrow for proposal level and reads like a product, module, zone, interaction, feature, protocol, matrix, or section title.`);
     if (!name.trim()) violations.push(`${label}: conceptName is empty.`);
     if (unitCount > 5 || name.length > 36) violations.push(`${label}: conceptName is too long for a presentation-ready title.`);
@@ -977,30 +1033,42 @@ function extractRfpNameSeeds(context: { input?: { projectName?: string; clientNa
 }
 
 function buildSafeConceptNamesFromMetaphor(candidate: ConceptCandidate, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
-  const rfpSeeds = extractRfpNameSeeds(context);
-  const candidateSeeds = extractSymbolicSeeds([
-    candidate.conceptMechanism?.recognitionLogic,
-    candidate.conceptMechanism?.proofMechanism,
-    candidate.conceptMechanism?.whyThisCanBecomeAConcept,
-    candidate.whyThisCanOrganizeProposal,
-  ].filter(Boolean).join(' '));
-  const seeds = compactUnique([...rfpSeeds, ...candidateSeeds], 8);
-  const first = seeds[0] || context.input?.clientName || '판단';
-  const second = seeds.find((seed) => seed !== first) || seeds[1] || '증명';
-  const third = seeds.find((seed) => seed !== first && seed !== second) || '판단';
+  const globalMode = inferGlobalNamingMode(context);
+  const direction = normalizedText(candidate.strategicDirectionType || candidate.strategicDirectionLabel || '');
+  const narrative = context.proposalNarrative;
+  const hasMultipleEntities = Boolean(narrative?.entityDifferentiationMatrix?.length && narrative.entityDifferentiationMatrix.length > 1);
+  const proofHeavy = /proof|trust|reliable|operation|signature|증명|신뢰|운영|실행/.test(direction);
+  const participationHeavy = /audience|participation|behavior|서비스|참여|행동/.test(direction);
+  const impactHeavy = /impact|hero|signature|상징|임팩트|히어로/.test(direction);
 
-  return [
-    `${first} ${second} 프레임`,
-    `${first} ${third} 필드`,
-    `${second} ${third} 아레나`,
-    `${first} ${second} 씬`,
-    `${second} ${first} 하우스`,
-    `${third} ${first} 스테이지`,
-    `${first} ${third} 캐노피`,
-    `${second} ${third} 마켓`,
-  ];
+  const englishNames = compactUnique([
+    hasMultipleEntities ? 'Shared Mission Atlas' : '',
+    proofHeavy ? 'Readiness Theater' : '',
+    proofHeavy ? 'Capability Ledger' : '',
+    participationHeavy ? 'Audience Compass' : '',
+    participationHeavy ? 'Response Canvas' : '',
+    impactHeavy ? 'Flagship Horizon' : '',
+    impactHeavy ? 'Flagship Landmark' : '',
+    'Mission Cartography',
+    'Capability Canopy',
+    'Role Constellation',
+  ], 10);
+
+  const koreanNames = compactUnique([
+    hasMultipleEntities ? '공동 임무의 축' : '',
+    hasMultipleEntities ? '역할의 성좌' : '',
+    proofHeavy ? '수행 역량의 무대' : '',
+    proofHeavy ? '검증 가능한 현장' : '',
+    participationHeavy ? '관객 반응의 나침반' : '',
+    participationHeavy ? '참여가 남기는 궤적' : '',
+    impactHeavy ? '대표 장면의 지평' : '',
+    impactHeavy ? '상징이 되는 현장' : '',
+    '목적이 보이는 축',
+    '판단을 여는 무대',
+  ], 10);
+
+  return globalMode ? [...englishNames, ...koreanNames] : [...koreanNames, ...englishNames];
 }
-
 
 function applyConceptName(candidate: ConceptCandidate, conceptName: string, warning?: string, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative } = {}): ConceptCandidate {
   const rfpGrounding = buildFallbackGrounding(candidate, context);
@@ -1022,7 +1090,8 @@ function applyConceptName(candidate: ConceptCandidate, conceptName: string, warn
     conceptNameKoreanSubtitle: /^[\x00-\x7F]+$/.test(conceptName) ? (candidate.conceptNameKoreanSubtitle || getConceptTagline(candidate)) : '',
     conceptSloganKorean: candidate.conceptSloganKorean || getConceptTagline(candidate),
     conceptSloganEnglish: candidate.conceptSloganEnglish || '',
-    conceptScopeValidation: buildScopeValidation({ ...candidate, proposalCoreConceptName: conceptName, conceptName } as ConceptCandidate),
+    conceptScopeValidation: { ...buildScopeValidation({ ...candidate, proposalCoreConceptName: conceptName, conceptName } as ConceptCandidate), notProductSpecificOnly: !isProductSpecificName(conceptName, context) },
+    conceptNameScopeClassification: 'proposal_level',
     rfpGrounding: candidate.rfpGrounding?.length ? candidate.rfpGrounding : rfpGrounding,
     conceptMetaphorSource: {
       ...(candidate.conceptMetaphorSource ?? {
