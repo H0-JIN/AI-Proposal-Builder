@@ -332,6 +332,10 @@ interface StrategicDirectionPlanItem {
   rfpEvidence: string;
   patternLearning: string;
   lostAvoidance: string;
+  rfpTypeLensUsed: string;
+  rfpEvidenceUsed: string;
+  proposalLearningUsed: string;
+  lostPatternAvoided: string;
 }
 
 const MULTI_ENTITY_LEAKAGE_PATTERN = /통합\s*(?:중심|아이덴티티|\+|\+개별)|통합\+역할|역할\s*(?:구분|차별화)|각\s*대상의\s*역할|상징적\s*리더십|Entity\s*Differentiation\s*Matrix|entity\s*role\s*matrix|unified\s*\+\s*differentiated\s*roles|symbolic\s*leadership|role\s*separation|entity\s*role\s*matrix/i;
@@ -455,8 +459,12 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
   const learning = buildProposalLearningBrief(patterns, avoidanceRules);
   const mk = (index: number, type: string, fallbackLabel: string, emphasis: string, chooseWhen: string, rfpEvidence: string, patternLearning: string, lostAvoidance: string): StrategicDirectionPlanItem => ({
     type, rfpConceptType: conceptType, secondaryRfpConceptTypes: secondary, label: inferDirectionLabel(`${emphasis.split(/[.。]/)[0]}`, fallbackLabel), emphasis, chooseWhen,
-    source: `${rfpEvidence ? 'RFP' : 'current evidence'} / ${learning.hasWonPattern ? 'won pattern' : 'pattern principle'} / ${learning.hasLostPattern ? 'lost avoidance' : 'no strong lost pattern'}`,
+    source: `primaryRfpConceptType lens / current RFP evidence / proposal learning modifier / lost-pattern caution`,
     rfpEvidence, patternLearning, lostAvoidance,
+    rfpTypeLensUsed: conceptType,
+    rfpEvidenceUsed: rfpEvidence,
+    proposalLearningUsed: patternLearning,
+    lostPatternAvoided: lostAvoidance,
   });
 
   const strongestClaimEvidence = firstEvidence(analysis, narrative, [/평가|목표|성과|KPI|신뢰|전문|리더|선도|차별|강점|value|proof|criteria|objective/i], 'RFP의 핵심 목표와 평가 기준');
@@ -465,11 +473,26 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
   const positive = learning.positivePrinciples;
   const avoid = learning.lostAvoidance;
 
-  const directions = [
-    mk(1, 'learned_strongest_claim_route', conceptType === 'operation_heavy_event' ? '실행 확신 루트' : '핵심 주장 증명', `현재 RFP에서 가장 강한 선택 이유를 먼저 세우고, 이를 공간·콘텐츠·운영 증거가 반복해서 뒷받침하게 합니다. 근거: ${strongestClaimEvidence}`, `평가자가 “왜 이 제안이어야 하는가”를 빠르게 판단해야 하고, 단일한 winning thesis가 구조 전체를 이끌어야 할 때 선택합니다.`, strongestClaimEvidence, positive[0], avoid[0]),
-    mk(2, 'learned_audience_transformation_route', conceptType === 'visitor_center_or_tour' ? '방문 후 인식 전환' : '대상 반응 전환', `방문객·사용자·평가자의 이해 흐름을 설계해 정보 나열을 기억되는 인식 변화로 전환합니다. 근거: ${audienceEvidence}`, `성과가 단순 전달보다 방문 후 기억, 행동, 공유, 납득으로 판단될 때 선택합니다.`, audienceEvidence, positive[1] || positive[0], avoid[1] || avoid[0]),
-    mk(3, 'learned_specific_proof_route', conceptType === 'multi_entity_pavilion' && hasMultiEntityPavilionEvidence(rfpEvidenceText(analysis, narrative), hasMultipleEntities) ? '관계와 증거의 장면화' : '구체 증거 강화', `추상적 콘셉트보다 산출물·프로세스·운영 조건·대표 proof를 선명하게 보여주어 실행 신뢰를 강화합니다. 근거: ${proofEvidence}`, `내용이 약하거나 일반론처럼 보일 위험이 있고, 제안서가 구체 proof와 hero scene으로 설득해야 할 때 선택합니다.`, proofEvidence, positive[2] || positive[0], avoid[2] || avoid[0]),
-  ];
+  let directions: StrategicDirectionPlanItem[];
+  if (conceptType === 'multi_entity_pavilion') {
+    directions = [
+      mk(1, 'multi_entity_unified_pavilion_frame', '공동 파빌리온 프레임', `여러 주체를 하나의 파빌리온 약속으로 묶되 각 도메인의 기여가 흐려지지 않도록 공통 세계와 대표 proof를 함께 설계합니다. 근거: ${strongestClaimEvidence}`, `RFP가 국가·그룹·연합 전시처럼 하나의 큰 존재감과 통합된 관람 이해를 요구할 때 선택합니다.`, strongestClaimEvidence, positive[0], avoid[0]),
+      mk(2, 'multi_entity_domain_role_system', '도메인 역할 구조화', `참여 주체·기술·콘텐츠 영역의 역할과 관계를 시스템처럼 읽히게 해 파빌리온 안에서 무엇을 왜 봐야 하는지 분명하게 합니다. 근거: ${audienceEvidence}`, `여러 기업·제품·영역이 병렬 나열처럼 보일 위험이 있고, 각 역할의 차이와 연결 방식을 설득해야 할 때 선택합니다.`, audienceEvidence, positive[1] || positive[0], avoid[1] || avoid[0]),
+      mk(3, 'multi_entity_symbolic_capability_proof', '상징적 역량 증명', `공동 존재감, 국가·그룹 리더십, 통합 역량을 상징적 장면과 구체 proof로 동시에 증명합니다. 근거: ${proofEvidence}`, `평가자가 파빌리온의 위상과 실행 신뢰를 함께 보아야 하며 hero scene이 필요한 때 선택합니다.`, proofEvidence, positive[2] || positive[0], avoid[2] || avoid[0]),
+    ];
+  } else if (conceptType === 'single_brand_experience' || conceptType === 'visitor_center_or_tour') {
+    directions = [
+      mk(1, 'brand_worldview_immersion', '브랜드 세계 몰입', `브랜드 의미와 공간·감각 단서를 연결해 방문자가 브랜드 세계관에 자연스럽게 들어오도록 설계합니다. 근거: ${strongestClaimEvidence}`, `브랜드의 철학, 제품 가치, 분위기를 설명보다 체감으로 납득시켜야 할 때 선택합니다.`, strongestClaimEvidence, positive[0], avoid[0]),
+      mk(2, 'process_proof_trust', '과정과 신뢰 증명', `제품·서비스의 과정, 품질, 근거를 방문 동선 안에서 확인 가능한 proof로 바꿔 신뢰를 만듭니다. 근거: ${proofEvidence}`, `방문 후 “왜 믿을 수 있는가”가 핵심이며 공정·품질·전문성·기능 가치가 중요한 때 선택합니다.`, proofEvidence, positive[1] || positive[0], avoid[1] || avoid[0]),
+      mk(3, 'visitor_memory_transformation', '방문 후 기억 전환', `방문 전 인식과 방문 후 기억의 변화를 중심으로 signature moment와 감각적 회상을 설계합니다. 근거: ${audienceEvidence}`, `체험관·투어·홍보관의 성과가 관람 후 태도, 회상, 공유, 선택 의향으로 판단될 때 선택합니다.`, audienceEvidence, positive[2] || positive[0], avoid[2] || avoid[0]),
+    ];
+  } else {
+    directions = [
+      mk(1, 'rfp_type_strongest_claim_route', conceptType === 'operation_heavy_event' ? '실행 확신 루트' : '핵심 주장 증명', `현재 RFP에서 가장 강한 선택 이유를 먼저 세우고, 이를 공간·콘텐츠·운영 증거가 반복해서 뒷받침하게 합니다. 근거: ${strongestClaimEvidence}`, `평가자가 “왜 이 제안이어야 하는가”를 빠르게 판단해야 하고, 단일한 winning thesis가 구조 전체를 이끌어야 할 때 선택합니다.`, strongestClaimEvidence, positive[0], avoid[0]),
+      mk(2, 'rfp_type_audience_transformation_route', '대상 반응 전환', `방문객·사용자·평가자의 이해 흐름을 설계해 정보 나열을 기억되는 인식 변화로 전환합니다. 근거: ${audienceEvidence}`, `성과가 단순 전달보다 방문 후 기억, 행동, 공유, 납득으로 판단될 때 선택합니다.`, audienceEvidence, positive[1] || positive[0], avoid[1] || avoid[0]),
+      mk(3, 'rfp_type_specific_proof_route', '구체 증거 강화', `추상적 콘셉트보다 산출물·프로세스·운영 조건·대표 proof를 선명하게 보여주어 실행 신뢰를 강화합니다. 근거: ${proofEvidence}`, `내용이 약하거나 일반론처럼 보일 위험이 있고, 제안서가 구체 proof와 hero scene으로 설득해야 할 때 선택합니다.`, proofEvidence, positive[2] || positive[0], avoid[2] || avoid[0]),
+    ];
+  }
 
   return directions.map((item, idx) => ({ ...item, label: directions.some((other, j) => j !== idx && other.label === item.label) ? `${item.label} ${idx + 1}` : item.label }));
 }
@@ -481,6 +504,11 @@ function formatStrategicDirectionPlanForPrompt(plan: StrategicDirectionPlanItem[
 - rfpEvidence: ${item.rfpEvidence}
 - proposalPatternLearning: ${item.patternLearning}
 - lostPatternAvoidance: ${item.lostAvoidance}
+- rfpTypeLensUsed: ${item.rfpTypeLensUsed}
+- rfpEvidenceUsed: ${item.rfpEvidenceUsed}
+- proposalLearningUsed: ${item.proposalLearningUsed}
+- lostPatternAvoided: ${item.lostPatternAvoided}
+- hierarchy: primaryRfpConceptType defines valid range; current RFP evidence defines issue; proposal_patterns modify/support/warn; outcome/lost reasons validate only.
 - emphasis: ${item.emphasis}
 - chooseWhen: ${item.chooseWhen}`).join('\n');
 }
@@ -915,6 +943,7 @@ export async function POST(request: Request) {
       '너는 한국어 제안서 콘셉트를 빠르게 설계하는 크리에이티브 디렉터다.',
       `정확히 ${maxCandidates}개의 전략 방향 후보를 생성한다. 최소 3개의 usable concept를 반환하고, 내부 네이밍 후보 5개는 절대 노출하지 말라.`,
       '3개 후보는 winner-loser 비교가 아니라 서로 다른 전략 방향 옵션이어야 한다.',
+      'primaryRfpConceptType이 전략 방향의 유효 범위를 먼저 결정한다. current RFP evidence가 프로젝트별 이슈를 정의하고, proposal_patterns는 supportsThisDirection/riskToAvoid/reusablePrinciple/proofPattern/structurePattern으로만 보정한다. outcome/lost reasons는 검증·주의 기준이지 방향 원천이 아니다.',
       '각 후보는 primaryRfpConceptType에 의해 관련성 필터링된 rfpConceptType, secondaryRfpConceptTypes, strategicDirectionType, strategicDirectionLabel, directionSource, whatThisDirectionEmphasizes, whenToChooseThisDirection, failurePatternAvoided, winningPatternUsed를 반드시 포함한다. strategicDirectionLabel은 RFP evidence와 proposalLearningBrief에서 새로 만든 짧은 방향명이어야 하며 고정 preset을 복사하지 않는다.',
       'strategicDirectionLabel은 카드에 보이는 짧은 한국어 방향명이다. proposalCoreConceptName/conceptName은 DB/schema 호환을 위한 임시 direction title일 뿐이며 최종 컨셉명이 아니다. 최종 컨셉명은 사용자가 방향 선택 후 별도 naming step에서 생성한다.',
       '추천은 가장 적합한 방향을 설명하되 다른 후보를 나쁘다/부적합하다/틀렸다로 말하지 않는다. 다른 방향의 쓰임과 선택 간 trade-off를 중립적으로 설명한다.',
