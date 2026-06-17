@@ -3664,11 +3664,11 @@ export default function Home() {
                     )}
                     <p className="mt-3 text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
-                      <div><dt className="font-black text-slate-950">Winning Thesis</dt><dd>{conciseText(concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach, 115)}</dd></div>
-                      <div><dt className="font-black text-slate-950">Concept Leap</dt><dd>{conciseText(concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept), 115)}</dd></div>
-                      <div><dt className="font-black text-slate-950">Signature Proof Idea</dt><dd>{conciseText(concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.keyExperienceAssetDirection, 115)}</dd></div>
-                      <div><dt className="font-black text-slate-950">Strategic Emphasis</dt><dd>{conciseText(concept.whatThisDirectionEmphasizes, 120)}</dd></div>
-                      <div><dt className="font-black text-slate-950">When to Choose</dt><dd>{conciseText(concept.whenToChooseThisDirection, 120)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Winning Thesis</dt><dd>{concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach}</dd></div>
+                      <div><dt className="font-black text-slate-950">Concept Leap</dt><dd>{concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Signature Proof Idea</dt><dd>{concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.keyExperienceAssetDirection}</dd></div>
+                      <div><dt className="font-black text-slate-950">Strategic Emphasis</dt><dd>{concept.whatThisDirectionEmphasizes}</dd></div>
+                      <div><dt className="font-black text-slate-950">When to Choose</dt><dd>{concept.whenToChooseThisDirection}</dd></div>
                       {conceptKeywordChips(concept).length > 0 && (
                         <div>
                           <dt className="font-black text-slate-950">3 Execution Keywords</dt>
@@ -3677,8 +3677,8 @@ export default function Home() {
                           </dd>
                         </div>
                       )}
-                      <div><dt className="font-black text-slate-950">Main Strength</dt><dd>{conciseText(concept.mainStrength || concept.strengths?.[0] || concept.evaluationSummary, 120)}</dd></div>
-                      <div><dt className="font-black text-slate-950">Main Risk</dt><dd>{conciseText(concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution, 120)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Main Strength</dt><dd>{concept.mainStrength || concept.strengths?.[0] || concept.evaluationSummary}</dd></div>
+                      <div><dt className="font-black text-slate-950">Main Risk</dt><dd>{concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution}</dd></div>
                     </dl>
                     <button
                       onClick={() => selectConcept(concept)}
@@ -3691,6 +3691,24 @@ export default function Home() {
               })}
             </div>
             {state.selectedConcept && (
+              <section className="mt-6 rounded-3xl border border-blue-200 bg-white p-5 shadow-sm">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">Selected strategic direction · expanded rationale</p>
+                <h3 className="mt-2 text-2xl font-black text-slate-950">{state.selectedConcept.strategicDirectionLabel || state.selectedConcept.conceptId}</h3>
+                <dl className="mt-4 grid gap-4 text-sm leading-6 text-slate-700 md:grid-cols-2">
+                  <div><dt className="font-black text-slate-950">rfpTypeLensUsed</dt><dd>{state.selectedConcept.rfpConceptType || 'unknown'}</dd></div>
+                  <div><dt className="font-black text-slate-950">rfpEvidenceUsed</dt><dd>{state.selectedConcept.directionSource?.rfpEvidence || state.selectedConcept.rfpGrounding?.join(' / ') || state.selectedConcept.whyThisNameFitsRfp || '현재 RFP 분석 근거'}</dd></div>
+                  <div><dt className="font-black text-slate-950">proposalLearningUsed</dt><dd>{state.selectedConcept.directionSource?.proposalPatternLearning || state.selectedConcept.winningPatternUsed || state.selectedConcept.directionDebug?.winningPatternUsed || '현재 RFP 근거 우선, proposal learning은 보조 원칙으로 사용'}</dd></div>
+                  <div><dt className="font-black text-slate-950">lostPatternAvoided</dt><dd>{state.selectedConcept.directionSource?.lostPatternAvoidance || state.selectedConcept.failurePatternAvoided || state.selectedConcept.directionDebug?.failurePatternAvoided || '강한 lost pattern 없음'}</dd></div>
+                  <div><dt className="font-black text-slate-950">whatThisDirectionEmphasizes</dt><dd>{state.selectedConcept.whatThisDirectionEmphasizes}</dd></div>
+                  <div><dt className="font-black text-slate-950">whenToChooseThisDirection</dt><dd>{state.selectedConcept.whenToChooseThisDirection}</dd></div>
+                  <div><dt className="font-black text-slate-950">winningThesis</dt><dd>{state.selectedConcept.winningThesisUse?.winningClaim || state.selectedConcept.coreMessage || state.selectedConcept.strategicApproach}</dd></div>
+                  <div><dt className="font-black text-slate-950">conceptLeap</dt><dd>{state.selectedConcept.conceptLeap?.conceptLeap || state.selectedConcept.conceptLeap?.corePromise || getConceptDefinition(state.selectedConcept)}</dd></div>
+                  <div><dt className="font-black text-slate-950">signatureProofIdea</dt><dd>{state.selectedConcept.signatureProofIdea?.whyThisProvesTheConcept || state.selectedConcept.signatureProofIdea?.signatureScene || state.selectedConcept.keyExperienceAssetDirection}</dd></div>
+                  <div><dt className="font-black text-slate-950">risk</dt><dd>{state.selectedConcept.mainRisk || state.selectedConcept.riskOrCaution || state.selectedConcept.risks?.join(' / ')}</dd></div>
+                </dl>
+              </section>
+            )}
+            {state.selectedConcept && (
               <div className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50 p-5">
                 <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Final naming step</p>
                 <h3 className="mt-2 text-2xl font-black text-slate-950">최종 컨셉명 생성</h3>
@@ -3699,23 +3717,40 @@ export default function Home() {
                   <PrimaryButton onClick={runConceptNames} disabled={Boolean(loading)}>이 방향으로 컨셉명 생성</PrimaryButton>
                 </div>
                 {state.conceptNameOptions?.length ? (
-                  <div className="mt-5 grid gap-3 md:grid-cols-2">
-                    {state.conceptNameOptions.map((option) => {
-                      const selected = state.selectedConcept?.finalConceptName === option.conceptName;
+                  <div className="mt-5 space-y-5">
+                    {(['Direct strategic', 'Brand / sensory', 'Spatial / system', 'Symbolic', 'Global English / bilingual'] as const).map((style) => {
+                      const groupedOptions = (state.conceptNameOptions ?? []).filter((option) => (option.namingStyle || 'Direct strategic') === style);
+                      if (!groupedOptions.length) return null;
                       return (
-                        <button key={option.conceptName} type="button" onClick={() => selectConceptNameOption(option)} className={`rounded-2xl border p-4 text-left transition ${selected ? 'border-indigo-500 bg-white shadow-lg shadow-indigo-100' : 'border-indigo-100 bg-white/70 hover:border-indigo-300'}`}>
-                          <div className="flex items-start justify-between gap-3">
-                            <h4 className="text-lg font-black text-slate-950">{option.conceptName}</h4>
-                            <span className="rounded-full bg-indigo-100 px-2 py-1 text-[11px] font-black text-indigo-700">{option.languageMode}</span>
+                        <section key={style}>
+                          <h4 className="text-sm font-black uppercase tracking-[0.16em] text-indigo-700">{style}</h4>
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            {groupedOptions.map((option) => {
+                              const selected = state.selectedConcept?.finalConceptName === option.conceptName;
+                              return (
+                                <article key={option.conceptName} className={`rounded-2xl border p-4 text-left transition ${selected ? 'border-indigo-500 bg-white shadow-lg shadow-indigo-100' : 'border-indigo-100 bg-white/70 hover:border-indigo-300'}`}>
+                                  <div className="flex items-start justify-between gap-3">
+                                    <h5 className="text-lg font-black text-slate-950">{option.conceptName}</h5>
+                                    <span className="rounded-full bg-indigo-100 px-2 py-1 text-[11px] font-black text-indigo-700">{option.languageMode}</span>
+                                  </div>
+                                  <p className="mt-2 text-sm font-bold text-indigo-700">{option.oneLineSlogan || option.shortMeaning}</p>
+                                  {option.koreanSubtitle && <p className="mt-1 text-xs font-black text-slate-500">{option.koreanSubtitle}</p>}
+                                  <details className="mt-3 rounded-xl border border-indigo-100 bg-white/80 p-3 text-xs leading-5 text-slate-600">
+                                    <summary className="cursor-pointer font-black text-indigo-800">자세히 보기 / 접기</summary>
+                                    <dl className="mt-3 space-y-2">
+                                      <div><dt className="font-black text-slate-900">shortMeaning</dt><dd>{option.shortMeaning}</dd></div>
+                                      <div><dt className="font-black text-slate-900">whyItFitsRfp</dt><dd>{option.whyItFitsRfp || option.whyItFits}</dd></div>
+                                      <div><dt className="font-black text-slate-900">namingStyle</dt><dd>{option.namingStyle || style}</dd></div>
+                                      <div><dt className="font-black text-slate-900">mainRisk</dt><dd>{option.mainRisk || option.risk}</dd></div>
+                                      <div><dt className="font-black text-slate-900">scores</dt><dd>Cover {option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.rfpSpecificityScore} · Expand {option.expandabilityScore}</dd></div>
+                                    </dl>
+                                  </details>
+                                  <button type="button" onClick={() => selectConceptNameOption(option)} className="mt-3 inline-flex rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white">이 이름 선택</button>
+                                </article>
+                              );
+                            })}
                           </div>
-                          <p className="mt-2 text-sm font-bold text-indigo-700">{option.shortMeaning}</p>
-                          {option.koreanSubtitle && <p className="mt-1 text-xs font-black text-slate-500">{option.koreanSubtitle}</p>}
-                          <p className="mt-2 text-sm font-bold text-indigo-700">{option.oneLineSlogan || option.shortMeaning}</p>
-                          <p className="mt-2 text-xs font-semibold leading-5 text-slate-600">{option.whyItFitsRfp || option.whyItFits}</p>
-                          <p className="mt-2 text-xs font-bold text-slate-500">Cover {option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.rfpSpecificityScore} · Expand {option.expandabilityScore}</p>
-                          {option.risk && <p className="mt-2 text-xs font-bold text-amber-700">Risk: {option.risk}</p>}
-                        <span className="mt-3 inline-flex rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white">이 이름 선택</span>
-                        </button>
+                        </section>
                       );
                     })}
                   </div>

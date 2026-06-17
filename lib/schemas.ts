@@ -682,8 +682,10 @@ const conceptNameOptionSchema = {
     rfpSpecificityScore: { type: 'number' },
     expandabilityScore: { type: 'number' },
     risk: { type: 'string' },
+    namingStyle: { type: 'string', enum: ['Direct strategic', 'Brand / sensory', 'Spatial / system', 'Symbolic', 'Global English / bilingual'] },
+    mainRisk: { type: 'string' },
   },
-  required: ['conceptName', 'languageMode', 'koreanSubtitle', 'oneLineSlogan', 'shortMeaning', 'whyItFitsRfp', 'coverTitleScore', 'memorabilityScore', 'rfpSpecificityScore', 'expandabilityScore', 'risk'],
+  required: ['conceptName', 'languageMode', 'koreanSubtitle', 'oneLineSlogan', 'shortMeaning', 'whyItFitsRfp', 'coverTitleScore', 'memorabilityScore', 'rfpSpecificityScore', 'expandabilityScore', 'risk', 'namingStyle', 'mainRisk'],
 } as const;
 
 export const conceptNameOptionsJsonSchema = {

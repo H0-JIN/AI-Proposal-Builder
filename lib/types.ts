@@ -451,7 +451,10 @@ export interface ConceptNameOption {
   rfpSpecificityScore: number;
   expandabilityScore: number;
   risk: string;
+  namingStyle?: 'Direct strategic' | 'Brand / sensory' | 'Spatial / system' | 'Symbolic' | 'Global English / bilingual';
+  mainRisk?: string;
 }
+
 
 export interface ConceptNameOptionsResult {
   selectedDirectionId: string;
