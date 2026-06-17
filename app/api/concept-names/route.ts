@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { conceptNameOptionsJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptNameOptionsResult, ProjectInput, ProposalNarrative } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ConceptNameOptionsResult, ProjectInput, ProposalNarrative } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 
 export const dynamic = 'force-dynamic';
@@ -29,8 +29,10 @@ function fallbackOptions(direction: ConceptCandidate): ConceptNameOptionsResult 
     options: names.slice(0, 8).map((conceptName, index) => ({
       conceptName,
       languageMode: /[A-Za-z]/.test(conceptName) ? 'bilingual' : 'Korean',
+      koreanSubtitle: /[A-Za-z]/.test(conceptName) ? compact(thesis, 42) : '',
+      oneLineSlogan: compact(direction.conceptLeap?.corePromise || thesis, 80),
       shortMeaning: compact(thesis, 90),
-      whyItFits: compact(direction.conceptLeap?.conceptLeap || direction.signatureProofIdea?.whyThisProvesTheConcept || thesis, 160),
+      whyItFitsRfp: compact(direction.conceptLeap?.conceptLeap || direction.signatureProofIdea?.whyThisProvesTheConcept || thesis, 160),
       coverTitleScore: Math.max(6, 9 - (index % 4)),
       memorabilityScore: Math.max(6, 8 - (index % 3)),
       rfpSpecificityScore: Math.max(6, 9 - (index % 3)),
@@ -42,7 +44,7 @@ function fallbackOptions(direction: ConceptCandidate): ConceptNameOptionsResult 
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; proposalNarrative?: ProposalNarrative };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: unknown; languageMode?: string };
     if (!body.input || !body.analysis || !body.selectedDirection) return json({ error: '프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.' }, { status: 400 });
 
     const system = [
@@ -53,10 +55,10 @@ export async function POST(request: Request) {
       'Names must be proposal-level titles that can organize outline and PPT generation.',
     ].join('\n');
 
-    const user = `프로젝트: ${body.input.projectName}\n클라이언트: ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nProposal Narrative: ${compact(body.proposalNarrative, 2200)}\n선택한 전략 방향 JSON: ${compact(body.selectedDirection, 4500)}\n\n요구사항:\n- options는 반드시 8~12개.\n- naming style을 다양화: direct strategic, metaphor-based, spatial/system-based, action-oriented, symbolic, English global title if supported, Korean title if supported, bilingual if useful.\n- 10개가 같은 단어 변형처럼 보이면 실패.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), shortMeaning, whyItFits, coverTitleScore, memorabilityScore, rfpSpecificityScore, expandabilityScore, risk를 작성.\n- conceptName은 표지 제목으로 쓸 수 있어야 하며 임시 전략 방향명이 아니다.\n- final slogan 후보는 whyItFits/shortMeaning에서 유추 가능하게 쓰되, conceptName에 슬로건 문장을 넣지 말라.`;
+    const user = `프로젝트: ${body.input.projectName}\n클라이언트: ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nWinning Thesis / Concept Leap / Signature Proof Idea 포함 전략 방향 JSON: ${compact(body.selectedDirection, 4500)}\nConcept Development Logic: ${compact(body.conceptDevelopmentLogic, 2600)}\nEntity Differentiation Matrix: ${compact(body.entityDifferentiationMatrix ?? body.proposalNarrative?.entityDifferentiationMatrix, 2200)}\nLanguage Mode: ${body.languageMode || 'bilingual'}\nProposal Narrative: ${compact(body.proposalNarrative, 2200)}\n\n요구사항:\n- options는 반드시 8~12개.\n- naming style을 다양화: direct strategic, metaphor-based, spatial/system-based, action-oriented, symbolic, English global title if supported, Korean title if supported, bilingual if useful.\n- 10개가 같은 단어 변형처럼 보이면 실패.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsRfp, coverTitleScore, memorabilityScore, rfpSpecificityScore, expandabilityScore, risk를 작성.\n- conceptName은 표지 제목으로 쓸 수 있어야 하며 임시 전략 방향명이 아니다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- 전체 전략 방향 3안을 재생성하지 말고 선택한 전략 방향 하나만 기반으로 네이밍하라.`;
 
     const result = await createStructuredJson<ConceptNameOptionsResult>({ schemaName: 'concept_name_options', schema: conceptNameOptionsJsonSchema, system, user, timeoutMs: 18_000 });
-    const options = (result.options ?? []).slice(0, 12);
+    const options = (result.options ?? []).slice(0, 12).map((option) => ({ ...option, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning }));
     if (options.length < 8) return json(fallbackOptions(body.selectedDirection));
     return json({ ...result, selectedDirectionId: body.selectedDirection.conceptId, options });
   } catch (error) {

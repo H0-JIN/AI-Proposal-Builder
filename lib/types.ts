@@ -438,8 +438,11 @@ export type ConceptNameLanguageMode = 'Korean' | 'English' | 'bilingual';
 export interface ConceptNameOption {
   conceptName: string;
   languageMode: ConceptNameLanguageMode;
+  koreanSubtitle?: string;
+  oneLineSlogan: string;
   shortMeaning: string;
-  whyItFits: string;
+  whyItFitsRfp: string;
+  whyItFits?: string;
   coverTitleScore: number;
   memorabilityScore: number;
   rfpSpecificityScore: number;
@@ -535,6 +538,7 @@ export interface ConceptCandidate {
   repairedName?: boolean;
   finalConceptName?: string;
   finalConceptSlogan?: string;
+  finalConceptNameOption?: ConceptNameOption;
   selectedDirection?: ConceptCandidate;
 }
 
@@ -676,6 +680,7 @@ export interface ProposalState {
   conceptRecommendation?: ConceptRecommendation;
   conceptGenerationResult?: ConceptCandidatesResult;
   proposalNarrative?: ProposalNarrative;
+  selectedStrategicDirection?: ConceptCandidate;
   selectedConcept?: ConceptCandidate;
   conceptNameOptions?: ConceptNameOption[];
   outline?: SlideOutline[];
