@@ -3592,6 +3592,9 @@ export default function Home() {
                       </p>
                     )}
                     <p className="mt-2 inline-flex w-fit rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">Direction: {concept.strategicDirectionLabel || '전략 옵션'}</p>
+                    <p className="mt-2 text-[11px] font-bold leading-5 text-slate-400">
+                      RFP concept type: {concept.rfpConceptType || 'unknown'} · selected direction lens: {concept.strategicDirectionType || concept.strategicDirectionLabel || 'unknown'}
+                    </p>
                     {concept.entityBalanceStatus && (
                       <p className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold leading-5 text-slate-600">
                         evidence balance: {concept.entityBalanceStatus}

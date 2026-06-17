@@ -457,8 +457,22 @@ export interface ConceptNameOptionsResult {
   generationNote: string;
 }
 
+export type RfpConceptType =
+  | 'multi_entity_pavilion'
+  | 'single_brand_experience'
+  | 'visitor_center_or_tour'
+  | 'product_experience_space'
+  | 'pop_up_or_campaign'
+  | 'exhibition_booth'
+  | 'content_media_experience'
+  | 'operation_heavy_event'
+  | 'public_sector_exhibition'
+  | 'technology_showcase'
+  | 'unknown';
+
 export interface ConceptCandidate {
   conceptId: string;
+  rfpConceptType: RfpConceptType;
   strategicDirectionType: string;
   strategicDirectionLabel: string;
   whatThisDirectionEmphasizes: string;
