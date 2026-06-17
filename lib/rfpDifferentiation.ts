@@ -28,7 +28,7 @@ export interface RfpDifferentiationStrategy {
 
 const empty = '현재 RFP 근거 없음';
 const entityDelimiters = /[,/&+·]|\s(?:and|or)\s|(?:와|과|및|,)/iu;
-const genericTaskWords = /^(?:제작|개발|운영|구성|기획|제안|관리|설치|철거|보고|협의|디자인|콘텐츠|프로그램|서비스|제품|브랜드|기업)$/u;
+const genericTaskWords = /^(?:제작|개발|운영|구성|기획|제안|관리|설치|철거|보고|협의|디자인|콘텐츠|프로그램|서비스|제품|브랜드|기업|방문객|관람객|고객|타깃)$/u;
 
 function clean(value?: string | null) {
   return value?.trim().replace(/\s+/g, ' ') ?? '';
@@ -95,7 +95,11 @@ function collectEntities(analysis: AnalysisResult): EntityDifferentiationItem[] 
 
 export function buildRfpDifferentiationStrategy(analysis: AnalysisResult, narrative?: ProposalNarrative): RfpDifferentiationStrategy {
   const matrix = collectEntities(analysis);
-  const hasMultipleEntities = matrix.length >= 2;
+  const evidenceText = [analysis.projectOverview, analysis.clientChallenge, analysis.targetInfo, analysis.spatialCondition, analysis.contentCondition, analysis.operationCondition, ...(analysis.requiredDeliverables ?? []), ...(analysis.requiredScope ?? []), ...(analysis.scopeOfWork ?? []), ...(analysis.productInfo ?? []), ...(analysis.evaluationCriteria ?? [])].map(clean).join(' ');
+  const multiEntitySignal = /(?:공동|참여|협력|multiple|multi|pavilion|파빌리온|관|기업|회사|브랜드|stakeholder|이해관계자|파트너|계열사|제품군|존별|zone별|부스별|기관별)/i.test(evidenceText);
+  const singleExperienceSignal = /(?:단일|브랜드 경험|방문자센터|홍보관|체험관|쇼룸|visitor center|tour|single brand|brand experience)/i.test(evidenceText);
+  const equalWeightCount = matrix.filter((item) => !/target audience|content \/ deliverable category|RFP element/i.test(item.entityType) || /기업|회사|브랜드|product\/service/i.test(item.entityType)).length;
+  const hasMultipleEntities = matrix.length >= 2 && multiEntitySignal && !(singleExperienceSignal && equalWeightCount < 2);
   const evaluation = clean(analysis.evaluationCriteria?.[0]);
   const thesis = clean(narrative?.proposalThesis) || clean(analysis.rfpRequirements?.aiProposal?.[0]);
 

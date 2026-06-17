@@ -376,6 +376,7 @@ const conceptScopeValidationSchema = {
 const conceptNameScopeClassificationEnum = ['proposal_level', 'section_level', 'content_module_level', 'product_specific_level', 'generic_label'] as const;
 
 const entityBalanceStatusEnum = ['balanced', 'over-focused', 'unknown'] as const;
+const rfpConceptTypeEnum = ['multi_entity_pavilion', 'single_brand_experience', 'visitor_center_or_tour', 'product_experience_space', 'pop_up_or_campaign', 'exhibition_booth', 'content_media_experience', 'operation_heavy_event', 'public_sector_exhibition', 'technology_showcase', 'unknown'] as const;
 
 const conceptEvaluationScoresSchema = {
   type: 'object',
@@ -460,6 +461,7 @@ export const conceptCandidatesJsonSchema = {
         additionalProperties: false,
         properties: {
           conceptId: { type: 'string' },
+          rfpConceptType: { type: 'string', enum: rfpConceptTypeEnum },
           strategicDirectionType: { type: 'string' },
           strategicDirectionLabel: { type: 'string' },
           whatThisDirectionEmphasizes: { type: 'string' },
@@ -536,6 +538,7 @@ export const conceptCandidatesJsonSchema = {
         },
         required: [
           'conceptId',
+          'rfpConceptType',
           'strategicDirectionType',
           'strategicDirectionLabel',
           'whatThisDirectionEmphasizes',
