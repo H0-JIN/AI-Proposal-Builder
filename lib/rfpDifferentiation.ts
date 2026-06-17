@@ -87,7 +87,7 @@ function collectEntities(analysis: AnalysisResult): EntityDifferentiationItem[] 
       spatialOrContentRole: evidence?.source || empty,
       experienceMechanism: clean(product?.keyFeature) || evidence?.source || empty,
       visualOrToneCue: empty,
-      relationshipToOtherEntities: selected.length > 1 ? '같은 제안 명제 안에서 비교·역할 구분이 필요한 요소' : empty,
+      relationshipToOtherEntities: selected.length > 1 ? '같은 제안 명제 안에서 비교와 기여 설명이 필요한 요소' : empty,
       riskIfUndifferentiated: '구분 없이 통합하면 평가자가 각 요소의 역할, 가치, 필요성을 판단하기 어렵습니다.',
     };
   });
