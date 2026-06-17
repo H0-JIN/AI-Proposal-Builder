@@ -709,12 +709,16 @@ function collectConstraintTerms(analysis?: AnalysisResult) {
 }
 
 function candidateName(candidate: ConceptCandidate) {
+  return candidate.repairedProposalCoreConceptName || candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
+}
+
+function sourceDisplayedConceptName(candidate: ConceptCandidate) {
   return candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
 }
 
 export function getPresentationConceptName(candidate?: ConceptCandidate) {
   if (!candidate) return '';
-  return candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
+  return candidate.repairedProposalCoreConceptName || candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
 }
 
 export function getConceptTagline(candidate?: ConceptCandidate) {
@@ -728,7 +732,7 @@ export function getConceptDefinition(candidate?: ConceptCandidate) {
 }
 
 export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptCandidate {
-  const conceptName = (candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR).trim();
+  const conceptName = (candidate.repairedProposalCoreConceptName || candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR).trim();
   const conceptTagline = (candidate.proposalCoreConceptSlogan || candidate.conceptSlogan || candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition).trim();
   const conceptDefinition = (candidate.proposalCoreConceptDefinition || candidate.conceptDefinition || candidate.oneLineDefinition || candidate.whyThisWorks).trim();
   const winningThesisUse = candidate.winningThesisUse ?? {
@@ -821,6 +825,7 @@ export function normalizeConceptCandidate(candidate: ConceptCandidate): ConceptC
     winningThesisUse,
     conceptLeap,
     signatureProofIdea,
+    repairedProposalCoreConceptName: candidate.repairedProposalCoreConceptName,
     proposalCoreConceptName: conceptName,
     proposalCoreConceptSlogan: candidate.proposalCoreConceptSlogan || conceptTagline,
     proposalCoreConceptDefinition: conceptDefinition,
@@ -897,18 +902,31 @@ function centralHeroTerms(context: { analysis?: AnalysisResult }) {
   });
 }
 
-function productSpecificTerms(context: { analysis?: AnalysisResult }) {
+function productSpecificTerms(context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
   const analysis = context.analysis;
+  const entityTerms = (context.proposalNarrative?.entityDifferentiationMatrix ?? []).flatMap((item) => [
+    item.entityName,
+    item.entityType,
+    item.keyOffering,
+    item.spatialOrContentRole,
+    item.experienceMechanism,
+  ]);
   return compactUnique([
     ...(analysis?.productInfo ?? []),
     ...(analysis?.productFeatures ?? []).flatMap((feature) => [feature.product, feature.keyFeature]),
     ...(analysis?.requiredItems ?? []),
-  ].flatMap((value) => normalizeSafeNameSeed(String(value ?? '')).split(/\s+/)), 40)
+    ...(analysis?.requiredScope ?? []),
+    ...(analysis?.scopeOfWork ?? []),
+    ...(analysis?.requiredDeliverables ?? []),
+    analysis?.contentCondition,
+    analysis?.spatialCondition,
+    ...entityTerms,
+  ].flatMap((value) => normalizeSafeNameSeed(String(value ?? '')).split(/\s+/)), 80)
     .filter((token) => token.length >= 2 && token.length <= 14)
     .filter((token) => !centralHeroTerms(context).some((hero) => normalizedText(hero).includes(normalizedText(token))));
 }
 
-function isProductSpecificName(name: string, context: { analysis?: AnalysisResult }) {
+function isProductSpecificName(name: string, context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
   const normalized = normalizedText(name);
   const terms = productSpecificTerms(context);
   const hits = terms.filter((term) => normalized.includes(term.toLowerCase()));
@@ -922,12 +940,13 @@ export function classifyConceptNameScope(candidate: ConceptCandidate, context: {
   if (containsAny(name, CONTENT_MODULE_SCOPE_TERMS) || isJourneyOrExecutionOnlyName(name)) return 'content_module_level';
   if (containsAny(name, SECTION_SCOPE_TERMS) || isNarrowProposalScopeName(name) || isLikelySentence(name)) return 'section_level';
   if (hasWeakGenericConceptName(name) || hasGenericConceptPenaltyWord(name) || hasGenericMainNamingDevice(name) || hasForbiddenAbstractNamingCore(name)) return 'generic_label';
-  if (hasProposalLevelScope(candidate)) return 'proposal_level';
+  if (hasProposalLevelScope(candidate, context)) return 'proposal_level';
   return 'generic_label';
 }
 
-function hasProposalLevelScope(candidate: ConceptCandidate) {
+function hasProposalLevelScope(candidate: ConceptCandidate, context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative } = {}) {
   const validation = candidate.conceptScopeValidation;
+  if (validation && (!validation.notProductSpecificOnly || !validation.notSectionTitleOnly)) return false;
   if (validation) return Object.values(validation).every(Boolean);
 
   const mechanism = candidate.conceptMechanism;
@@ -940,7 +959,7 @@ function hasProposalLevelScope(candidate: ConceptCandidate) {
   );
 }
 
-function buildScopeValidation(candidate: ConceptCandidate) {
+function buildScopeValidation(candidate: ConceptCandidate, context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative } = {}) {
   const mechanism = candidate.conceptMechanism;
   const name = candidateName(candidate);
   return {
@@ -950,7 +969,7 @@ function buildScopeValidation(candidate: ConceptCandidate) {
     expandableToContent: Boolean(mechanism?.contentMechanism || candidate.contentMediaImplication),
     expandableToMediaOrInteraction: Boolean(mechanism?.interactionMechanism || candidate.mediaInteractionPotential),
     expandableToOperationOrProof: Boolean(mechanism?.proofMechanism || candidate.executionFeasibility),
-    notProductSpecificOnly: !isNarrowProposalScopeName(name) && !isProductSpecificName(name, {}),
+    notProductSpecificOnly: !isNarrowProposalScopeName(name) && !isProductSpecificName(name, context),
     notSectionTitleOnly: !isLikelySentence(name) && !hasUntransformedConceptRoleTerm(name),
   };
 }
@@ -975,7 +994,7 @@ export function validateConceptNaming(
 
     const scopeClassification = classifyConceptNameScope(candidate, context);
     if (scopeClassification !== 'proposal_level') violations.push(`${label}: conceptNameScopeClassification is ${scopeClassification}; only proposal_level is valid for proposalCoreConceptName.`);
-    if (!hasProposalLevelScope(candidate)) violations.push(`${label}: conceptScopeValidation must prove proposal-level coverage across strategy, space, content, media/interaction, operation/proof, main entities/scope, and non-section naming.`);
+    if (!hasProposalLevelScope(candidate, context)) violations.push(`${label}: conceptScopeValidation must prove proposal-level coverage across strategy, space, content, media/interaction, operation/proof, main entities/scope, and non-section naming.`);
     if (isProductSpecificName(name, context)) violations.push(`${label}: conceptName is based mainly on one product, equipment type, technology, zone, content module, interaction, participant entity, or RFP subsection instead of the whole proposal.`);
     if (isNarrowProposalScopeName(name)) violations.push(`${label}: conceptName is too narrow for proposal level and reads like a product, module, zone, interaction, feature, protocol, matrix, or section title.`);
     if (!name.trim()) violations.push(`${label}: conceptName is empty.`);
@@ -1100,14 +1119,16 @@ function buildSafeConceptNamesFromMetaphor(candidate: ConceptCandidate, context:
   return globalMode ? [...englishNames, ...koreanNames] : [...koreanNames, ...englishNames];
 }
 
-function applyConceptName(candidate: ConceptCandidate, conceptName: string, warning?: string, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative } = {}): ConceptCandidate {
+function applyConceptName(candidate: ConceptCandidate, conceptName: string, warning?: string, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative } = {}, reason = 'Displayed core concept name failed proposal-level validation and was repaired deterministically.'): ConceptCandidate {
   const rfpGrounding = buildFallbackGrounding(candidate, context);
   const conceptDefinition = conceptDefinitionCopiesOverview(getConceptDefinition(candidate), context)
     ? buildDefinitionFromMechanism(candidate)
     : getConceptDefinition(candidate);
+  const originalName = sourceDisplayedConceptName(candidate).trim();
 
   return normalizeConceptCandidate({
     ...candidate,
+    repairedProposalCoreConceptName: conceptName,
     proposalCoreConceptName: conceptName,
     proposalCoreConceptDefinition: conceptDefinition,
     conceptName,
@@ -1138,6 +1159,13 @@ function applyConceptName(candidate: ConceptCandidate, conceptName: string, warn
     whyThisIsNotJustPoetic: candidate.whyThisIsNotJustPoetic || '임의의 문학적 사물이 아니라 현재 RFP의 대상·역할·평가 근거에서 추출한 명명입니다.',
     whyThisCanOrganizeProposal: candidate.whyThisCanOrganizeProposal || candidate.conceptMechanism?.whyThisCanBecomeAConcept || '공간·콘텐츠·미디어·운영·증명 장표의 상위 기준으로 확장됩니다.',
     namingGuardWarning: warning,
+    nameValidationStatus: warning ? 'warning' : 'repaired',
+    nameValidation: {
+      nameValidationStatus: warning ? 'warning' : 'repaired',
+      originalName,
+      repairedName: conceptName,
+      reason,
+    },
   });
 }
 
@@ -1165,13 +1193,25 @@ export function applyNonBlockingConceptNamingGuard(
 
   const concepts = result.concepts.map((candidate, index) => {
     const originalViolations = getCandidateViolations(candidate, index, context);
-    if (!originalViolations.length) return candidate;
+    if (!originalViolations.length) {
+      const displayedName = sourceDisplayedConceptName(candidate).trim();
+      return normalizeConceptCandidate({
+        ...candidate,
+        nameValidationStatus: 'passed' as const,
+        nameValidation: {
+          nameValidationStatus: 'passed' as const,
+          originalName: displayedName,
+          repairedName: displayedName,
+          reason: 'Displayed core concept name passed proposal-level scope validation.',
+        },
+      });
+    }
 
     allViolations.push(...originalViolations);
     const safeNames = buildSafeConceptNamesFromMetaphor(candidate, context);
     const safeName = safeNames[safeNameIndex % safeNames.length];
     safeNameIndex += 1;
-    const repairedCandidate = applyConceptName(candidate, safeName, '일부 콘셉트명이 기준을 충족하지 않아 1회 자동 보정했습니다. 결과를 확인해 주세요.', context);
+    const repairedCandidate = applyConceptName(candidate, safeName, undefined, context, originalViolations[0] || 'Displayed name was product/module specific.');
     const repairedViolations = getCandidateViolations(repairedCandidate, index, context);
     if (!repairedViolations.length) {
       repairedConceptIds.add(candidate.conceptId || `concept-${index + 1}`);
@@ -1183,7 +1223,14 @@ export function applyNonBlockingConceptNamingGuard(
     warningConceptIds.add(candidate.conceptId || `concept-${index + 1}`);
     return {
       ...repairedCandidate,
-      namingGuardWarning: '콘셉트명이 약한 여정/전략 라벨로 감지되어 대체 이름으로 자동 보정했습니다. 세부 기준은 추가 확인이 필요합니다.',
+      namingGuardWarning: '콘셉트명이 약한 제품/모듈/섹션 라벨로 감지되어 대체 이름으로 자동 보정했습니다. 세부 기준은 추가 확인이 필요합니다.',
+      nameValidationStatus: 'warning' as const,
+      nameValidation: {
+        nameValidationStatus: 'warning' as const,
+        originalName: sourceDisplayedConceptName(candidate).trim(),
+        repairedName: safeName,
+        reason: repairedViolations[0] || originalViolations[0] || 'Name repair completed with remaining validation warnings.',
+      },
     };
   });
 
