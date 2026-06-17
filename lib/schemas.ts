@@ -637,15 +637,17 @@ const conceptNameOptionSchema = {
   properties: {
     conceptName: { type: 'string' },
     languageMode: { type: 'string', enum: ['Korean', 'English', 'bilingual'] },
+    koreanSubtitle: { type: 'string' },
+    oneLineSlogan: { type: 'string' },
     shortMeaning: { type: 'string' },
-    whyItFits: { type: 'string' },
+    whyItFitsRfp: { type: 'string' },
     coverTitleScore: { type: 'number' },
     memorabilityScore: { type: 'number' },
     rfpSpecificityScore: { type: 'number' },
     expandabilityScore: { type: 'number' },
     risk: { type: 'string' },
   },
-  required: ['conceptName', 'languageMode', 'shortMeaning', 'whyItFits', 'coverTitleScore', 'memorabilityScore', 'rfpSpecificityScore', 'expandabilityScore', 'risk'],
+  required: ['conceptName', 'languageMode', 'koreanSubtitle', 'oneLineSlogan', 'shortMeaning', 'whyItFitsRfp', 'coverTitleScore', 'memorabilityScore', 'rfpSpecificityScore', 'expandabilityScore', 'risk'],
 } as const;
 
 export const conceptNameOptionsJsonSchema = {

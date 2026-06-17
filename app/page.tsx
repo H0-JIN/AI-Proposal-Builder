@@ -1603,6 +1603,7 @@ function appendUploadedDocument(document: UploadedDocument) {
     conceptRecommendation: undefined,
     conceptGenerationResult: undefined,
     proposalNarrative: undefined,
+    selectedStrategicDirection: undefined,
     selectedConcept: undefined,
     conceptNameOptions: undefined,
     outline: undefined,
@@ -1781,7 +1782,7 @@ export default function Home() {
   );
   const hasUploadedDocumentOrRfp = useMemo(() => Boolean(analysisInput.briefText.trim()), [analysisInput.briefText]);
   const canAnalyze = useMemo(() => Boolean(state.input.projectName && state.input.clientName && analysisInput.briefText) && !hasFastVisionAnalysisInProgress, [state.input.clientName, state.input.projectName, analysisInput.briefText, hasFastVisionAnalysisInProgress]);
-  const canGenerateProposalStructure = Boolean(state.selectedConcept?.finalConceptName?.trim() && state.analysis && hasUploadedDocumentOrRfp);
+  const canGenerateProposalStructure = Boolean((state.selectedStrategicDirection || state.selectedConcept?.selectedDirection) && state.selectedConcept?.finalConceptName?.trim() && state.analysis && hasUploadedDocumentOrRfp);
   const activeVisionDocument = uploadedDocuments.find((document) => document.visionStatus === 'quick_analyzing' || document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 중' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === '하이브리드 PDF 분석 중');
   const currentUploadNotice = activeVisionDocument?.warningMessage
     ? { type: 'warning' as const, message: activeVisionDocument.warningMessage }
@@ -1794,7 +1795,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -3020,7 +3021,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: analysisInput, documentChunks });
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(analysisInput, analysis);
     } catch (err) {
@@ -3039,7 +3040,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(mergedInput, analysis);
     } catch (err) {
@@ -3066,6 +3067,7 @@ export default function Home() {
       conceptCandidates: undefined,
       conceptRecommendation: undefined,
       conceptGenerationResult: undefined,
+      selectedStrategicDirection: undefined,
       selectedConcept: undefined,
       conceptNameOptions: undefined,
       outline: undefined,
@@ -3112,7 +3114,7 @@ export default function Home() {
   };
 
   const selectConcept = (concept: ConceptCandidate) => {
-    setState((current) => ({ ...current, selectedConcept: { ...concept, finalConceptName: '', finalConceptSlogan: '', selectedDirection: concept }, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, selectedStrategicDirection: concept, selectedConcept: { ...concept, finalConceptName: '', finalConceptSlogan: '', finalConceptNameOption: undefined, selectedDirection: concept }, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
   };
 
   const runConceptNames = async () => {
@@ -3120,7 +3122,8 @@ export default function Home() {
     setError('');
     setLoading('컨셉명 후보 생성 중...');
     try {
-      const result = await postJson<ConceptNameOptionsResult>('/api/concept-names', { input: analysisInput, analysis: state.analysis, selectedDirection: state.selectedConcept, proposalNarrative: state.proposalNarrative });
+      const selectedDirection = state.selectedStrategicDirection ?? state.selectedConcept.selectedDirection ?? state.selectedConcept;
+      const result = await postJson<ConceptNameOptionsResult>('/api/concept-names', { input: analysisInput, analysis: state.analysis, selectedDirection, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, entityDifferentiationMatrix: state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
       setState((current) => ({ ...current, conceptNameOptions: result.options, outline: undefined, slides: undefined }));
     } catch (err) {
       setError(err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.');
@@ -3135,7 +3138,8 @@ export default function Home() {
       selectedConcept: {
         ...current.selectedConcept,
         finalConceptName: option.conceptName,
-        finalConceptSlogan: option.shortMeaning,
+        finalConceptSlogan: option.oneLineSlogan || option.shortMeaning,
+        finalConceptNameOption: option,
         selectedDirection: current.selectedConcept.selectedDirection ?? current.selectedConcept,
       },
       outline: undefined,
@@ -3637,8 +3641,8 @@ export default function Home() {
             {state.selectedConcept && (
               <div className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50 p-5">
                 <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Final naming step</p>
-                <h3 className="mt-2 text-2xl font-black text-slate-950">컨셉명 후보 생성</h3>
-                <p className="mt-2 text-sm font-bold leading-6 text-indigo-900">선택한 방향을 바탕으로 최종 컨셉명을 생성하세요. 최종 컨셉명과 슬로건이 확정되어야 제안서 구조 생성으로 진행할 수 있습니다.</p>
+                <h3 className="mt-2 text-2xl font-black text-slate-950">최종 컨셉명 생성</h3>
+                <p className="mt-2 text-sm font-bold leading-6 text-indigo-900">선택한 전략 방향을 바탕으로 최종 컨셉명 후보를 생성하세요.</p>
                 <div className="mt-4 flex flex-wrap gap-3">
                   <PrimaryButton onClick={runConceptNames} disabled={Boolean(loading)}>이 방향으로 컨셉명 생성</PrimaryButton>
                 </div>
@@ -3653,14 +3657,25 @@ export default function Home() {
                             <span className="rounded-full bg-indigo-100 px-2 py-1 text-[11px] font-black text-indigo-700">{option.languageMode}</span>
                           </div>
                           <p className="mt-2 text-sm font-bold text-indigo-700">{option.shortMeaning}</p>
-                          <p className="mt-2 text-xs font-semibold leading-5 text-slate-600">{option.whyItFits}</p>
+                          {option.koreanSubtitle && <p className="mt-1 text-xs font-black text-slate-500">{option.koreanSubtitle}</p>}
+                          <p className="mt-2 text-sm font-bold text-indigo-700">{option.oneLineSlogan || option.shortMeaning}</p>
+                          <p className="mt-2 text-xs font-semibold leading-5 text-slate-600">{option.whyItFitsRfp || option.whyItFits}</p>
                           <p className="mt-2 text-xs font-bold text-slate-500">Cover {option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.rfpSpecificityScore} · Expand {option.expandabilityScore}</p>
                           {option.risk && <p className="mt-2 text-xs font-bold text-amber-700">Risk: {option.risk}</p>}
+                        <span className="mt-3 inline-flex rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white">이 이름 선택</span>
                         </button>
                       );
                     })}
                   </div>
                 ) : null}
+
+                {state.selectedConcept.finalConceptName?.trim() && (
+                  <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">
+                    <p className="font-black">선택된 최종 컨셉명</p>
+                    <p className="mt-1 text-lg font-black">{state.selectedConcept.finalConceptName}</p>
+                    {state.selectedConcept.finalConceptSlogan?.trim() && <p className="mt-1 font-bold">{state.selectedConcept.finalConceptSlogan}</p>}
+                  </div>
+                )}
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <label className="block text-sm font-black text-slate-800">최종 컨셉명 수동 편집
                     <input value={state.selectedConcept.finalConceptName ?? ''} onChange={(event) => updateFinalConceptField('finalConceptName', event.target.value)} placeholder="최종 컨셉명을 입력하거나 후보를 선택하세요" className="mt-2 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-indigo-500" />
