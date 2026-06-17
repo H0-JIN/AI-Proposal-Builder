@@ -3545,6 +3545,13 @@ export default function Home() {
                     {concept.namingGuardWarning && (
                       <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 확인 권장</p>
                     )}
+                    {concept.nameValidation && (
+                      <p className="mt-2 text-xs font-bold leading-5 text-slate-500">
+                        nameValidationStatus: {concept.nameValidation.nameValidationStatus}
+                        {concept.nameValidation.originalName && concept.nameValidation.originalName !== concept.nameValidation.repairedName ? ` · original: ${concept.nameValidation.originalName} → repaired: ${concept.nameValidation.repairedName}` : ` · name: ${concept.nameValidation.repairedName}`}
+                        {concept.nameValidation.reason ? ` · ${conciseText(concept.nameValidation.reason, 90)}` : ''}
+                      </p>
+                    )}
                     <p className="mt-2 inline-flex w-fit rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">Direction: {concept.strategicDirectionLabel || '전략 옵션'}</p>
                     {(concept.conceptNameKoreanSubtitle || (concept.conceptNameEnglish && concept.conceptNameEnglish !== getPresentationConceptName(concept) ? concept.conceptNameEnglish : '')) && (
                       <p className="mt-2 text-sm font-bold text-slate-500">{concept.conceptNameKoreanSubtitle || concept.conceptNameEnglish}</p>
