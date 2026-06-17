@@ -322,17 +322,16 @@ function buildCompactAnalysis(analysis: AnalysisResult, differentiationSummary: 
 interface StrategicDirectionPlanItem {
   type: string;
   rfpConceptType: RfpConceptType;
+  secondaryRfpConceptTypes: RfpConceptType[];
   label: string;
   emphasis: string;
   chooseWhen: string;
 }
 
-function hasAny(text: string, patterns: RegExp[]) {
-  return patterns.some((pattern) => pattern.test(text));
-}
+const MULTI_ENTITY_LEAKAGE_PATTERN = /통합\s*(?:중심|아이덴티티|\+|\+개별)|통합\+역할|역할\s*(?:구분|차별화)|각\s*대상의\s*역할|상징적\s*리더십|Entity\s*Differentiation\s*Matrix|entity\s*role\s*matrix|unified\s*\+\s*differentiated\s*roles|symbolic\s*leadership|role\s*separation|entity\s*role\s*matrix/i;
 
-function classifyRfpConceptTypes(analysis: AnalysisResult, narrative: ProposalNarrative, hasMultipleEntities: boolean): RfpConceptType[] {
-  const evidenceText = [
+function rfpEvidenceText(analysis: AnalysisResult, narrative: ProposalNarrative) {
+  return [
     analysis.projectOverview,
     analysis.clientChallenge,
     analysis.targetInfo,
@@ -345,12 +344,35 @@ function classifyRfpConceptTypes(analysis: AnalysisResult, narrative: ProposalNa
     ...(analysis.requiredDeliverables ?? []),
     ...(analysis.evaluationCriteria ?? []),
     ...(analysis.productInfo ?? []),
+    narrative.unifyingFrame,
     narrative.differentiationPrinciple,
   ].filter(Boolean).join(' ');
+}
+
+function hasMultiEntityPavilionEvidence(evidenceText: string, hasMultipleEntities: boolean) {
+  const pavilionSignal = /공동관|공동\s*부스|공동\s*전시|파빌리온|pavilion|joint\s*(?:booth|pavilion|exhibition)|national\s*pavilion|shared\s*exhibition|consortium|컨소시엄|참여기업|참여\s*기관|협력사|계열사|기관별|기업별|브랜드별|도메인별|존별|zone별|제품군별/i.test(evidenceText);
+  const balanceSignal = /통합.*(?:구분|차별|역할)|(?:구분|차별|역할).*통합|unified.*(?:differentiated|role)|balance.*(?:identity|distinction)|각\s*(?:기업|기관|브랜드|도메인|존|제품군).*역할/i.test(evidenceText);
+  const equalEntitySignal = /(?:여러|다수|복수|multiple|multi).*(?:기업|회사|브랜드|기관|stakeholder|이해관계자|business\s*unit|domain|zone|product\s*group|제품군|도메인|존)/i.test(evidenceText);
+  return hasMultipleEntities || pavilionSignal || balanceSignal || equalEntitySignal;
+}
+
+function matrixTypeForRfp(primaryType: RfpConceptType, _hasMultipleEntities: boolean) {
+  if (primaryType === 'multi_entity_pavilion') return 'entityDifferentiationMatrix';
+  if (primaryType === 'single_brand_experience' || primaryType === 'visitor_center_or_tour') return 'brandExperienceMatrix';
+  return 'none';
+}
+
+function hasAny(text: string, patterns: RegExp[]) {
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function classifyRfpConceptTypes(analysis: AnalysisResult, narrative: ProposalNarrative, hasMultipleEntities: boolean): RfpConceptType[] {
+  const evidenceText = rfpEvidenceText(analysis, narrative);
+  const isMultiEntityPavilion = hasMultiEntityPavilionEvidence(evidenceText, hasMultipleEntities);
 
   const types: RfpConceptType[] = [];
-  if (hasMultipleEntities) types.push('multi_entity_pavilion');
-  if (hasAny(evidenceText, [/방문자센터|홍보관|체험관|전시관|visitor\s*center|tour|투어|견학|showroom|쇼룸/i])) types.push('visitor_center_or_tour');
+  if (isMultiEntityPavilion) types.push('multi_entity_pavilion');
+  if (hasAny(evidenceText, [/방문자센터|홍보관|체험관|전시관|visitor\s*center|tour|투어|견학|factory\s*tour|showroom|쇼룸/i])) types.push('visitor_center_or_tour');
   if (hasAny(evidenceText, [/제품|상품|product|demo|demonstration|시연|체험존|사용자 경험|user experience|UX|기능|성능|proof/i])) types.push('product_experience_space');
   if (hasAny(evidenceText, [/팝업|pop[-\s]?up|캠페인|campaign|activation|프로모션|SNS|viral|share/i])) types.push('pop_up_or_campaign');
   if (hasAny(evidenceText, [/부스|booth|전시부스|박람회|trade\s*show|expo|exhibition/i])) types.push('exhibition_booth');
@@ -358,11 +380,10 @@ function classifyRfpConceptTypes(analysis: AnalysisResult, narrative: ProposalNa
   if (hasAny(evidenceText, [/운영|동선|등록|안전|인력|staff|operation|logistics|현장|서비스|접수|관리|프로세스|매뉴얼/i])) types.push('operation_heavy_event');
   if (hasAny(evidenceText, [/공공|정부|지자체|공기관|public sector|policy|정책|시민|국민/i])) types.push('public_sector_exhibition');
   if (hasAny(evidenceText, [/기술|테크|technology|AI|ICT|디지털|플랫폼|솔루션|showcase|innovation|혁신/i])) types.push('technology_showcase');
-  if (!hasMultipleEntities && hasAny(evidenceText, [/브랜드|brand|identity|worldview|세계관|이미지|경험 공간|brand experience/i])) types.push('single_brand_experience');
+  if (!isMultiEntityPavilion && hasAny(evidenceText, [/브랜드|brand|identity|worldview|세계관|이미지|경험 공간|brand experience|방문자센터|홍보관|체험관|전시관|visitor\s*center|tour|투어|견학|factory\s*tour|showroom|쇼룸/i])) types.push('single_brand_experience');
   if (!types.length) types.push('unknown');
   return Array.from(new Set(types));
 }
-
 function primaryRfpConceptType(types: RfpConceptType[]): RfpConceptType {
   const priority: RfpConceptType[] = ['multi_entity_pavilion', 'visitor_center_or_tour', 'product_experience_space', 'pop_up_or_campaign', 'content_media_experience', 'operation_heavy_event', 'exhibition_booth', 'technology_showcase', 'public_sector_exhibition', 'single_brand_experience', 'unknown'];
   return priority.find((type) => types.includes(type)) ?? 'unknown';
@@ -371,7 +392,8 @@ function primaryRfpConceptType(types: RfpConceptType[]): RfpConceptType {
 function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: ProposalNarrative, hasMultipleEntities: boolean): StrategicDirectionPlanItem[] {
   const conceptTypes = classifyRfpConceptTypes(analysis, narrative, hasMultipleEntities);
   const conceptType = primaryRfpConceptType(conceptTypes);
-  const mk = (type: string, label: string, emphasis: string, chooseWhen: string): StrategicDirectionPlanItem => ({ type, rfpConceptType: conceptType, label, emphasis, chooseWhen });
+  const secondary = conceptTypes.filter((type) => type !== conceptType);
+  const mk = (type: string, label: string, emphasis: string, chooseWhen: string): StrategicDirectionPlanItem => ({ type, rfpConceptType: conceptType, secondaryRfpConceptTypes: secondary, label, emphasis, chooseWhen });
 
   switch (conceptType) {
     case 'multi_entity_pavilion':
@@ -379,6 +401,12 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
         mk('multi_entity_unified_identity', '통합 아이덴티티', '여러 주요 주체를 하나의 대표 정체성과 경험 프레임으로 묶는 방향', '전체 인상, 통일성, 대표 이미지가 평가상 우선일 때 적합'),
         mk('multi_entity_unified_differentiated_roles', '통합+역할 차별화', '공통 프레임 안에서 기업·브랜드·제품·존별 역할과 메시지를 분명히 구분하는 방향', '통합감과 함께 주체별 전략 역할을 평가자가 이해해야 할 때 적합'),
         mk('multi_entity_symbolic_leadership', '상징적 리더십', '대표 장면과 상징 구조로 프로젝트의 규모, 리더십, 대외 임팩트를 강화하는 방향', '초기 주목도, 위상, 홍보 효과가 중요한 RFP일 때 적합'),
+      ];
+    case 'single_brand_experience':
+      return [
+        mk('single_brand_worldview_immersion', '브랜드 세계관 몰입', '단일 브랜드의 의미와 관점을 하나의 선명한 경험 세계로 구축하는 방향', '브랜드 정체성과 일관된 인상이 가장 중요할 때 적합'),
+        mk('single_brand_perception_behavior_change', '방문객 인식·행동 전환', '방문자가 브랜드를 다르게 이해하고 행동하게 만드는 방향', '방문자 반응, 공감, 인식 변화가 핵심 성과일 때 적합'),
+        mk('single_brand_signature_memory', '시그니처 브랜드 기억', '방문 후에도 남는 대표 경험과 브랜드 기억을 만드는 방향', '대표 장면과 기억성이 중요한 RFP일 때 적합'),
       ];
     case 'visitor_center_or_tour':
       return [
@@ -400,7 +428,31 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
 }
 function formatStrategicDirectionPlanForPrompt(plan: StrategicDirectionPlanItem[]) {
   return plan.map((item, index) => `C${index + 1}: ${item.label} (${item.type})
-- rfpConceptType: ${item.rfpConceptType}\n- emphasis: ${item.emphasis}\n- chooseWhen: ${item.chooseWhen}`).join('\n');
+- primaryRfpConceptType: ${item.rfpConceptType}
+- secondaryRfpConceptTypes: ${item.secondaryRfpConceptTypes.join(' / ') || 'none'}
+- emphasis: ${item.emphasis}
+- chooseWhen: ${item.chooseWhen}`).join('\n');
+}
+
+function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: StrategicDirectionPlanItem): ConceptCandidate {
+  const gated = {
+    ...concept,
+    rfpConceptType: planItem.rfpConceptType,
+    secondaryRfpConceptTypes: planItem.secondaryRfpConceptTypes,
+    strategicDirectionType: planItem.type,
+    strategicDirectionLabel: planItem.label,
+    whatThisDirectionEmphasizes: planItem.emphasis,
+    whenToChooseThisDirection: planItem.chooseWhen,
+  };
+  if (planItem.rfpConceptType !== 'multi_entity_pavilion') {
+    const joined = [gated.strategicDirectionLabel, gated.whatThisDirectionEmphasizes, gated.whenToChooseThisDirection, gated.strategicApproach, gated.coreMessage].join(' ');
+    if (MULTI_ENTITY_LEAKAGE_PATTERN.test(joined)) {
+      gated.strategicDirectionLabel = planItem.label;
+      gated.whatThisDirectionEmphasizes = planItem.emphasis;
+      gated.whenToChooseThisDirection = planItem.chooseWhen;
+    }
+  }
+  return gated;
 }
 
 function buildFallbackWinningThesis(analysis: AnalysisResult, narrative: ProposalNarrative) {
@@ -473,6 +525,7 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
   return {
     conceptId,
     rfpConceptType: direction.rfpConceptType,
+    secondaryRfpConceptTypes: direction.secondaryRfpConceptTypes,
     strategicDirectionType: direction.type,
     strategicDirectionLabel: direction.label,
     whatThisDirectionEmphasizes: direction.emphasis,
@@ -747,6 +800,7 @@ export async function POST(request: Request) {
     const rfpConceptTypes = classifyRfpConceptTypes(body.analysis, proposalNarrative, hasMultipleEntities);
     const selectedRfpConceptType = primaryRfpConceptType(rfpConceptTypes);
     const strategicDirectionPlan = buildStrategicDirectionPlan(body.analysis, proposalNarrative, hasMultipleEntities);
+    const selectedMatrixType = matrixTypeForRfp(selectedRfpConceptType, hasMultipleEntities);
     const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, hasMultipleEntities);
     const proposalPatternContext = formatProposalPatternsForConceptPrompt(proposalPatternGuidance.patterns, proposalPatternGuidance.avoidanceRules, maxProposalPatterns);
 
@@ -755,7 +809,7 @@ export async function POST(request: Request) {
       '너는 한국어 제안서 콘셉트를 빠르게 설계하는 크리에이티브 디렉터다.',
       `정확히 ${maxCandidates}개의 전략 방향 후보를 생성한다. 최소 3개의 usable concept를 반환하고, 내부 네이밍 후보 5개는 절대 노출하지 말라.`,
       '3개 후보는 winner-loser 비교가 아니라 서로 다른 전략 방향 옵션이어야 한다.',
-      '각 후보는 rfpConceptType, strategicDirectionType, strategicDirectionLabel, whatThisDirectionEmphasizes, whenToChooseThisDirection을 반드시 포함한다.',
+      '각 후보는 primaryRfpConceptType에 의해 하드 게이트된 rfpConceptType, secondaryRfpConceptTypes, strategicDirectionType, strategicDirectionLabel, whatThisDirectionEmphasizes, whenToChooseThisDirection을 반드시 포함한다.',
       'strategicDirectionLabel은 카드에 보이는 짧은 한국어 방향명이다. proposalCoreConceptName/conceptName은 DB/schema 호환을 위한 임시 direction title일 뿐이며 최종 컨셉명이 아니다. 최종 컨셉명은 사용자가 방향 선택 후 별도 naming step에서 생성한다.',
       '추천은 가장 적합한 방향을 설명하되 다른 후보를 나쁘다/부적합하다/틀렸다로 말하지 않는다. 다른 방향의 쓰임과 선택 간 trade-off를 중립적으로 설명한다.',
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
@@ -770,7 +824,7 @@ export async function POST(request: Request) {
       '각 후보는 signatureProofIdea(signatureScene, signatureContent, signatureSpatialMove, signatureMediaOrInteraction, whyThisProvesTheConcept, whyThisIsNotGeneric)를 반드시 포함한다. generic immersive video/kiosk/media wall/showcase 같은 표현은 구체 대표 장면으로 변환한다.',
       'proposalCoreConceptName은 임시 방향 타이틀로만 사용되며 conceptLeap과 corePromise를 요약해야 한다. classification label, diagram label, section title, product module, generic metaphor, content mechanism, visitor journey label이면 안 된다.',
       'proposalCoreConceptSlogan은 시적 문구보다 전략적 claim, why this client, proposal promise를 명확히 설명한다.',
-      '필수 생성 순서: (1) Hidden Needs (2) Strategic Approach (3) RFP Concept Type Classification (4) Entity/Content/Audience Differentiation only if applicable (5) Proposal Core Concept (6) Experience Principle (7) Visitor Journey (7) Content/Media Execution (8) Anti-pattern Validation.',
+      '필수 생성 순서: (1) Hidden Needs (2) Strategic Approach (3) RFP Concept Type Classification - primaryRfpConceptType is authoritative (4) Entity Differentiation only when primaryRfpConceptType=multi_entity_pavilion; otherwise use Brand Experience Matrix thinking when useful but do not output Entity Differentiation Matrix (5) Proposal Core Concept (6) Experience Principle (7) Visitor Journey (7) Content/Media Execution (8) Anti-pattern Validation.',
       'Visitor Journey를 Proposal Core Concept보다 먼저 만들거나 Core Concept의 이름으로 승격하지 않는다.',
       '각 concepts 항목은 전략 방향 카드로 읽히도록 proposalCoreConceptName(임시 방향 타이틀), proposalCoreConceptSlogan(임시 방향 설명), proposalCoreConceptDefinition, whyThisIsCoreConcept, experiencePrinciple, visitorJourney, contentMediaImplication을 반드시 분리한다.',
       'legacy 호환을 위해 conceptName은 proposalCoreConceptName과 동일하게, conceptDefinition은 proposalCoreConceptDefinition과 동일하게 출력한다.',
@@ -817,8 +871,10 @@ Request Debug Metadata (캐시 방지 및 재생성 추적):
 ${JSON.stringify(metadata, null, 2)}
 
 RFP Concept Type Classification (current RFP evidence only):
-- primary: ${selectedRfpConceptType}
-- all: ${rfpConceptTypes.join(' / ')}
+- primaryRfpConceptType: ${selectedRfpConceptType}
+- secondaryRfpConceptTypes: ${rfpConceptTypes.filter((type) => type !== selectedRfpConceptType).join(' / ') || 'none'}
+- selectedDirectionLensSet: ${strategicDirectionPlan.map((item) => item.type).join(' / ')}
+- matrixType: ${selectedMatrixType}
 - hasMultipleEntities: ${hasMultipleEntities}
 
 Strategic Direction Plan (이 순서로 C1/C2/C3를 생성하되 RFP에 맞게 이름과 실행은 구체화):
@@ -841,8 +897,8 @@ ${JSON.stringify(separatedEvidenceLevels, null, 2)}
 Balanced RFP Evidence Summary (entity balancing only; core concept naming은 coreEvidence/groups[role=core]만 보조 검증):
 ${JSON.stringify(balancedEvidenceSummary, null, 2)}
 
-RFP Entity Differentiation Summary (${hasMultipleEntities ? 'APPLY entity differentiation' : 'DO NOT force entity differentiation'}):
-${hasMultipleEntities ? compactText(differentiationSummary, 700) : '현재 RFP evidence상 multi-entity pavilion이 아니므로 Entity Differentiation Matrix는 전략 방향 렌즈로 사용하지 않는다.'}
+RFP Matrix Gate (${selectedMatrixType}):
+${selectedMatrixType === 'entityDifferentiationMatrix' ? compactText(differentiationSummary, 700) : selectedMatrixType === 'brandExperienceMatrix' ? 'Brand Experience Matrix fields to use in reasoning if useful: brandMeaning, visitorQuestion, experienceStage, proofPoint, spatialMoment, memoryAfterVisit. Entity Differentiation Matrix를 출력하거나 전략 방향 렌즈로 사용하지 않는다.' : '현재 RFP primary type상 Entity Differentiation Matrix를 전략 방향 렌즈로 사용하지 않는다.'}
 
 proposal_patterns compact diagnostics:
 ${proposalPatternDiagnostics}
@@ -867,13 +923,8 @@ Generation order reminder: Hidden Needs → Strategic Approach → Winning Thesi
         regenerationId: metadata.regenerationId,
         generationAttempt: metadata.generationAttempt,
         generatedAt: metadata.generatedAt,
-        concepts: generated.concepts.slice(0, maxCandidates).map((concept, index) => ({
-          ...concept,
-          rfpConceptType: strategicDirectionPlan[index]?.rfpConceptType ?? selectedRfpConceptType,
-          strategicDirectionType: concept.strategicDirectionType || strategicDirectionPlan[index]?.type || 'rfp_type_direction',
-          strategicDirectionLabel: concept.strategicDirectionLabel || strategicDirectionPlan[index]?.label || '전략 방향',
-        })),
-        entityDifferentiationMatrix: differentiationStrategy.hasMultipleEntities
+        concepts: generated.concepts.slice(0, maxCandidates).map((concept, index) => enforceStrategicDirectionGate(concept, strategicDirectionPlan[index] ?? strategicDirectionPlan[0])),
+        entityDifferentiationMatrix: selectedMatrixType === 'entityDifferentiationMatrix'
           ? (generated.entityDifferentiationMatrix?.length ? generated.entityDifferentiationMatrix : differentiationStrategy.entityDifferentiationMatrix)
           : [],
       }));
@@ -883,7 +934,7 @@ Generation order reminder: Hidden Needs → Strategic Approach → Winning Thesi
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'generation timeout';
       const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata);
-      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation({ ...fallbackBase, entityDifferentiationMatrix: hasMultipleEntities ? fallbackBase.entityDifferentiationMatrix : [] }), { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
+      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation({ ...fallbackBase, entityDifferentiationMatrix: selectedMatrixType === 'entityDifferentiationMatrix' ? fallbackBase.entityDifferentiationMatrix : [] }), { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(fallback, metadata));
     }
   } catch (error) {

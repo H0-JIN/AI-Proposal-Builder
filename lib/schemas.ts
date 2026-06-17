@@ -462,6 +462,7 @@ export const conceptCandidatesJsonSchema = {
         properties: {
           conceptId: { type: 'string' },
           rfpConceptType: { type: 'string', enum: rfpConceptTypeEnum },
+          secondaryRfpConceptTypes: { type: 'array', items: { type: 'string', enum: rfpConceptTypeEnum } },
           strategicDirectionType: { type: 'string' },
           strategicDirectionLabel: { type: 'string' },
           whatThisDirectionEmphasizes: { type: 'string' },
@@ -539,6 +540,7 @@ export const conceptCandidatesJsonSchema = {
         required: [
           'conceptId',
           'rfpConceptType',
+          'secondaryRfpConceptTypes',
           'strategicDirectionType',
           'strategicDirectionLabel',
           'whatThisDirectionEmphasizes',
