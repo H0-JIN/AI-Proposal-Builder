@@ -711,7 +711,7 @@ function collectConstraintTerms(analysis?: AnalysisResult) {
 }
 
 function candidateName(candidate: ConceptCandidate) {
-  return candidate.repairedProposalCoreConceptName || candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
+  return candidate.finalConceptName || candidate.repairedProposalCoreConceptName || candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
 }
 
 function sourceDisplayedConceptName(candidate: ConceptCandidate) {
@@ -720,12 +720,12 @@ function sourceDisplayedConceptName(candidate: ConceptCandidate) {
 
 export function getPresentationConceptName(candidate?: ConceptCandidate) {
   if (!candidate) return '';
-  return candidate.repairedProposalCoreConceptName || candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
+  return candidate.finalConceptName || candidate.repairedProposalCoreConceptName || candidate.proposalCoreConceptName || candidate.conceptName || candidate.conceptTitle || candidate.conceptNameEN || candidate.conceptNameKR || '';
 }
 
 export function getConceptTagline(candidate?: ConceptCandidate) {
   if (!candidate) return '';
-  return candidate.proposalCoreConceptSlogan || candidate.conceptSlogan || candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition || '';
+  return candidate.finalConceptSlogan || candidate.proposalCoreConceptSlogan || candidate.conceptSlogan || candidate.conceptTagline || candidate.subtitle || candidate.oneLineDefinition || '';
 }
 
 export function getConceptDefinition(candidate?: ConceptCandidate) {
