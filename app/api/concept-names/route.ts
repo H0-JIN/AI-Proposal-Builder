@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { conceptNameOptionsJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptDevelopmentLogic, ConceptNameOptionsResult, ProjectInput, ProposalNarrative } from '@/lib/types';
+import type { AnalysisResult, BrandExperienceMatrixItem, ConceptCandidate, ConceptDevelopmentLogic, ConceptNameOptionsResult, EntityDifferentiationItem, MatrixType, ProjectInput, ProposalNarrative } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
+import { getActiveMatrix, sanitizeConceptContextByRfpType } from '@/lib/conceptContextSanitizer';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,8 +45,18 @@ function fallbackOptions(direction: ConceptCandidate): ConceptNameOptionsResult 
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: unknown; relevantMatrix?: unknown; matrixType?: string; languageMode?: string };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; languageMode?: string };
     if (!body.input || !body.analysis || !body.selectedDirection) return json({ error: '프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.' }, { status: 400 });
+
+    const sanitizedContext = sanitizeConceptContextByRfpType({
+      primaryRfpConceptType: body.selectedDirection.rfpConceptType || body.analysis.primaryRfpConceptType || 'unknown',
+      rawPrimaryRfpConceptType: body.analysis.primaryRfpConceptType,
+      matrixType: body.matrixType ?? body.analysis.matrixType,
+      rawMatrixType: body.matrixType ?? body.analysis.matrixType,
+      entityDifferentiationMatrix: body.entityDifferentiationMatrix,
+      brandExperienceMatrix: body.brandExperienceMatrix ?? (body.matrixType === 'brandExperienceMatrix' ? body.relevantMatrix as BrandExperienceMatrixItem[] : undefined),
+    });
+    const activeMatrix = getActiveMatrix(sanitizedContext) ?? body.relevantMatrix ?? null;
 
     const system = [
       'You are a senior Korean proposal concept naming director.',
@@ -57,9 +68,12 @@ export async function POST(request: Request) {
 
     const user = `프로젝트: ${body.input.projectName}\n클라이언트: ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
 Selected secondaryRfpConceptTypes: ${body.selectedDirection.secondaryRfpConceptTypes?.join(' / ') || 'none'}
-Relevant Matrix Type: ${body.matrixType || (body.selectedDirection.rfpConceptType === 'multi_entity_pavilion' ? 'entityDifferentiationMatrix' : (body.selectedDirection.rfpConceptType === 'visitor_center_or_tour' || body.selectedDirection.rfpConceptType === 'single_brand_experience') ? 'brandExperienceMatrix' : 'none')}
+Relevant Matrix Type: ${sanitizedContext.matrixType}
+Active Matrix Type: ${sanitizedContext.activeMatrixType}
+Sanitizer Applied: ${sanitizedContext.sanitizerApplied}
+Sanitizer Reason: ${sanitizedContext.sanitizerReason}
 Selected Direction Lens: ${body.selectedDirection.strategicDirectionLabel || body.selectedDirection.strategicDirectionType}
-Winning Thesis / Concept Leap / Signature Proof Idea 포함 전략 방향 JSON: ${compact(body.selectedDirection, 4500)}\nConcept Development Logic: ${compact(body.conceptDevelopmentLogic, 2600)}\nRelevant Matrix Only: ${compact(body.relevantMatrix ?? body.entityDifferentiationMatrix, 2200)}\nLanguage Mode: ${body.languageMode || 'bilingual'}\nProposal Narrative: ${compact(body.proposalNarrative, 2200)}\n\n요구사항:\n- options는 반드시 8~12개.\n- naming style을 다양화: direct strategic, metaphor-based, spatial/system-based, action-oriented, symbolic, English global title if supported, Korean title if supported, bilingual if useful.\n- 10개가 같은 단어 변형처럼 보이면 실패.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsRfp, coverTitleScore, memorabilityScore, rfpSpecificityScore, expandabilityScore, risk를 작성.\n- conceptName은 표지 제목으로 쓸 수 있어야 하며 임시 전략 방향명이 아니다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
+Winning Thesis / Concept Leap / Signature Proof Idea 포함 전략 방향 JSON: ${compact(body.selectedDirection, 4500)}\nConcept Development Logic: ${compact(body.conceptDevelopmentLogic, 2600)}\nRelevant Matrix Only: ${compact(activeMatrix, 2200)}\nLanguage Mode: ${body.languageMode || 'bilingual'}\nProposal Narrative: ${compact(body.proposalNarrative, 2200)}\n\n요구사항:\n- options는 반드시 8~12개.\n- naming style을 다양화: direct strategic, metaphor-based, spatial/system-based, action-oriented, symbolic, English global title if supported, Korean title if supported, bilingual if useful.\n- 10개가 같은 단어 변형처럼 보이면 실패.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsRfp, coverTitleScore, memorabilityScore, rfpSpecificityScore, expandabilityScore, risk를 작성.\n- conceptName은 표지 제목으로 쓸 수 있어야 하며 임시 전략 방향명이 아니다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
 - matrixType이 entityDifferentiationMatrix가 아니면 Entity Differentiation Matrix, 역할 구분, 통합+역할 차별화, 상징적 리더십을 네이밍 근거로 사용하지 말라.
 - visitor_center_or_tour는 brand world, visitor journey, process/proof, sensory experience, memory after visit에 기반하고 multi-entity role separation, pavilion leadership, stakeholder integration으로 네이밍하지 말라.
 - multi_entity_pavilion만 shared pavilion identity, entity/domain role clarity, unified system logic, symbolic group presence, collaborative proof 기반 네이밍을 허용한다.`;
