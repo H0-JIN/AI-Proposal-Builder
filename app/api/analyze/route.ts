@@ -1,12 +1,24 @@
 import { NextResponse } from 'next/server';
 import { analysisJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ProjectInput, RetrievalEvidenceItem } from '@/lib/types';
+import type { AnalysisResult, MatrixType, ProjectInput, RetrievalEvidenceItem, RfpConceptType } from '@/lib/types';
 import type { DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { buildEvidenceItems, flattenCategoryEvidenceGroups, formatCategoryEvidenceGroupsForPrompt, retrieveCategoryEvidenceGroups } from '@/lib/rag';
 import { refineAnalysisConfirmationNeeds } from '@/lib/confirmationNeeds';
 import { buildProposalStructureGuard } from '@/lib/proposalStructureGuard';
+
+
+function inferAnalysisRfpGate(analysis: AnalysisResult): { primaryRfpConceptType: RfpConceptType; matrixType: MatrixType; selectedDirectionLensSet: string[] } {
+  const text = [analysis.projectOverview, analysis.clientChallenge, analysis.targetInfo, analysis.spatialCondition, analysis.contentCondition, analysis.operationCondition, ...(analysis.requiredItems ?? []), ...(analysis.requiredScope ?? []), ...(analysis.scopeOfWork ?? []), ...(analysis.requiredDeliverables ?? []), ...(analysis.evaluationCriteria ?? []), ...(analysis.productInfo ?? [])].filter(Boolean).join(' ');
+  const visitorOrBrand = /방문자센터|홍보관|체험관|전시관|visitor\s*center|brand\s*tour|factory\s*tour|tour|투어|견학|showroom|쇼룸|브랜드\s*경험|brand\s*experience/i.test(text);
+  const multiEntity = /공동관|공동\s*부스|공동\s*전시|파빌리온|pavilion|joint\s*(?:booth|pavilion|exhibition)|national\s*pavilion|shared\s*exhibition|consortium|컨소시엄|참여기업|참여\s*기관|협력사|계열사|기관별|기업별|브랜드별|도메인별|(?:여러|다수|복수|multiple|multi).*(?:기업|회사|브랜드|기관|stakeholder|이해관계자|business\s*unit|domain|도메인)|통합.*(?:구분|차별|역할)|(?:구분|차별|역할).*통합|unified.*(?:differentiated|role)/i.test(text);
+  if (multiEntity) return { primaryRfpConceptType: 'multi_entity_pavilion', matrixType: 'entityDifferentiationMatrix', selectedDirectionLensSet: ['통합 아이덴티티', '통합+역할 차별화', '상징적 리더십'] };
+  if (visitorOrBrand) return { primaryRfpConceptType: /방문자센터|홍보관|체험관|전시관|visitor\s*center|tour|투어|견학|factory\s*tour/i.test(text) ? 'visitor_center_or_tour' : 'single_brand_experience', matrixType: 'brandExperienceMatrix', selectedDirectionLensSet: ['브랜드 세계관 몰입', '프로세스 신뢰 증명', '방문객 전환', '제품 가치 경험', '시그니처 기억'] };
+  if (/제품|상품|product|demo|시연|기능|성능/i.test(text)) return { primaryRfpConceptType: 'product_experience_space', matrixType: 'productExperienceMatrix', selectedDirectionLensSet: ['제품 가치 증명', '사용자 체감 전환', '히어로 데모'] };
+  if (/운영|동선|등록|안전|인력|operation|logistics/i.test(text)) return { primaryRfpConceptType: 'operation_heavy_event', matrixType: 'operationTrustMatrix', selectedDirectionLensSet: ['안정 실행', '서비스 경험', '운영 신뢰 증명'] };
+  return { primaryRfpConceptType: 'unknown', matrixType: 'none', selectedDirectionLensSet: [] };
+}
 
 export async function POST(request: Request) {
   try {
@@ -83,9 +95,13 @@ ${input.briefText}`,
 
     const refinedResult = refineAnalysisConfirmationNeeds(result, documentChunks);
     const structureGuard = buildProposalStructureGuard(input, refinedResult);
+    const rfpGate = inferAnalysisRfpGate(refinedResult);
     const guardedResult: AnalysisResult = {
       ...refinedResult,
       proposalScopeTypes: structureGuard.proposalScopeTypes,
+      primaryRfpConceptType: rfpGate.primaryRfpConceptType,
+      matrixType: rfpGate.matrixType,
+      selectedDirectionLensSet: rfpGate.selectedDirectionLensSet,
       proposalStructureGuard: [
         refinedResult.proposalStructureGuard,
         structureGuard.proposalScopeTypes.includes('contentDevelopment')

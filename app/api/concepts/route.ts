@@ -331,6 +331,18 @@ interface StrategicDirectionPlanItem {
 
 const MULTI_ENTITY_LEAKAGE_PATTERN = /통합\s*(?:중심|아이덴티티|\+|\+개별)|통합\+역할|역할\s*(?:구분|차별화)|각\s*대상의\s*역할|상징적\s*리더십|Entity\s*Differentiation\s*Matrix|entity\s*role\s*matrix|unified\s*\+\s*differentiated\s*roles|symbolic\s*leadership|role\s*separation|entity\s*role\s*matrix/i;
 
+function selectedDirectionLensSet(plan: StrategicDirectionPlanItem[]) {
+  return plan.map((item) => item.label);
+}
+
+function summarizeActiveMatrix(matrixType: MatrixType, params: { entityCount: number; brandExperienceMatrix: BrandExperienceMatrixItem[] }) {
+  if (matrixType === 'entityDifferentiationMatrix') return `Entity Differentiation Matrix active (${params.entityCount} rows)`;
+  if (matrixType === 'brandExperienceMatrix') return `Brand Experience Matrix active (${params.brandExperienceMatrix.length} rows): ${params.brandExperienceMatrix.map((item) => item.experienceStage).join(' / ')}`;
+  if (matrixType === 'productExperienceMatrix') return 'Product Experience Matrix active (deterministic gate; no generated rows in this flow)';
+  if (matrixType === 'operationTrustMatrix') return 'Operation Trust Matrix active (deterministic gate; no generated rows in this flow)';
+  return 'No active matrix';
+}
+
 function rfpEvidenceText(analysis: AnalysisResult, narrative: ProposalNarrative) {
   return [
     analysis.projectOverview,
@@ -468,6 +480,26 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
     }
   }
   return gated;
+}
+
+
+function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { primaryType: RfpConceptType; matrixType: MatrixType; plan: StrategicDirectionPlanItem[]; brandExperienceMatrix: BrandExperienceMatrixItem[]; entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix'] }): ConceptCandidatesResult {
+  const activeMatrixSummary = summarizeActiveMatrix(params.matrixType, { entityCount: params.matrixType === 'entityDifferentiationMatrix' ? params.entityMatrix.length : 0, brandExperienceMatrix: params.brandExperienceMatrix });
+  const concepts = result.concepts.map((concept, index) => enforceStrategicDirectionGate(concept, params.plan[index] ?? params.plan[0]));
+  return {
+    ...result,
+    primaryRfpConceptType: params.primaryType,
+    matrixType: params.matrixType,
+    selectedDirectionLensSet: selectedDirectionLensSet(params.plan),
+    activeMatrixSummary,
+    brandExperienceMatrix: params.matrixType === 'brandExperienceMatrix' ? params.brandExperienceMatrix : [],
+    entityDifferentiationMatrix: params.matrixType === 'entityDifferentiationMatrix' ? (result.entityDifferentiationMatrix?.length ? result.entityDifferentiationMatrix : params.entityMatrix) : [],
+    concepts,
+    recommendation: {
+      ...result.recommendation,
+      recommendedDirectionLabel: result.recommendation.recommendedDirectionLabel || concepts.find((concept) => concept.conceptId === result.recommendation.recommendedConceptId)?.strategicDirectionLabel || concepts[0]?.strategicDirectionLabel,
+    },
+  };
 }
 
 function buildFallbackWinningThesis(analysis: AnalysisResult, narrative: ProposalNarrative) {
@@ -817,6 +849,9 @@ export async function POST(request: Request) {
     const strategicDirectionPlan = buildStrategicDirectionPlan(body.analysis, proposalNarrative, hasMultipleEntities);
     const selectedMatrixType = matrixTypeForRfp(selectedRfpConceptType);
     const brandExperienceMatrix = selectedMatrixType === 'brandExperienceMatrix' ? buildBrandExperienceMatrix(body.analysis, proposalNarrative) : [];
+    const directionLensSet = selectedDirectionLensSet(strategicDirectionPlan);
+    const activeMatrixSummary = summarizeActiveMatrix(selectedMatrixType, { entityCount: selectedMatrixType === 'entityDifferentiationMatrix' ? differentiationStrategy.entityDifferentiationMatrix.length : 0, brandExperienceMatrix });
+    console.info('[concepts:gating]', { primaryRfpConceptType: selectedRfpConceptType, matrixType: selectedMatrixType, selectedDirectionLensSet: directionLensSet, activeMatrixSummary });
     const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, hasMultipleEntities);
     const proposalPatternContext = formatProposalPatternsForConceptPrompt(proposalPatternGuidance.patterns, proposalPatternGuidance.avoidanceRules, maxProposalPatterns);
 
@@ -889,7 +924,7 @@ ${JSON.stringify(metadata, null, 2)}
 RFP Concept Type Classification (current RFP evidence only):
 - primaryRfpConceptType: ${selectedRfpConceptType}
 - secondaryRfpConceptTypes: ${rfpConceptTypes.filter((type) => type !== selectedRfpConceptType).join(' / ') || 'none'}
-- selectedDirectionLensSet: ${strategicDirectionPlan.map((item) => item.label).join(' / ')}
+- selectedDirectionLensSet: ${directionLensSet.join(' / ')}
 - matrixType: ${selectedMatrixType}
 - hasMultipleEntities: ${hasMultipleEntities}
 
@@ -933,26 +968,21 @@ Generation order reminder: Hidden Needs → Strategic Approach → Winning Thesi
         timeoutMs: CONCEPT_GENERATION_TIMEOUT_MS,
       });
 
-      let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult({
+      let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({
         ...generated,
         conceptPromptVersion,
-        matrixType: selectedMatrixType,
-        brandExperienceMatrix,
         regenerationId: metadata.regenerationId,
         generationAttempt: metadata.generationAttempt,
         generatedAt: metadata.generatedAt,
-        concepts: generated.concepts.slice(0, maxCandidates).map((concept, index) => enforceStrategicDirectionGate(concept, strategicDirectionPlan[index] ?? strategicDirectionPlan[0])),
-        entityDifferentiationMatrix: selectedMatrixType === 'entityDifferentiationMatrix'
-          ? (generated.entityDifferentiationMatrix?.length ? generated.entityDifferentiationMatrix : differentiationStrategy.entityDifferentiationMatrix)
-          : [],
-      }));
+        concepts: generated.concepts.slice(0, maxCandidates),
+      }, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix })));
       result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules });
       result = repairEntityBalance(result, balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(result, metadata));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'generation timeout';
       const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata);
-      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation({ ...fallbackBase, matrixType: selectedMatrixType, brandExperienceMatrix, entityDifferentiationMatrix: selectedMatrixType === 'entityDifferentiationMatrix' ? fallbackBase.entityDifferentiationMatrix : [] }), { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
+      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation(enforceResultMatrixGate(fallbackBase, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix })), { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(fallback, metadata));
     }
   } catch (error) {

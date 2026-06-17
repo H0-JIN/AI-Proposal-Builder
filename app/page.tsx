@@ -3153,7 +3153,13 @@ export default function Home() {
     setLoading('컨셉명 후보 생성 중...');
     try {
       const selectedDirection = state.selectedStrategicDirection ?? state.selectedConcept.selectedDirection ?? state.selectedConcept;
-      const result = await postJson<ConceptNameOptionsResult>('/api/concept-names', { input: analysisInput, analysis: state.analysis, selectedDirection, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: state.conceptGenerationResult?.matrixType ?? (selectedDirection.rfpConceptType === 'multi_entity_pavilion' ? 'entityDifferentiationMatrix' : (selectedDirection.rfpConceptType === 'visitor_center_or_tour' || selectedDirection.rfpConceptType === 'single_brand_experience') ? 'brandExperienceMatrix' : 'none'), relevantMatrix: state.conceptGenerationResult?.matrixType === 'brandExperienceMatrix' ? state.conceptGenerationResult?.brandExperienceMatrix : state.conceptGenerationResult?.entityDifferentiationMatrix, entityDifferentiationMatrix: state.conceptGenerationResult?.matrixType === 'entityDifferentiationMatrix' ? (state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix) : undefined, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
+      const activeMatrixType = state.conceptGenerationResult?.matrixType ?? (selectedDirection.rfpConceptType === 'multi_entity_pavilion' ? 'entityDifferentiationMatrix' : (selectedDirection.rfpConceptType === 'visitor_center_or_tour' || selectedDirection.rfpConceptType === 'single_brand_experience') ? 'brandExperienceMatrix' : 'none');
+      const activeRelevantMatrix = activeMatrixType === 'brandExperienceMatrix'
+        ? state.conceptGenerationResult?.brandExperienceMatrix
+        : activeMatrixType === 'entityDifferentiationMatrix'
+          ? (state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix)
+          : undefined;
+      const result = await postJson<ConceptNameOptionsResult>('/api/concept-names', { input: analysisInput, analysis: state.analysis, selectedDirection, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: activeMatrixType, relevantMatrix: activeRelevantMatrix, entityDifferentiationMatrix: activeMatrixType === 'entityDifferentiationMatrix' ? activeRelevantMatrix : undefined, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
       setState((current) => ({ ...current, conceptNameOptions: result.options, outline: undefined, slides: undefined }));
     } catch (err) {
       setError(err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.');
@@ -3583,6 +3589,9 @@ export default function Home() {
               </p>
               <p className="mt-3 text-xs font-bold text-blue-700">
                 prompt {state.conceptGenerationResult?.conceptPromptVersion || conceptPromptVersion} · attempt {(state.conceptGenerationResult?.generationAttempt ?? conceptGenerationAttemptRef.current) || '-'} · generated {state.conceptGenerationResult?.generatedAt || (loading.includes('새 후보') ? 'generating...' : '-')}
+              </p>
+              <p className="mt-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-600">
+                primaryRfpConceptType: {state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType || state.conceptCandidates?.[0]?.rfpConceptType || 'unknown'} · matrixType: {state.conceptGenerationResult?.matrixType || state.analysis.matrixType || 'none'} · selectedDirectionLensSet: {(state.conceptGenerationResult?.selectedDirectionLensSet ?? state.analysis.selectedDirectionLensSet ?? []).join(' / ') || 'unknown'} · hasEntityDifferentiationMatrix: {String(state.conceptGenerationResult?.matrixType === 'entityDifferentiationMatrix' && Boolean(state.conceptGenerationResult?.entityDifferentiationMatrix?.length || state.proposalNarrative?.entityDifferentiationMatrix?.length))} · hasBrandExperienceMatrix: {String(state.conceptGenerationResult?.matrixType === 'brandExperienceMatrix' && Boolean(state.conceptGenerationResult?.brandExperienceMatrix?.length))} · activeMatrixSummary: {state.conceptGenerationResult?.activeMatrixSummary || 'none'}
               </p>
               {state.selectedConcept && (
                 <p className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm font-black text-blue-800">
