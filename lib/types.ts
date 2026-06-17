@@ -378,6 +378,7 @@ export interface EntityDifferentiationUse {
 }
 
 export type ConceptNameScopeClassification = 'proposal_level' | 'section_level' | 'content_module_level' | 'product_specific_level' | 'generic_label';
+export type ConceptNameEvidenceLevel = 'proposalLevel' | 'entityLevel' | 'contentDetail' | 'referenceOnly';
 
 export type NameValidationStatus = 'passed' | 'repaired' | 'warning';
 
@@ -506,7 +507,13 @@ export interface ConceptCandidate {
   missingEntities?: string[];
   dominantEntity?: string;
   entityBalanceStatus?: EntityBalanceStatus;
+  dominantEntityInName?: string;
+  productSpecificNameDetected?: boolean;
+  coversWholeRfp?: boolean;
+  conceptNameEvidenceLevel?: ConceptNameEvidenceLevel;
+  repairedName?: boolean;
 }
+
 
 
 export interface ConceptRecommendation {

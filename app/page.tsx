@@ -3560,6 +3560,14 @@ export default function Home() {
                         {concept.coveredEntities?.length ? ` · covered: ${concept.coveredEntities.slice(0, 4).join(' / ')}` : ''}
                       </p>
                     )}
+                    {(concept.conceptNameEvidenceLevel || typeof concept.productSpecificNameDetected === 'boolean' || typeof concept.repairedName === 'boolean' || concept.dominantEntityInName) && (
+                      <p className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-800">
+                        naming source: {concept.conceptNameEvidenceLevel || 'proposalLevel'}
+                        {` · productSpecificNameDetected: ${Boolean(concept.productSpecificNameDetected)}`}
+                        {` · repairedName: ${Boolean(concept.repairedName)}`}
+                        {concept.dominantEntityInName ? ` · dominantEntityInName: ${concept.dominantEntityInName}` : ''}
+                      </p>
+                    )}
                     {(concept.conceptNameKoreanSubtitle || (concept.conceptNameEnglish && concept.conceptNameEnglish !== getPresentationConceptName(concept) ? concept.conceptNameEnglish : '')) && (
                       <p className="mt-2 text-sm font-bold text-slate-500">{concept.conceptNameKoreanSubtitle || concept.conceptNameEnglish}</p>
                     )}

@@ -1,4 +1,5 @@
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptNameScopeClassification, ProposalNarrative } from './types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptNameEvidenceLevel, ConceptNameScopeClassification, ProposalNarrative } from './types';
+import type { DocumentChunk } from './rag';
 
 
 export const GENERIC_CONCEPT_WORD_PENALTY_LIST = [
@@ -584,7 +585,7 @@ function nameMechanismScore(candidate: ConceptCandidate, name: string) {
 }
 
 
-function analysisEvidenceText(analysis?: AnalysisResult, proposalNarrative?: ProposalNarrative) {
+function proposalLevelEvidenceText(analysis?: AnalysisResult, proposalNarrative?: ProposalNarrative) {
   return normalizedText([
     analysis?.projectOverview,
     analysis?.clientChallenge,
@@ -598,8 +599,6 @@ function analysisEvidenceText(analysis?: AnalysisResult, proposalNarrative?: Pro
     ...(analysis?.evaluationCriteria ?? []),
     ...(analysis?.requiredItems ?? []),
     ...(analysis?.requiredScope ?? []),
-    ...(analysis?.productInfo ?? []),
-    ...(analysis?.productFeatures ?? []).flatMap((feature) => [feature.product, feature.keyFeature, feature.valueProposition]),
     ...(analysis?.kpiObjectives ?? []),
     ...(analysis?.constraints ?? []),
     ...(analysis?.schedule ?? []),
@@ -608,6 +607,10 @@ function analysisEvidenceText(analysis?: AnalysisResult, proposalNarrative?: Pro
     proposalNarrative?.strategicOpportunity,
     proposalNarrative?.differentiationPrinciple,
   ].filter(Boolean).join(' '));
+}
+
+function analysisEvidenceText(analysis?: AnalysisResult, proposalNarrative?: ProposalNarrative) {
+  return proposalLevelEvidenceText(analysis, proposalNarrative);
 }
 
 function hasExplicitRfpGrounding(candidate: ConceptCandidate) {
@@ -652,7 +655,6 @@ function conceptDefinitionCopiesOverview(definition: string, context: { input?: 
 function buildFallbackGrounding(candidate: ConceptCandidate, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
   const analysis = context.analysis;
   return compactUnique([
-    analysis?.productInfo?.[0],
     analysis?.requiredItems?.[0],
     analysis?.requiredScope?.[0],
     analysis?.scopeOfWork?.[0],
@@ -902,7 +904,7 @@ function centralHeroTerms(context: { analysis?: AnalysisResult }) {
   });
 }
 
-function productSpecificTerms(context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
+function productSpecificTerms(context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[] }) {
   const analysis = context.analysis;
   const entityTerms = (context.proposalNarrative?.entityDifferentiationMatrix ?? []).flatMap((item) => [
     item.entityName,
@@ -911,6 +913,9 @@ function productSpecificTerms(context: { analysis?: AnalysisResult; proposalNarr
     item.spatialOrContentRole,
     item.experienceMechanism,
   ]);
+  const detailChunkTerms = (context.documentChunks ?? [])
+    .filter((chunk) => chunk.documentType === 'reference' || chunk.category === 'productFeature' || chunk.category === 'referenceOnly' || chunk.categories?.some((category) => ['productFeature', 'designDirection', 'backgroundInsight', 'referenceOnly', 'existingAsset'].includes(category)))
+    .flatMap((chunk) => [chunk.sectionTitle, chunk.chunkText]);
   return compactUnique([
     ...(analysis?.productInfo ?? []),
     ...(analysis?.productFeatures ?? []).flatMap((feature) => [feature.product, feature.keyFeature]),
@@ -921,12 +926,13 @@ function productSpecificTerms(context: { analysis?: AnalysisResult; proposalNarr
     analysis?.contentCondition,
     analysis?.spatialCondition,
     ...entityTerms,
+    ...detailChunkTerms,
   ].flatMap((value) => normalizeSafeNameSeed(String(value ?? '')).split(/\s+/)), 80)
     .filter((token) => token.length >= 2 && token.length <= 14)
     .filter((token) => !centralHeroTerms(context).some((hero) => normalizedText(hero).includes(normalizedText(token))));
 }
 
-function isProductSpecificName(name: string, context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative }) {
+function isProductSpecificName(name: string, context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[] }) {
   const normalized = normalizedText(name);
   const terms = productSpecificTerms(context);
   const hits = terms.filter((term) => normalized.includes(term.toLowerCase()));
@@ -959,7 +965,7 @@ function hasProposalLevelScope(candidate: ConceptCandidate, context: { analysis?
   );
 }
 
-function buildScopeValidation(candidate: ConceptCandidate, context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative } = {}) {
+function buildScopeValidation(candidate: ConceptCandidate, context: { analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[] } = {}) {
   const mechanism = candidate.conceptMechanism;
   const name = candidateName(candidate);
   return {
@@ -981,10 +987,10 @@ function inferGlobalNamingMode(context: { analysis?: AnalysisResult }) {
 
 export function validateConceptNaming(
   result: ConceptCandidatesResult,
-  context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] } = {},
+  context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[]; avoidanceRules?: string[] } = {},
 ) {
   const constraintTerms = collectConstraintTerms(context.analysis);
-  const rfpEvidenceText = analysisEvidenceText(context.analysis, context.proposalNarrative);
+  const rfpEvidenceText = proposalLevelEvidenceText(context.analysis, context.proposalNarrative);
   const violations: string[] = [];
 
   result.concepts.forEach((candidate, index) => {
@@ -993,6 +999,8 @@ export function validateConceptNaming(
     const label = `${candidate.conceptId || `concept-${index + 1}`} (${name || 'empty name'})`;
 
     const scopeClassification = classifyConceptNameScope(candidate, context);
+    if (candidate.conceptNameEvidenceLevel && candidate.conceptNameEvidenceLevel !== 'proposalLevel') violations.push(`${label}: conceptNameEvidenceLevel must be proposalLevel.`);
+    if (detectDominantEntityInName(name, context) && (context.proposalNarrative?.entityDifferentiationMatrix?.length ?? 0) > 1) violations.push(`${label}: conceptName is dominated by a single entity name.`);
     if (scopeClassification !== 'proposal_level') violations.push(`${label}: conceptNameScopeClassification is ${scopeClassification}; only proposal_level is valid for proposalCoreConceptName.`);
     if (!hasProposalLevelScope(candidate, context)) violations.push(`${label}: conceptScopeValidation must prove proposal-level coverage across strategy, space, content, media/interaction, operation/proof, main entities/scope, and non-section naming.`);
     if (isProductSpecificName(name, context)) violations.push(`${label}: conceptName is based mainly on one product, equipment type, technology, zone, content module, interaction, participant entity, or RFP subsection instead of the whole proposal.`);
@@ -1119,7 +1127,7 @@ function buildSafeConceptNamesFromMetaphor(candidate: ConceptCandidate, context:
   return globalMode ? [...englishNames, ...koreanNames] : [...koreanNames, ...englishNames];
 }
 
-function applyConceptName(candidate: ConceptCandidate, conceptName: string, warning?: string, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative } = {}, reason = 'Displayed core concept name failed proposal-level validation and was repaired deterministically.'): ConceptCandidate {
+function applyConceptName(candidate: ConceptCandidate, conceptName: string, warning?: string, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[] } = {}, reason = 'Displayed core concept name failed proposal-level validation and was repaired deterministically.'): ConceptCandidate {
   const rfpGrounding = buildFallbackGrounding(candidate, context);
   const conceptDefinition = conceptDefinitionCopiesOverview(getConceptDefinition(candidate), context)
     ? buildDefinitionFromMechanism(candidate)
@@ -1141,7 +1149,7 @@ function applyConceptName(candidate: ConceptCandidate, conceptName: string, warn
     conceptNameKoreanSubtitle: /^[\x00-\x7F]+$/.test(conceptName) ? (candidate.conceptNameKoreanSubtitle || getConceptTagline(candidate)) : '',
     conceptSloganKorean: candidate.conceptSloganKorean || getConceptTagline(candidate),
     conceptSloganEnglish: candidate.conceptSloganEnglish || '',
-    conceptScopeValidation: { ...buildScopeValidation({ ...candidate, proposalCoreConceptName: conceptName, conceptName } as ConceptCandidate), notProductSpecificOnly: !isProductSpecificName(conceptName, context) },
+    conceptScopeValidation: { ...buildScopeValidation({ ...candidate, proposalCoreConceptName: conceptName, conceptName } as ConceptCandidate, context), notProductSpecificOnly: !isProductSpecificName(conceptName, context) },
     conceptNameScopeClassification: 'proposal_level',
     rfpGrounding: candidate.rfpGrounding?.length ? candidate.rfpGrounding : rfpGrounding,
     conceptMetaphorSource: {
@@ -1152,7 +1160,7 @@ function applyConceptName(candidate: ConceptCandidate, conceptName: string, warn
         whyThisCanBecomeAConceptTitle: '',
       }),
       metaphorSeed: conceptName,
-      sourceTypes: candidate.conceptMetaphorSource?.sourceTypes?.length ? candidate.conceptMetaphorSource.sourceTypes : ['product/service logic', 'evaluation criteria'],
+      sourceTypes: candidate.conceptMetaphorSource?.sourceTypes?.length ? candidate.conceptMetaphorSource.sourceTypes.filter((sourceType) => sourceType !== 'product/service logic' && sourceType !== 'content mechanism') : ['project type', 'evaluation criteria'],
       rfpEvidence: candidate.conceptMetaphorSource?.rfpEvidence?.length ? candidate.conceptMetaphorSource.rfpEvidence : rfpGrounding,
     },
     whyThisNameFitsRfp: candidate.whyThisNameFitsRfp || `${conceptName}은 RFP의 구체 근거를 제안 판단 장치로 묶습니다.`,
@@ -1160,6 +1168,11 @@ function applyConceptName(candidate: ConceptCandidate, conceptName: string, warn
     whyThisCanOrganizeProposal: candidate.whyThisCanOrganizeProposal || candidate.conceptMechanism?.whyThisCanBecomeAConcept || '공간·콘텐츠·미디어·운영·증명 장표의 상위 기준으로 확장됩니다.',
     namingGuardWarning: warning,
     nameValidationStatus: warning ? 'warning' : 'repaired',
+    dominantEntityInName: detectDominantEntityInName(conceptName, context),
+    productSpecificNameDetected: isProductSpecificName(conceptName, context),
+    coversWholeRfp: true,
+    conceptNameEvidenceLevel: 'proposalLevel' as ConceptNameEvidenceLevel,
+    repairedName: true,
     nameValidation: {
       nameValidationStatus: warning ? 'warning' : 'repaired',
       originalName,
@@ -1169,7 +1182,15 @@ function applyConceptName(candidate: ConceptCandidate, conceptName: string, warn
   });
 }
 
-function getCandidateViolations(candidate: ConceptCandidate, index: number, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] }) {
+function detectDominantEntityInName(name: string, context: { proposalNarrative?: ProposalNarrative }) {
+  const normalized = normalizedText(name);
+  const hits = (context.proposalNarrative?.entityDifferentiationMatrix ?? [])
+    .map((item) => item.entityName)
+    .filter((entity) => entity && normalized.includes(entity.toLowerCase()));
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
+function getCandidateViolations(candidate: ConceptCandidate, index: number, context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[]; avoidanceRules?: string[] }) {
   const result = validateConceptNaming({
     hiddenNeeds: {} as ConceptCandidatesResult['hiddenNeeds'],
     strategicApproach: {} as ConceptCandidatesResult['strategicApproach'],
@@ -1184,7 +1205,7 @@ function getCandidateViolations(candidate: ConceptCandidate, index: number, cont
 
 export function applyNonBlockingConceptNamingGuard(
   result: ConceptCandidatesResult,
-  context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; avoidanceRules?: string[] } = {},
+  context: { input?: { projectName?: string; clientName?: string }; analysis?: AnalysisResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[]; avoidanceRules?: string[] } = {},
 ): ConceptCandidatesResult {
   const repairedConceptIds = new Set<string>();
   const warningConceptIds = new Set<string>();
@@ -1204,6 +1225,11 @@ export function applyNonBlockingConceptNamingGuard(
           repairedName: displayedName,
           reason: 'Displayed core concept name passed proposal-level scope validation.',
         },
+        dominantEntityInName: detectDominantEntityInName(displayedName, context),
+        productSpecificNameDetected: false,
+        coversWholeRfp: true,
+        conceptNameEvidenceLevel: 'proposalLevel' as ConceptNameEvidenceLevel,
+        repairedName: false,
       });
     }
 
@@ -1225,6 +1251,11 @@ export function applyNonBlockingConceptNamingGuard(
       ...repairedCandidate,
       namingGuardWarning: '콘셉트명이 약한 제품/모듈/섹션 라벨로 감지되어 대체 이름으로 자동 보정했습니다. 세부 기준은 추가 확인이 필요합니다.',
       nameValidationStatus: 'warning' as const,
+      dominantEntityInName: detectDominantEntityInName(safeName, context),
+      productSpecificNameDetected: isProductSpecificName(safeName, context),
+      coversWholeRfp: !isProductSpecificName(safeName, context),
+      conceptNameEvidenceLevel: 'proposalLevel' as ConceptNameEvidenceLevel,
+      repairedName: true,
       nameValidation: {
         nameValidationStatus: 'warning' as const,
         originalName: sourceDisplayedConceptName(candidate).trim(),
