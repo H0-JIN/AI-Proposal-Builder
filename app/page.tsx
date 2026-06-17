@@ -3545,12 +3545,15 @@ export default function Home() {
                     {concept.namingGuardWarning && (
                       <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 확인 권장</p>
                     )}
-                    <p className="mt-2 inline-flex w-fit rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">{concept.strategicDirectionLabel || '전략 옵션'}</p>
+                    <p className="mt-2 inline-flex w-fit rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">Direction: {concept.strategicDirectionLabel || '전략 옵션'}</p>
+                    {(concept.conceptNameKoreanSubtitle || (concept.conceptNameEnglish && concept.conceptNameEnglish !== getPresentationConceptName(concept) ? concept.conceptNameEnglish : '')) && (
+                      <p className="mt-2 text-sm font-bold text-slate-500">{concept.conceptNameKoreanSubtitle || concept.conceptNameEnglish}</p>
+                    )}
                     <p className="mt-3 text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
                     <dl className="mt-4 flex-1 space-y-3 text-sm leading-6 text-slate-700">
                       <div><dt className="font-black text-slate-950">방향이 강조하는 것</dt><dd>{conciseText(concept.whatThisDirectionEmphasizes || getConceptDefinition(concept), 130)}</dd></div>
                       <div><dt className="font-black text-slate-950">선택하면 좋은 경우</dt><dd>{conciseText(concept.whenToChooseThisDirection, 130)}</dd></div>
-                      <div><dt className="font-black text-slate-950">Core Concept</dt><dd>{getPresentationConceptName(concept)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Core Concept Name</dt><dd>{getPresentationConceptName(concept)}</dd></div>
                       <div><dt className="font-black text-slate-950">One-line Slogan</dt><dd>{conciseText(getConceptTagline(concept), 120)}</dd></div>
                       {conceptKeywordChips(concept).length > 0 && (
                         <div>
