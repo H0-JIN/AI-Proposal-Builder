@@ -498,6 +498,10 @@ export interface ConceptCandidate {
   strategicDirectionLabel: string;
   whatThisDirectionEmphasizes: string;
   whenToChooseThisDirection: string;
+  directionSource?: { rfpEvidence: string; proposalPatternLearning: string; lostPatternAvoidance: string };
+  failurePatternAvoided?: string;
+  winningPatternUsed?: string;
+  directionDebug?: { source: string; failurePatternAvoided: string; winningPatternUsed: string; confidence: string };
   proposalCoreConceptName: string;
   repairedProposalCoreConceptName?: string;
   nameValidationStatus?: NameValidationStatus;
@@ -619,6 +623,14 @@ export interface ConceptCandidatesResult {
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
+  directionValidation?: {
+    noHardcodedPresetLabels: boolean;
+    eachDirectionHasPatternReason: boolean;
+    eachDirectionHasRfpEvidence: boolean;
+    directionsAreDistinct: boolean;
+    lostPatternUsedAsAvoidanceOnly: boolean;
+    wonPatternUsedAsPositiveReference: boolean;
+  };
   namingGuardNotice?: ConceptNamingGuardNotice;
   evidenceBalance?: {
     status: EntityBalanceStatus;
