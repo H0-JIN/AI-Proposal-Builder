@@ -79,8 +79,8 @@ function mergeDuplicateSlideRoles(slides: SlideOutline[] = []) {
   return merged.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
 }
 
-function ensureEntityDifferentiationOutlineSlide(slides: SlideOutline[], differentiationStrategy: ReturnType<typeof buildRfpDifferentiationStrategy>) {
-  if (!differentiationStrategy.hasMultipleEntities || differentiationStrategy.entityDifferentiationMatrix.length < 2) return slides;
+function ensureEntityDifferentiationOutlineSlide(slides: SlideOutline[], differentiationStrategy: ReturnType<typeof buildRfpDifferentiationStrategy>, analysis: AnalysisResult) {
+  if (analysis.primaryRfpConceptType !== 'multi_entity_pavilion' || analysis.matrixType !== 'entityDifferentiationMatrix' || !differentiationStrategy.hasMultipleEntities || differentiationStrategy.entityDifferentiationMatrix.length < 2) return slides;
   const hasDifferentiationSlide = slides.some((slide) => /entity|differentiation|role.*matrix|message.*matrix|차별화|역할.*매트릭스|메시지.*매트릭스/i.test(`${slide.slideType} ${slide.slideTitle} ${slide.slideRole} ${slide.keyMessage}`));
   if (hasDifferentiationSlide) return slides.map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
 
@@ -260,7 +260,7 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
 - Operation Plan 장표 허용: ${structureGuard.hasExplicitOperationPlan ? '예' : '아니오'}`,
     });
 
-    const sanitizedSlides = mergeDuplicateSlideRoles(ensureEntityDifferentiationOutlineSlide(sanitizeOutlineSlides(result.slides), differentiationStrategy));
+    const sanitizedSlides = mergeDuplicateSlideRoles(ensureEntityDifferentiationOutlineSlide(sanitizeOutlineSlides(result.slides), differentiationStrategy, body.analysis));
     const expandedSlides = expandExperiencePlanOutline(sanitizedSlides, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
     const coverageCheckedSlides = mergeDuplicateSlideRoles(ensureRfpRequirementCoverage(removeInternalConceptComparisonSlides(expandedSlides), body.analysis, body.documentChunks ?? []));
     const guardedSlides = applyReferenceGuardToOutline(
@@ -270,7 +270,7 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
       { allowReferenceSlides },
     );
 
-    return NextResponse.json(mergeDuplicateSlideRoles(ensureEntityDifferentiationOutlineSlide(guardedSlides, differentiationStrategy)));
+    return NextResponse.json(mergeDuplicateSlideRoles(ensureEntityDifferentiationOutlineSlide(guardedSlides, differentiationStrategy, body.analysis)));
   } catch (error) {
     const message = error instanceof Error ? error.message : '아웃라인 생성 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });

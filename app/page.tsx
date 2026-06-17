@@ -1259,8 +1259,8 @@ function ProposalNarrativePanel({ narrative }: { narrative?: ProposalNarrative }
 }
 
 
-function EntityDifferentiationMatrixPanel({ matrix, matrixType }: { matrix?: ConceptCandidatesResult['entityDifferentiationMatrix']; matrixType?: ConceptCandidatesResult['matrixType'] }) {
-  if (matrixType !== 'entityDifferentiationMatrix' || !matrix?.length) return null;
+function EntityDifferentiationMatrixPanel({ matrix, matrixType, primaryRfpConceptType }: { matrix?: ConceptCandidatesResult['entityDifferentiationMatrix']; matrixType?: ConceptCandidatesResult['matrixType']; primaryRfpConceptType?: ConceptCandidatesResult['primaryRfpConceptType'] }) {
+  if (matrixType !== 'entityDifferentiationMatrix' || primaryRfpConceptType !== 'multi_entity_pavilion' || !matrix?.length) return null;
 
   return (
     <div className="mt-6 rounded-3xl border border-emerald-100 bg-emerald-50 p-5 text-emerald-950">
@@ -3163,7 +3163,7 @@ export default function Home() {
         brandExperienceMatrix: state.conceptGenerationResult?.brandExperienceMatrix,
       });
       const activeRelevantMatrix = getActiveMatrix(sanitizedNamingContext) ?? undefined;
-      const result = await postJson<ConceptNameOptionsResult>('/api/concept-names', { input: analysisInput, analysis: state.analysis, selectedDirection, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, relevantMatrix: activeRelevantMatrix, brandExperienceMatrix: sanitizedNamingContext.matrixType === 'brandExperienceMatrix' ? state.conceptGenerationResult?.brandExperienceMatrix : undefined, entityDifferentiationMatrix: sanitizedNamingContext.matrixType === 'entityDifferentiationMatrix' ? sanitizedNamingContext.entityDifferentiationMatrix : undefined, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
+      const result = await postJson<ConceptNameOptionsResult>('/api/concept-names', { input: analysisInput, analysis: state.analysis, selectedDirection, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, relevantMatrix: activeRelevantMatrix, brandExperienceMatrix: sanitizedNamingContext.matrixType === 'brandExperienceMatrix' ? state.conceptGenerationResult?.brandExperienceMatrix : undefined, entityDifferentiationMatrix: sanitizedNamingContext.matrixType === 'entityDifferentiationMatrix' && sanitizedNamingContext.primaryRfpConceptType === 'multi_entity_pavilion' ? sanitizedNamingContext.entityDifferentiationMatrix : undefined, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
       setState((current) => ({ ...current, conceptNameOptions: result.options, outline: undefined, slides: undefined }));
     } catch (err) {
       setError(err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.');
@@ -3615,7 +3615,7 @@ export default function Home() {
             )}
             <ProposalNarrativePanel narrative={state.proposalNarrative} />
             <ConceptDevelopmentLogicPanel logic={state.conceptDevelopmentLogic} />
-            <EntityDifferentiationMatrixPanel matrix={state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix} matrixType={state.conceptGenerationResult?.matrixType} />
+            <EntityDifferentiationMatrixPanel matrix={state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix} matrixType={state.conceptGenerationResult?.matrixType} primaryRfpConceptType={state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType} />
             <BrandExperienceMatrixPanel matrix={state.conceptGenerationResult?.brandExperienceMatrix} matrixType={state.conceptGenerationResult?.matrixType} />
             <ConceptRecommendationPanel recommendation={state.conceptRecommendation} />
             <div className="mt-6 grid gap-4 lg:grid-cols-3">

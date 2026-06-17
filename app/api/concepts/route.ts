@@ -342,6 +342,24 @@ const MULTI_ENTITY_LEAKAGE_PATTERN = /국가관|국격|국가\s*(?:브랜드|파
 const VISITOR_BRAND_OVERRIDE_PATTERN = /견학룸|견학|브랜드\s*체험|브랜드\s*공간|공장\s*견학|방문객\s*체험|제품\s*이해|제조\s*공정|브랜드\s*스토리|체험룸|쇼룸|visitor\s*room|brand\s*experience|factory\s*tour|showroom/i;
 const BLOCKED_MULTI_ENTITY_TERMS = ['국가', '국격', '국가관', '계열사', '공동관', '통합 아이덴티티', '통합+역할 차별화', '역할 차별화', '역할 구분', '상징적 리더십', '리더십', 'pavilion', 'national pavilion', 'joint pavilion', 'unified identity', 'role differentiation', 'symbolic leadership'];
 
+const TYPE_SPECIFIC_FALLBACK_LABELS: Record<RfpConceptType, string[]> = {
+  visitor_center_or_tour: ['브랜드 세계관 몰입', '제조/공정 신뢰 증명', '방문객 체험 전환', '제품 가치 체감', '기억되는 시그니처 장면'],
+  single_brand_experience: ['브랜드 세계관 몰입', '제조/공정 신뢰 증명', '방문객 체험 전환', '제품 가치 체감', '기억되는 시그니처 장면'],
+  product_experience_space: ['제품 가치 증명', '사용자 체감 경험', '히어로 데모', '사용 맥락 이해', '제품 신뢰 강화'],
+  pop_up_or_campaign: ['공유 가능한 순간', '참여 의식', '브랜드 이미지 전환', '방문 후 확산', '시그니처 포토/미디어 경험'],
+  content_media_experience: ['메시지 구조화', '히어로 미디어 장면', '관객 참여', '감정/인식 전환', '콘텐츠 기억 강화'],
+  operation_heavy_event: ['실행 안정성', '서비스 경험', '운영 신뢰', '리스크 대응', '현장 운영 완성도'],
+  multi_entity_pavilion: ['통합 브랜드/관 정체성', '참여 주체별 역할 명확화', '상징적 임팩트', '도메인/시스템 구조화', '공동 성과 증명'],
+  exhibition_booth: ['핵심 메시지 집중', '방문 동선 전환', '현장 참여 강화', '시그니처 전시 장면', '후속 기억 확산'],
+  public_sector_exhibition: ['공공 메시지 이해', '시민 체감 경험', '정책 가치 증명', '참여 행동 전환', '신뢰 기반 확산'],
+  technology_showcase: ['기술 가치 증명', '사용 시나리오 체감', '히어로 솔루션 데모', '미래 적용 이해', '혁신 신뢰 강화'],
+  unknown: ['핵심 가치 증명', '대상 경험 전환', '실행 근거 강화', '시그니처 장면 설계', '방문 후 기억 강화'],
+};
+
+function fallbackLabelsForType(type: RfpConceptType) {
+  return TYPE_SPECIFIC_FALLBACK_LABELS[type] ?? TYPE_SPECIFIC_FALLBACK_LABELS.unknown;
+}
+
 function selectedDirectionLensSet(plan: StrategicDirectionPlanItem[]) {
   return plan.map((item) => item.label);
 }
@@ -487,23 +505,26 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
 
   let directions: StrategicDirectionPlanItem[];
   if (conceptType === 'multi_entity_pavilion') {
+    const labels = fallbackLabelsForType(conceptType);
     directions = [
-      mk(1, 'multi_entity_unified_pavilion_frame', '공동 파빌리온 프레임', `여러 주체를 하나의 파빌리온 약속으로 묶되 각 도메인의 기여가 흐려지지 않도록 공통 세계와 대표 proof를 함께 설계합니다. 근거: ${strongestClaimEvidence}`, `RFP가 국가·그룹·연합 전시처럼 하나의 큰 존재감과 통합된 관람 이해를 요구할 때 선택합니다.`, strongestClaimEvidence, positive[0], avoid[0]),
-      mk(2, 'multi_entity_domain_role_system', '도메인 역할 구조화', `참여 주체·기술·콘텐츠 영역의 역할과 관계를 시스템처럼 읽히게 해 파빌리온 안에서 무엇을 왜 봐야 하는지 분명하게 합니다. 근거: ${audienceEvidence}`, `여러 기업·제품·영역이 병렬 나열처럼 보일 위험이 있고, 각 역할의 차이와 연결 방식을 설득해야 할 때 선택합니다.`, audienceEvidence, positive[1] || positive[0], avoid[1] || avoid[0]),
-      mk(3, 'multi_entity_symbolic_capability_proof', '상징적 역량 증명', `공동 존재감, 국가·그룹 리더십, 통합 역량을 상징적 장면과 구체 proof로 동시에 증명합니다. 근거: ${proofEvidence}`, `평가자가 파빌리온의 위상과 실행 신뢰를 함께 보아야 하며 hero scene이 필요한 때 선택합니다.`, proofEvidence, positive[2] || positive[0], avoid[2] || avoid[0]),
+      mk(1, 'multi_entity_unified_pavilion_frame', labels[0], `여러 참여 주체를 하나의 관 정체성으로 묶되 각 도메인의 기여가 흐려지지 않도록 공통 세계와 대표 proof를 함께 설계합니다. 근거: ${strongestClaimEvidence}`, `RFP가 국가·그룹·연합 전시처럼 하나의 큰 존재감과 통합된 관람 이해를 요구할 때 선택합니다.`, strongestClaimEvidence, positive[0], avoid[0]),
+      mk(2, 'multi_entity_domain_role_system', labels[1], `참여 주체·기술·콘텐츠 영역의 책임과 관계를 시스템처럼 읽히게 해 무엇을 왜 봐야 하는지 분명하게 합니다. 근거: ${audienceEvidence}`, `여러 기업·제품·영역이 병렬 나열처럼 보일 위험이 있고, 각 기여의 차이와 연결 방식을 설득해야 할 때 선택합니다.`, audienceEvidence, positive[1] || positive[0], avoid[1] || avoid[0]),
+      mk(3, 'multi_entity_symbolic_capability_proof', labels[2], `공동 존재감과 통합 역량을 상징적 장면과 구체 proof로 동시에 증명합니다. 근거: ${proofEvidence}`, `평가자가 전시의 위상과 실행 신뢰를 함께 보아야 하며 hero scene이 필요한 때 선택합니다.`, proofEvidence, positive[2] || positive[0], avoid[2] || avoid[0]),
+      mk(4, 'multi_entity_domain_system', labels[3], `도메인과 시스템 관계를 한눈에 구조화해 복수 주체의 연결 질서를 보여줍니다. 근거: ${audienceEvidence}`, `복수 주체의 정보량이 많아 관람자가 전체 구조를 먼저 이해해야 할 때 선택합니다.`, audienceEvidence, positive[3] || positive[0], avoid[3] || avoid[0]),
+      mk(5, 'multi_entity_joint_outcome_proof', labels[4], `공동 성과와 실행 proof를 연결해 함께 만들어내는 결과를 분명하게 합니다. 근거: ${proofEvidence}`, `참여 주체의 개별 소개보다 공동 결과와 성과 증명이 중요할 때 선택합니다.`, proofEvidence, positive[4] || positive[0], avoid[4] || avoid[0]),
     ];
   } else if (conceptType === 'single_brand_experience' || conceptType === 'visitor_center_or_tour') {
+    const labels = fallbackLabelsForType(conceptType);
     directions = [
-      mk(1, 'brand_worldview_immersion', '브랜드 세계 몰입', `브랜드 의미와 공간·감각 단서를 연결해 방문자가 브랜드 세계관에 자연스럽게 들어오도록 설계합니다. 근거: ${strongestClaimEvidence}`, `브랜드의 철학, 제품 가치, 분위기를 설명보다 체감으로 납득시켜야 할 때 선택합니다.`, strongestClaimEvidence, positive[0], avoid[0]),
-      mk(2, 'process_proof_trust', '과정과 신뢰 증명', `제품·서비스의 과정, 품질, 근거를 방문 동선 안에서 확인 가능한 proof로 바꿔 신뢰를 만듭니다. 근거: ${proofEvidence}`, `방문 후 “왜 믿을 수 있는가”가 핵심이며 공정·품질·전문성·기능 가치가 중요한 때 선택합니다.`, proofEvidence, positive[1] || positive[0], avoid[1] || avoid[0]),
-      mk(3, 'visitor_memory_transformation', '방문 후 기억 전환', `방문 전 인식과 방문 후 기억의 변화를 중심으로 signature moment와 감각적 회상을 설계합니다. 근거: ${audienceEvidence}`, `체험관·투어·홍보관의 성과가 관람 후 태도, 회상, 공유, 선택 의향으로 판단될 때 선택합니다.`, audienceEvidence, positive[2] || positive[0], avoid[2] || avoid[0]),
+      mk(1, 'brand_worldview_immersion', labels[0], `브랜드 의미와 공간·감각 단서를 연결해 방문자가 브랜드 세계관에 자연스럽게 들어오도록 설계합니다. 근거: ${strongestClaimEvidence}`, `브랜드의 철학, 제품 가치, 분위기를 설명보다 체감으로 납득시켜야 할 때 선택합니다.`, strongestClaimEvidence, positive[0], avoid[0]),
+      mk(2, 'process_proof_trust', labels[1], `제품·서비스의 과정, 품질, 근거를 방문 동선 안에서 확인 가능한 proof로 바꿔 신뢰를 만듭니다. 근거: ${proofEvidence}`, `방문 후 “왜 믿을 수 있는가”가 핵심이며 공정·품질·전문성·기능 가치가 중요한 때 선택합니다.`, proofEvidence, positive[1] || positive[0], avoid[1] || avoid[0]),
+      mk(3, 'visitor_experience_transformation', labels[2], `방문 전 인식과 방문 중 행동 변화를 중심으로 이해와 태도의 전환을 설계합니다. 근거: ${audienceEvidence}`, `체험관·투어·홍보관의 성과가 관람 후 태도, 회상, 공유, 선택 의향으로 판단될 때 선택합니다.`, audienceEvidence, positive[2] || positive[0], avoid[2] || avoid[0]),
+      mk(4, 'product_value_felt', labels[3], `제품 가치가 설명이 아니라 체험과 증거로 이해되도록 핵심 접점을 설계합니다. 근거: ${proofEvidence}`, `제품의 품질·효능·차이를 방문객이 직접 납득해야 할 때 선택합니다.`, proofEvidence, positive[3] || positive[0], avoid[3] || avoid[0]),
+      mk(5, 'signature_memory_scene', labels[4], `방문 경험을 압축하는 시그니처 장면을 만들어 이후에도 떠오르는 기억을 남깁니다. 근거: ${audienceEvidence}`, `방문 후 공유와 회상이 중요한 성과 지표일 때 선택합니다.`, audienceEvidence, positive[4] || positive[0], avoid[4] || avoid[0]),
     ];
   } else {
-    directions = [
-      mk(1, 'rfp_type_strongest_claim_route', conceptType === 'operation_heavy_event' ? '실행 확신 루트' : '핵심 주장 증명', `현재 RFP에서 가장 강한 선택 이유를 먼저 세우고, 이를 공간·콘텐츠·운영 증거가 반복해서 뒷받침하게 합니다. 근거: ${strongestClaimEvidence}`, `평가자가 “왜 이 제안이어야 하는가”를 빠르게 판단해야 하고, 단일한 winning thesis가 구조 전체를 이끌어야 할 때 선택합니다.`, strongestClaimEvidence, positive[0], avoid[0]),
-      mk(2, 'rfp_type_audience_transformation_route', '대상 반응 전환', `방문객·사용자·평가자의 이해 흐름을 설계해 정보 나열을 기억되는 인식 변화로 전환합니다. 근거: ${audienceEvidence}`, `성과가 단순 전달보다 방문 후 기억, 행동, 공유, 납득으로 판단될 때 선택합니다.`, audienceEvidence, positive[1] || positive[0], avoid[1] || avoid[0]),
-      mk(3, 'rfp_type_specific_proof_route', '구체 증거 강화', `추상적 콘셉트보다 산출물·프로세스·운영 조건·대표 proof를 선명하게 보여주어 실행 신뢰를 강화합니다. 근거: ${proofEvidence}`, `내용이 약하거나 일반론처럼 보일 위험이 있고, 제안서가 구체 proof와 hero scene으로 설득해야 할 때 선택합니다.`, proofEvidence, positive[2] || positive[0], avoid[2] || avoid[0]),
-    ];
+    const labels = fallbackLabelsForType(conceptType);
+    directions = labels.map((label, index) => mk(index + 1, `rfp_type_${conceptType}_route_${index + 1}`, label, `${label} 관점에서 현재 RFP의 선택 이유를 공간·콘텐츠·운영 증거로 뒷받침합니다. 근거: ${index % 2 === 0 ? strongestClaimEvidence : index % 3 === 0 ? proofEvidence : audienceEvidence}`, `평가자가 현재 RFP의 핵심 가치와 실행 가능성을 구체 장면으로 확인해야 할 때 선택합니다.`, index % 2 === 0 ? strongestClaimEvidence : index % 3 === 0 ? proofEvidence : audienceEvidence, positive[index] || positive[0], avoid[index] || avoid[0]));
   }
 
   return directions.map((item, idx) => ({ ...item, label: directions.some((other, j) => j !== idx && other.label === item.label) ? `${item.label} ${idx + 1}` : item.label }));
@@ -581,9 +602,30 @@ function validateDynamicDirections(concepts: ConceptCandidate[]) {
 
 function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { primaryType: RfpConceptType; matrixType: MatrixType; plan: StrategicDirectionPlanItem[]; brandExperienceMatrix: BrandExperienceMatrixItem[]; entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix']; sanitizerApplied?: boolean; sanitizerReason?: string; rawMatrixType?: MatrixType; rawPrimaryRfpConceptType?: RfpConceptType }): ConceptCandidatesResult {
   const activeMatrixSummary = summarizeActiveMatrix(params.matrixType, { entityCount: params.matrixType === 'entityDifferentiationMatrix' ? params.entityMatrix.length : 0, brandExperienceMatrix: params.brandExperienceMatrix });
-  const concepts = result.concepts.map((concept, index) => enforceStrategicDirectionGate(concept, params.plan[index] ?? params.plan[0]));
-  const joined = concepts.map((concept) => [concept.strategicDirectionLabel, concept.whatThisDirectionEmphasizes, concept.whenToChooseThisDirection, concept.winningThesisUse?.winningClaim, concept.conceptLeap?.conceptLeap, concept.signatureProofIdea?.whyThisProvesTheConcept, concept.proposalCoreConceptName, concept.proposalCoreConceptSlogan, concept.proposalCoreConceptDefinition, concept.whyThisIsCoreConcept, concept.experiencePrinciple, concept.visitorJourney, concept.contentMediaImplication, concept.mainStrength, concept.mainRisk].filter(Boolean).join(' ')).join(' ');
-  const blockedTerms = params.primaryType === 'multi_entity_pavilion' ? [] : BLOCKED_MULTI_ENTITY_TERMS.filter((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(joined));
+  let concepts = result.concepts.map((concept, index) => enforceStrategicDirectionGate(concept, params.plan[index] ?? params.plan[0]));
+  let joined = concepts.map((concept) => [concept.strategicDirectionLabel, concept.whatThisDirectionEmphasizes, concept.whenToChooseThisDirection, concept.winningThesisUse?.winningClaim, concept.conceptLeap?.conceptLeap, concept.signatureProofIdea?.whyThisProvesTheConcept, concept.proposalCoreConceptName, concept.proposalCoreConceptSlogan, concept.proposalCoreConceptDefinition, concept.whyThisIsCoreConcept, concept.experiencePrinciple, concept.visitorJourney, concept.contentMediaImplication, concept.mainStrength, concept.mainRisk].filter(Boolean).join(' ')).join(' ');
+  let blockedTerms = params.primaryType === 'multi_entity_pavilion' ? [] : BLOCKED_MULTI_ENTITY_TERMS.filter((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(joined));
+  if (params.primaryType !== 'multi_entity_pavilion' && blockedTerms.length) {
+    concepts = concepts.map((concept, index) => {
+      const planItem = params.plan[index] ?? params.plan[0];
+      const thesis = { ...(concept.winningThesisUse ?? {}), winningClaim: planItem.emphasis };
+      return {
+        ...concept,
+        strategicDirectionType: planItem.type,
+        strategicDirectionLabel: planItem.label,
+        whatThisDirectionEmphasizes: planItem.emphasis,
+        whenToChooseThisDirection: planItem.chooseWhen,
+        winningThesisUse: thesis as ConceptCandidate['winningThesisUse'],
+        conceptLeap: buildFallbackConceptLeap(thesis, planItem) as ConceptCandidate['conceptLeap'],
+        signatureProofIdea: buildFallbackSignatureProofIdea({ requiredScope: [planItem.rfpEvidence] } as AnalysisResult, planItem, ['가치', '체험', '증명']) as ConceptCandidate['signatureProofIdea'],
+        mainStrength: planItem.emphasis,
+        mainRisk: '현재 RFP 근거만으로 방향을 세우므로 세부 연출은 후속 구조 단계에서 보완해야 합니다.',
+        entityDifferentiationUse: { unifyingFrame: planItem.label, distinctEntityRoles: '현재 RFP의 핵심 가치와 체험 접점을 구분', visitorRecognitionLogic: '방문객이 가치와 증거를 순서대로 이해', proofByEntity: planItem.rfpEvidence, riskCheck: '현재 RFP 밖의 다중 주체 표현을 사용하지 않음' },
+      };
+    });
+    joined = concepts.map((concept) => [concept.strategicDirectionLabel, concept.whatThisDirectionEmphasizes, concept.whenToChooseThisDirection, concept.winningThesisUse?.winningClaim, concept.conceptLeap?.conceptLeap, concept.signatureProofIdea?.whyThisProvesTheConcept, concept.mainStrength, concept.mainRisk].filter(Boolean).join(' ')).join(' ');
+    blockedTerms = BLOCKED_MULTI_ENTITY_TERMS.filter((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(joined));
+  }
   const contaminationCheckPassed = blockedTerms.length === 0;
   return {
     ...result,
@@ -658,7 +700,7 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
   const direction = buildStrategicDirectionPlan(analysis, narrative, Boolean(narrative.entityDifferentiationMatrix?.length && narrative.entityDifferentiationMatrix.length > 1))[(index - 1) % 3];
   const fallbackPresets = [
     { keywords: ['근거', '판단', '확장'] as [string, string, string], slogan: 'RFP 근거가 바로 제안 구조로 이어지게 합니다.', definition: `RFP의 핵심 요구를 판단 기준과 실행 접점으로 변환해 평가자가 선택 이유를 확인하게 하는 콘셉트입니다.`, experienceMechanism: 'RFP 근거를 도입-판단-확장 순서로 배열해 제안의 논리를 따라가게 함', recognitionLogic: '요구 조건과 실행 근거가 같은 기준으로 연결됨을 기억함', nameWhy: '현재 RFP의 구체 근거를 제안 판단 장치로 바꾸는 이름입니다.' },
-    { keywords: ['대상', '역할', '증명'] as [string, string, string], slogan: '각 대상의 역할을 분명히 나누고 하나의 증명으로 묶습니다.', definition: `RFP에 등장한 대상과 역할을 분리한 뒤 공간·콘텐츠·운영 증거로 재조합하는 콘셉트입니다.`, experienceMechanism: '대상별 역할을 먼저 인식하고 마지막에 통합 증명으로 연결하는 흐름', recognitionLogic: '각 요소의 차이와 전체 제안 명제를 동시에 기억함', nameWhy: 'RFP에 있는 대상·역할·평가 근거를 제목의 출처로 삼습니다.' },
+    { keywords: ['대상', '가치', '증명'] as [string, string, string], slogan: '방문 대상의 기대를 분명한 가치 증명으로 바꿉니다.', definition: `RFP에 등장한 대상의 기대와 가치 포인트를 공간·콘텐츠·운영 증거로 재조합하는 콘셉트입니다.`, experienceMechanism: '대상 기대를 먼저 인식하고 마지막에 가치 증명으로 연결하는 흐름', recognitionLogic: '핵심 요소의 차이와 전체 제안 명제를 동시에 기억함', nameWhy: 'RFP에 있는 대상·가치·평가 근거를 제목의 출처로 삼습니다.' },
     { keywords: ['기준', '접점', '운영'] as [string, string, string], slogan: '평가 기준이 현장 접점과 운영 방식으로 보이게 합니다.', definition: `평가 기준을 콘텐츠 접점과 운영 증거로 번역해 제안서 전체의 검증 흐름을 만드는 콘셉트입니다.`, experienceMechanism: '기준-접점-운영 순서로 평가 언어를 실행 장면으로 전환함', recognitionLogic: '추상 평가 항목이 실제 현장 작동 방식으로 확인됨을 기억함', nameWhy: '평가 기준과 운영 증거라는 RFP 근거에서 파생된 이름입니다.' },
   ];
   const preset = fallbackPresets[(index - 1) % fallbackPresets.length];
