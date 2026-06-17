@@ -430,6 +430,8 @@ export interface SignatureProofIdea {
   whyThisIsNotGeneric: string;
 }
 
+export type EntityBalanceStatus = 'balanced' | 'over-focused' | 'unknown';
+
 export interface ConceptCandidate {
   conceptId: string;
   strategicDirectionType: string;
@@ -500,7 +502,12 @@ export interface ConceptCandidate {
   riskOrCaution: string;
   evaluationScores: ConceptEvaluationScores;
   namingGuardWarning?: string;
+  coveredEntities?: string[];
+  missingEntities?: string[];
+  dominantEntity?: string;
+  entityBalanceStatus?: EntityBalanceStatus;
 }
+
 
 export interface ConceptRecommendation {
   recommendedConceptId: string;
@@ -530,6 +537,11 @@ export interface ConceptCandidatesResult {
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
   namingGuardNotice?: ConceptNamingGuardNotice;
+  evidenceBalance?: {
+    status: EntityBalanceStatus;
+    dominantEntity?: string;
+    coveredEntities: string[];
+  };
 }
 
 export interface SlideOutline extends SlideNarrativeMetadata {

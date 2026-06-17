@@ -3553,6 +3553,13 @@ export default function Home() {
                       </p>
                     )}
                     <p className="mt-2 inline-flex w-fit rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">Direction: {concept.strategicDirectionLabel || '전략 옵션'}</p>
+                    {concept.entityBalanceStatus && (
+                      <p className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold leading-5 text-slate-600">
+                        evidence balance: {concept.entityBalanceStatus}
+                        {concept.dominantEntity ? ` · dominant: ${concept.dominantEntity}` : ''}
+                        {concept.coveredEntities?.length ? ` · covered: ${concept.coveredEntities.slice(0, 4).join(' / ')}` : ''}
+                      </p>
+                    )}
                     {(concept.conceptNameKoreanSubtitle || (concept.conceptNameEnglish && concept.conceptNameEnglish !== getPresentationConceptName(concept) ? concept.conceptNameEnglish : '')) && (
                       <p className="mt-2 text-sm font-bold text-slate-500">{concept.conceptNameKoreanSubtitle || concept.conceptNameEnglish}</p>
                     )}

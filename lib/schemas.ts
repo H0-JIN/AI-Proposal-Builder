@@ -375,6 +375,8 @@ const conceptScopeValidationSchema = {
 
 const conceptNameScopeClassificationEnum = ['proposal_level', 'section_level', 'content_module_level', 'product_specific_level', 'generic_label'] as const;
 
+const entityBalanceStatusEnum = ['balanced', 'over-focused', 'unknown'] as const;
+
 const conceptEvaluationScoresSchema = {
   type: 'object',
   additionalProperties: false,
@@ -522,6 +524,10 @@ export const conceptCandidatesJsonSchema = {
           whyThisWorks: { type: 'string' },
           riskOrCaution: { type: 'string' },
           evaluationScores: conceptEvaluationScoresSchema,
+          coveredEntities: stringArray,
+          missingEntities: stringArray,
+          dominantEntity: { type: 'string' },
+          entityBalanceStatus: { type: 'string', enum: entityBalanceStatusEnum },
         },
         required: [
           'conceptId',
@@ -589,6 +595,10 @@ export const conceptCandidatesJsonSchema = {
           'whyThisWorks',
           'riskOrCaution',
           'evaluationScores',
+          'coveredEntities',
+          'missingEntities',
+          'dominantEntity',
+          'entityBalanceStatus',
         ],
       },
     },

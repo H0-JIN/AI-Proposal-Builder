@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { conceptCandidatesJsonSchema } from '@/lib/schemas';
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProjectInput, ProposalNarrative } from '@/lib/types';
-import type { DocumentChunk } from '@/lib/rag';
+import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { assessInputQuality } from '@/lib/inputQuality';
@@ -44,6 +44,150 @@ function compactList(items: string[] = [], limit = 8, itemLimit = 160) {
 function compactText(value = '', maxLength = 420) {
   const text = value.trim().replace(/\s+/g, ' ');
   return text.length > maxLength ? `${text.slice(0, maxLength).trim()}…` : text;
+}
+
+
+type EvidenceRole = 'core' | 'detail' | 'structure' | 'reference';
+type EntityBalanceStatus = 'balanced' | 'over-focused' | 'unknown';
+
+interface BalancedEvidenceGroup {
+  entity: string;
+  category: string;
+  role: EvidenceRole;
+  items: string[];
+}
+
+interface BalancedEvidenceSummary {
+  status: EntityBalanceStatus;
+  dominantEntity?: string;
+  majorEntities: string[];
+  coreEvidence: string[];
+  detailEvidence: string[];
+  groups: BalancedEvidenceGroup[];
+  sourceRoleRules: string[];
+}
+
+const CORE_CONCEPT_CATEGORIES = new Set<ChunkCategory>(['projectObjective', 'projectPurpose', 'requiredDeliverables', 'scopeOfWork', 'evaluationCriteria', 'constraints', 'target', 'venue', 'performanceGoal', 'kpi', 'operationDirection']);
+const DETAIL_CONCEPT_CATEGORIES = new Set<ChunkCategory>(['productFeature', 'designDirection', 'backgroundInsight', 'referenceOnly', 'existingAsset']);
+const DETAIL_ENTITY_TERMS = /EO|optical|optic|optics|equipment|spec|lens|sensor|camera|product|제품|장비|광학|사양|스펙|조준경|시스템|이미지|reference|레퍼런스|참고/i;
+
+function inferEvidenceRoleFromCategory(category?: ChunkCategory): EvidenceRole {
+  if (!category) return 'core';
+  if (category === 'referenceOnly' || category === 'existingAsset' || category === 'designDirection' || category === 'backgroundInsight') return 'reference';
+  if (DETAIL_CONCEPT_CATEGORIES.has(category)) return 'detail';
+  if (CORE_CONCEPT_CATEGORIES.has(category)) return 'core';
+  return 'core';
+}
+
+function entityTokensFromText(text: string, entities: string[]) {
+  const lower = text.toLowerCase();
+  return entities.filter((entity) => entity && lower.includes(entity.toLowerCase()));
+}
+
+function buildBalancedEvidenceSummary(params: { analysis: AnalysisResult; differentiationStrategy: ReturnType<typeof buildRfpDifferentiationStrategy>; documentChunks: DocumentChunk[]; proposalNarrative: ProposalNarrative }): BalancedEvidenceSummary {
+  const { analysis, differentiationStrategy, documentChunks, proposalNarrative } = params;
+  const majorEntities = differentiationStrategy.entityDifferentiationMatrix.map((item) => item.entityName).filter(Boolean).slice(0, 8);
+  const groups = new Map<string, BalancedEvidenceGroup>();
+  const add = (entity: string, category: string, role: EvidenceRole, text?: string, cap = 4) => {
+    const cleanText = compactText(text || '', 220);
+    if (!entity || !cleanText || /현재 RFP 근거 없음/.test(cleanText)) return;
+    const key = `${entity}::${category}::${role}`;
+    const existing = groups.get(key) ?? { entity, category, role, items: [] };
+    if (existing.items.length < cap && !existing.items.includes(cleanText)) existing.items.push(cleanText);
+    groups.set(key, existing);
+  };
+
+  for (const item of differentiationStrategy.entityDifferentiationMatrix) {
+    add(item.entityName, item.entityType || 'entity', 'core', item.roleInProject || item.sourceEvidence, 3);
+    add(item.entityName, 'differentiation', 'core', [item.distinctMessage, item.audienceTakeaway, item.proofPoint].filter(Boolean).join(' · '), 3);
+    add(item.entityName, 'content-detail', 'detail', item.keyOffering || item.experienceMechanism, 2);
+  }
+
+  const globalCore = [
+    analysis.projectOverview,
+    analysis.clientChallenge,
+    proposalNarrative.proposalThesis,
+    proposalNarrative.strategicOpportunity,
+    analysis.targetInfo,
+    ...(analysis.requiredDeliverables ?? []),
+    ...(analysis.requiredItems ?? []),
+    ...(analysis.requiredScope ?? []),
+    ...(analysis.scopeOfWork ?? []),
+    ...(analysis.evaluationCriteria ?? []),
+    ...(analysis.constraints ?? []),
+  ];
+  globalCore.forEach((item) => add('RFP-wide', 'rfp-core', 'core', item, 8));
+
+  for (const chunk of documentChunks) {
+    if (chunk.documentType && chunk.documentType !== 'rfp') continue;
+    const categories = chunk.categories?.length ? chunk.categories : [chunk.category];
+    const role = categories.some((category) => inferEvidenceRoleFromCategory(category) === 'reference') ? 'reference' : categories.some((category) => inferEvidenceRoleFromCategory(category) === 'detail') ? 'detail' : 'core';
+    if (role !== 'core') continue;
+    const matched = entityTokensFromText(`${chunk.sectionTitle ?? ''} ${chunk.chunkText}`, majorEntities);
+    const targets = matched.length ? matched : ['RFP-wide'];
+    targets.slice(0, 3).forEach((entity) => add(entity, categories[0] || 'chunk', role, chunk.chunkText, 2));
+  }
+
+  const evidenceGroups = Array.from(groups.values()).filter((group) => group.items.length);
+  const perEntityCounts = majorEntities.map((entity) => ({ entity, count: evidenceGroups.filter((group) => group.entity === entity && group.role === 'core').reduce((sum, group) => sum + group.items.length, 0) }));
+  const max = perEntityCounts.reduce((acc, item) => Math.max(acc, item.count), 0);
+  const min = perEntityCounts.reduce((acc, item) => Math.min(acc, item.count || 0), max || 0);
+  const dominant = perEntityCounts.find((item) => item.count === max && max >= Math.max(3, min * 2 + 2));
+  return {
+    status: majorEntities.length < 2 ? 'unknown' : dominant ? 'over-focused' : 'balanced',
+    dominantEntity: dominant?.entity,
+    majorEntities,
+    coreEvidence: evidenceGroups.filter((group) => group.role === 'core').flatMap((group) => group.items.slice(0, 3)).slice(0, 24),
+    detailEvidence: evidenceGroups.filter((group) => group.role !== 'core').flatMap((group) => group.items.slice(0, 1)).slice(0, 10),
+    groups: evidenceGroups.slice(0, 24),
+    sourceRoleRules: [
+      'rfp=current RFP evidence only for concept naming',
+      'proposal/proposal_patterns=structure pattern only; never naming source',
+      'reference=case insight only; never core concept naming',
+      'memo=use only when explicitly relevant to current RFP',
+      'referenceOnly/product specs/equipment lists are detail evidence, not core naming evidence',
+    ],
+  };
+}
+
+function repairEntityBalance(result: ConceptCandidatesResult, summary: BalancedEvidenceSummary): ConceptCandidatesResult {
+  if (summary.majorEntities.length < 2) return result;
+  const normalizedEntities = summary.majorEntities.map((entity) => ({ entity, lc: entity.toLowerCase() }));
+  const repairedConcepts = result.concepts.map((concept) => {
+    const namingText = [concept.proposalCoreConceptName, concept.conceptName, concept.conceptTitle, concept.signatureProofIdea?.signatureScene, concept.signatureProofIdea?.signatureContent, concept.signatureProofIdea?.whyThisProvesTheConcept].filter(Boolean).join(' ');
+    const lc = namingText.toLowerCase();
+    const coveredEntities = normalizedEntities.filter(({ lc: entityLc }) => lc.includes(entityLc)).map(({ entity }) => entity);
+    const fallbackCovered = coveredEntities.length ? coveredEntities : summary.majorEntities;
+    const detailDominated = DETAIL_ENTITY_TERMS.test(namingText) && coveredEntities.length <= 1;
+    const dominantEntity = coveredEntities.length === 1 ? coveredEntities[0] : detailDominated ? (summary.dominantEntity || coveredEntities[0]) : undefined;
+    const overFocused = Boolean(dominantEntity && fallbackCovered.length < summary.majorEntities.length) || detailDominated;
+    if (!overFocused) {
+      return { ...concept, coveredEntities: fallbackCovered, missingEntities: summary.majorEntities.filter((entity) => !fallbackCovered.includes(entity)), dominantEntity, entityBalanceStatus: 'balanced' as const };
+    }
+    const repairedName = concept.proposalCoreConceptName && !DETAIL_ENTITY_TERMS.test(concept.proposalCoreConceptName)
+      ? concept.proposalCoreConceptName
+      : `${concept.strategicDirectionLabel || '통합'} Field`;
+    const proof = concept.signatureProofIdea ?? { signatureScene: '', signatureContent: '', signatureSpatialMove: '', signatureMediaOrInteraction: '', whyThisProvesTheConcept: '', whyThisIsNotGeneric: '' };
+    return {
+      ...concept,
+      proposalCoreConceptName: repairedName,
+      repairedProposalCoreConceptName: repairedName,
+      conceptName: repairedName,
+      conceptTitle: repairedName,
+      proposalCoreConceptDefinition: `${concept.proposalCoreConceptDefinition} 주요 entity/category를 하나의 RFP-level operating frame으로 묶고, 특정 제품 상세가 아니라 전체 제안 범위의 역할 차이를 증명하도록 보정했습니다.`,
+      signatureProofIdea: {
+        ...proof,
+        signatureScene: proof.signatureScene && !DETAIL_ENTITY_TERMS.test(proof.signatureScene) ? proof.signatureScene : 'Shared hero system map connecting all major entities/categories',
+        signatureContent: proof.signatureContent && !DETAIL_ENTITY_TERMS.test(proof.signatureContent) ? proof.signatureContent : `전체 범위(${summary.majorEntities.join(' / ')})의 역할·관객 가치·증거를 한 화면에서 보여주는 통합 운영 필드`,
+        whyThisProvesTheConcept: `단일 제품이나 장비 상세가 아니라 ${summary.majorEntities.join(' / ')}가 각각 어떤 역할로 제안 명제를 증명하는지 보여주므로 전체 제안 스코프를 대표합니다.`,
+      },
+      coveredEntities: summary.majorEntities,
+      missingEntities: [],
+      dominantEntity,
+      entityBalanceStatus: 'balanced' as const,
+    };
+  });
+  return { ...result, concepts: repairedConcepts, evidenceBalance: { status: summary.status, dominantEntity: summary.dominantEntity, coveredEntities: summary.majorEntities } };
 }
 
 function fallbackGrounding(analysis: AnalysisResult, narrative: ProposalNarrative) {
@@ -509,6 +653,7 @@ export async function POST(request: Request) {
     const differentiationStrategy = buildRfpDifferentiationStrategy(body.analysis, proposalNarrative);
     const differentiationSummary = summarizeDifferentiationStrategy(differentiationStrategy);
     const compactAnalysis = buildCompactAnalysis(body.analysis, differentiationSummary, proposalNarrative);
+    const balancedEvidenceSummary = buildBalancedEvidenceSummary({ analysis: body.analysis, differentiationStrategy, documentChunks: body.documentChunks ?? [], proposalNarrative });
     const proposalPatternGuidance = await retrieveProposalPatternsForOutline({ limit: maxProposalPatterns, antiPatternLimit: maxProposalPatterns });
     const hasMultipleEntities = differentiationStrategy.hasMultipleEntities;
     const strategicDirectionPlan = buildStrategicDirectionPlan(body.analysis, proposalNarrative, hasMultipleEntities);
@@ -525,6 +670,8 @@ export async function POST(request: Request) {
       '추천은 가장 적합한 방향을 설명하되 다른 후보를 나쁘다/부적합하다/틀렸다로 말하지 않는다. 다른 방향의 쓰임과 선택 간 trade-off를 중립적으로 설명한다.',
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
       '출력은 hiddenNeeds, strategicApproach, entityDifferentiationMatrix, conceptDevelopmentLogic, concepts, recommendation을 포함한다.',
+      'Concept generation의 1차 근거는 Balanced RFP Evidence Summary와 Compact RFP Analysis뿐이다. proposal_patterns는 구조 참고만 하고 이름/은유/증명 장면의 원천으로 쓰지 않는다.',
+      'Balanced RFP Evidence Summary의 majorEntities가 2개 이상이면 각 후보에 coveredEntities, missingEntities, dominantEntity, entityBalanceStatus를 포함하고, over-focused이면 반환 전에 balanced로 수리한다.',
       'Concept candidates 생성 전에 Winning Thesis를 먼저 만들고, 그 다음 Concept Leap을 만든 뒤, 그 논리에서 proposalCoreConceptName을 도출한다.',
       'Winning Thesis 필드(contextShift, previousBaseline, newReality, clientUniquePosition, audiencePerceptionGap, winningClaim, whyNow, whyThisClient, whatMustBeProven)를 각 concepts 항목의 winningThesisUse에 반드시 포함한다.',
       'Concept Leap 필드(fromStatement, toStatement, conceptLeap, corePromise, emotionalTakeaway, evaluatorTakeaway)를 각 concepts 항목에 반드시 포함한다. From/To/Leap은 RFP를 해석해야 하며 기간·장소·예산·제출요건 복사가 아니어야 한다.',
@@ -542,6 +689,8 @@ export async function POST(request: Request) {
       '네이밍 레벨을 분리한다: Proposal Core Concept Name은 전체 제안서 제목으로 쓰일 최상위 이름, Section/Zone Concept Name은 존·공간·제품군 언어 허용, Content Module Name은 제품·상호작용·장비 언어 허용이다. Section/Zone 또는 Content Module 이름을 Proposal Core Concept Name으로 승격하지 않는다.',
       '제품명 하나, 특정 기술, 특정 존, 특정 체험 모듈, 특정 콘텐츠 섹션, 운영 프로세스명, 개인 병사용 프로토콜, 조준경 매트릭스 같은 이름은 제안 레벨 콘셉트가 아니므로 거부하고 전체 프레임으로 수리한다.',
       'RFP에 여러 기업·제품·존·대상·콘텐츠 카테고리가 있으면 RFP가 명시한 전체 hero가 아닌 한 하나의 제품군이나 섹션만 대표하는 이름을 금지한다.',
+      'Core concept naming은 project objective, strategic challenge, evaluation criteria, client intent, main entities/categories, space/content structure, deliverables, constraints, hidden needs, entity differentiation summary를 우선한다. 제품 리스트, 장비 스펙, reference image, referenceOnly chunk, 특정 entity/product/zone 상세 목록은 핵심 네이밍 근거로 쓰지 않는다.',
+      'Signature Proof Idea는 다중 entity RFP에서 shared hero scene, system map, command frame, integrated operating field처럼 전체 제안 범위를 증명해야 한다. 한 제품을 hero로 쓰면 그것이 전체 범위를 대표하는 이유를 명시하고, 아니면 단일 제품군 proof를 피한다.',
       '3개 후보의 conceptName은 중복/근접 중복이면 안 된다. 유사하면 약한 후보 이름만 재생성하되 전략 방향 차이는 유지한다.',
       'RFP 맥락에 따라 naming language를 선택한다. 해외 전시, 국제 파빌리온, 글로벌 트레이드쇼, 기술 쇼케이스, B2B 글로벌 이벤트, 영어 용어가 많은 프로젝트, 해외 방문객/바이어 대상이면 English concept name을 우선하고 Korean subtitle/explanation을 제공한다. 국내 브랜드, 로컬 팝업, 한국 공공 캠페인, 한국 소비자 행사, 한국어 단독 대상이면 Korean concept name을 허용하고 English subtitle은 선택 사항이다.',
       '각 후보는 conceptNameEnglish, conceptNameKoreanSubtitle, conceptSloganKorean, conceptSloganEnglish(if useful)를 포함한다. 단 영어/한국어를 모든 RFP에 강제하지 말고 맥락에 맞춰 비워도 된다.',
@@ -589,6 +738,9 @@ ${JSON.stringify(compactAnalysis, null, 2)}
 Proposal Narrative 요약:
 ${compactText(summarizeProposalNarrative(proposalNarrative), 700)}
 
+Balanced RFP Evidence Summary (core concept naming은 coreEvidence/groups[role=core]만 1차 근거로 사용):
+${JSON.stringify(balancedEvidenceSummary, null, 2)}
+
 RFP Entity Differentiation Summary:
 ${compactText(differentiationSummary, 700)}
 
@@ -621,10 +773,11 @@ Generation order reminder: Hidden Needs → Strategic Approach → Winning Thesi
           : [],
       }));
       result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules });
+      result = repairEntityBalance(result, balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(result, metadata));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'generation timeout';
-      const fallback = applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation(buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata)), { input: body.input, analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules });
+      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation(buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata)), { input: body.input, analysis: body.analysis, proposalNarrative, avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(fallback, metadata));
     }
   } catch (error) {
