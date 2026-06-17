@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { conceptCandidatesJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProjectInput, ProposalNarrative, RfpConceptType } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProjectInput, ProposalNarrative, RfpConceptType, MatrixType, BrandExperienceMatrixItem } from '@/lib/types';
 import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -218,6 +218,7 @@ function buildSeparatedEvidenceLevels(params: { analysis: AnalysisResult; differ
 }
 
 function repairEntityBalance(result: ConceptCandidatesResult, summary: BalancedEvidenceSummary): ConceptCandidatesResult {
+  if (result.matrixType && result.matrixType !== 'entityDifferentiationMatrix') return result;
   if (summary.majorEntities.length < 2) return result;
   const normalizedEntities = summary.majorEntities.map((entity) => ({ entity, lc: entity.toLowerCase() }));
   const repairedConcepts = result.concepts.map((concept) => {
@@ -350,16 +351,30 @@ function rfpEvidenceText(analysis: AnalysisResult, narrative: ProposalNarrative)
 }
 
 function hasMultiEntityPavilionEvidence(evidenceText: string, hasMultipleEntities: boolean) {
-  const pavilionSignal = /공동관|공동\s*부스|공동\s*전시|파빌리온|pavilion|joint\s*(?:booth|pavilion|exhibition)|national\s*pavilion|shared\s*exhibition|consortium|컨소시엄|참여기업|참여\s*기관|협력사|계열사|기관별|기업별|브랜드별|도메인별|존별|zone별|제품군별/i.test(evidenceText);
-  const balanceSignal = /통합.*(?:구분|차별|역할)|(?:구분|차별|역할).*통합|unified.*(?:differentiated|role)|balance.*(?:identity|distinction)|각\s*(?:기업|기관|브랜드|도메인|존|제품군).*역할/i.test(evidenceText);
-  const equalEntitySignal = /(?:여러|다수|복수|multiple|multi).*(?:기업|회사|브랜드|기관|stakeholder|이해관계자|business\s*unit|domain|zone|product\s*group|제품군|도메인|존)/i.test(evidenceText);
-  return hasMultipleEntities || pavilionSignal || balanceSignal || equalEntitySignal;
+  const audienceOnlySignal = /(?:임직원|학생|일반\s*방문객|VIP|관계자|고객|운영자|방문객|관람객|audience|visitor|customer|operator|staff)/i.test(evidenceText);
+  const contentOnlySignal = /(?:룸|room|존|zone|구역|콘텐츠|content|공정|process|제품|product|display|touchpoint|터치포인트|visitor\s*action)/i.test(evidenceText);
+  const pavilionSignal = /공동관|공동\s*부스|공동\s*전시|파빌리온|pavilion|joint\s*(?:booth|pavilion|exhibition)|national\s*pavilion|shared\s*exhibition|consortium|컨소시엄/i.test(evidenceText);
+  const equalOwnerSignal = /참여기업|참여\s*기관|협력사|계열사|기관별|기업별|브랜드별|도메인별|(?:여러|다수|복수|multiple|multi).*(?:기업|회사|브랜드|기관|stakeholder|이해관계자|business\s*unit|domain|도메인)/i.test(evidenceText);
+  const balanceSignal = /통합.*(?:구분|차별|역할)|(?:구분|차별|역할).*통합|unified.*(?:differentiated|role)|balance.*(?:identity|distinction)|각\s*(?:기업|기관|브랜드|도메인).*역할/i.test(evidenceText);
+  return pavilionSignal || equalOwnerSignal || balanceSignal || (hasMultipleEntities && !audienceOnlySignal && !contentOnlySignal);
 }
 
-function matrixTypeForRfp(primaryType: RfpConceptType, _hasMultipleEntities: boolean) {
+function matrixTypeForRfp(primaryType: RfpConceptType): MatrixType {
   if (primaryType === 'multi_entity_pavilion') return 'entityDifferentiationMatrix';
   if (primaryType === 'single_brand_experience' || primaryType === 'visitor_center_or_tour') return 'brandExperienceMatrix';
+  if (primaryType === 'product_experience_space' || primaryType === 'technology_showcase') return 'productExperienceMatrix';
+  if (primaryType === 'operation_heavy_event') return 'operationTrustMatrix';
   return 'none';
+}
+
+function buildBrandExperienceMatrix(analysis: AnalysisResult, narrative: ProposalNarrative): BrandExperienceMatrixItem[] {
+  const brandMeaning = compactText(narrative.whyThisConcept || narrative.proposalThesis || analysis.projectOverview || '브랜드가 방문객에게 증명해야 할 의미', 180);
+  const proof = compactText(analysis.contentCondition || analysis.spatialCondition || analysis.productInfo?.[0] || analysis.requiredScope?.[0] || '공정·제품·공간 경험으로 확인되는 증거', 180);
+  return [
+    { brandMeaning, visitorQuestion: compactText(analysis.clientChallenge || '왜 이 브랜드를 직접 방문해 경험해야 하는가?', 160), experienceStage: 'Brand World Entry', processOrProofPoint: proof, spatialMoment: '브랜드 세계관에 진입하는 첫 장면', sensoryOrEmotionalCue: '몰입감과 기대감', memoryAfterVisit: '브랜드가 가진 관점과 분위기' },
+    { brandMeaning, visitorQuestion: '이 브랜드의 실체와 신뢰는 어디에서 오는가?', experienceStage: 'Process / Proof', processOrProofPoint: proof, spatialMoment: '공정·제품·운영 근거를 체감하는 증명 장면', sensoryOrEmotionalCue: '납득과 신뢰', memoryAfterVisit: '말이 아니라 과정으로 확인한 신뢰' },
+    { brandMeaning, visitorQuestion: '방문 후 무엇을 기억하고 말하게 되는가?', experienceStage: 'Signature Memory', processOrProofPoint: compactText(analysis.evaluationCriteria?.[0] || narrative.whyThisConcept || proof, 180), spatialMoment: '방문 경험을 압축하는 시그니처 장면', sensoryOrEmotionalCue: '감정적 잔상과 공유 욕구', memoryAfterVisit: '다시 떠오르는 대표 장면과 한 문장' },
+  ];
 }
 
 function hasAny(text: string, patterns: RegExp[]) {
@@ -800,7 +815,8 @@ export async function POST(request: Request) {
     const rfpConceptTypes = classifyRfpConceptTypes(body.analysis, proposalNarrative, hasMultipleEntities);
     const selectedRfpConceptType = primaryRfpConceptType(rfpConceptTypes);
     const strategicDirectionPlan = buildStrategicDirectionPlan(body.analysis, proposalNarrative, hasMultipleEntities);
-    const selectedMatrixType = matrixTypeForRfp(selectedRfpConceptType, hasMultipleEntities);
+    const selectedMatrixType = matrixTypeForRfp(selectedRfpConceptType);
+    const brandExperienceMatrix = selectedMatrixType === 'brandExperienceMatrix' ? buildBrandExperienceMatrix(body.analysis, proposalNarrative) : [];
     const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, hasMultipleEntities);
     const proposalPatternContext = formatProposalPatternsForConceptPrompt(proposalPatternGuidance.patterns, proposalPatternGuidance.avoidanceRules, maxProposalPatterns);
 
@@ -873,7 +889,7 @@ ${JSON.stringify(metadata, null, 2)}
 RFP Concept Type Classification (current RFP evidence only):
 - primaryRfpConceptType: ${selectedRfpConceptType}
 - secondaryRfpConceptTypes: ${rfpConceptTypes.filter((type) => type !== selectedRfpConceptType).join(' / ') || 'none'}
-- selectedDirectionLensSet: ${strategicDirectionPlan.map((item) => item.type).join(' / ')}
+- selectedDirectionLensSet: ${strategicDirectionPlan.map((item) => item.label).join(' / ')}
 - matrixType: ${selectedMatrixType}
 - hasMultipleEntities: ${hasMultipleEntities}
 
@@ -898,7 +914,7 @@ Balanced RFP Evidence Summary (entity balancing only; core concept naming은 cor
 ${JSON.stringify(balancedEvidenceSummary, null, 2)}
 
 RFP Matrix Gate (${selectedMatrixType}):
-${selectedMatrixType === 'entityDifferentiationMatrix' ? compactText(differentiationSummary, 700) : selectedMatrixType === 'brandExperienceMatrix' ? 'Brand Experience Matrix fields to use in reasoning if useful: brandMeaning, visitorQuestion, experienceStage, proofPoint, spatialMoment, memoryAfterVisit. Entity Differentiation Matrix를 출력하거나 전략 방향 렌즈로 사용하지 않는다.' : '현재 RFP primary type상 Entity Differentiation Matrix를 전략 방향 렌즈로 사용하지 않는다.'}
+${selectedMatrixType === 'entityDifferentiationMatrix' ? compactText(differentiationSummary, 700) : selectedMatrixType === 'brandExperienceMatrix' ? `Brand Experience Matrix JSON to use as the only matrix reasoning source: ${JSON.stringify(brandExperienceMatrix, null, 2)}. Fields: brandMeaning, visitorQuestion, experienceStage, processOrProofPoint, spatialMoment, sensoryOrEmotionalCue, memoryAfterVisit. Entity Differentiation Matrix를 출력하거나 전략 방향 렌즈로 사용하지 않는다.` : '현재 RFP primary type상 Entity Differentiation Matrix를 전략 방향 렌즈로 사용하지 않는다.'}
 
 proposal_patterns compact diagnostics:
 ${proposalPatternDiagnostics}
@@ -920,6 +936,8 @@ Generation order reminder: Hidden Needs → Strategic Approach → Winning Thesi
       let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult({
         ...generated,
         conceptPromptVersion,
+        matrixType: selectedMatrixType,
+        brandExperienceMatrix,
         regenerationId: metadata.regenerationId,
         generationAttempt: metadata.generationAttempt,
         generatedAt: metadata.generatedAt,
@@ -934,7 +952,7 @@ Generation order reminder: Hidden Needs → Strategic Approach → Winning Thesi
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'generation timeout';
       const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata);
-      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation({ ...fallbackBase, entityDifferentiationMatrix: selectedMatrixType === 'entityDifferentiationMatrix' ? fallbackBase.entityDifferentiationMatrix : [] }), { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
+      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation({ ...fallbackBase, matrixType: selectedMatrixType, brandExperienceMatrix, entityDifferentiationMatrix: selectedMatrixType === 'entityDifferentiationMatrix' ? fallbackBase.entityDifferentiationMatrix : [] }), { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(fallback, metadata));
     }
   } catch (error) {

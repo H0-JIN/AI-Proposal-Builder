@@ -457,6 +457,23 @@ export interface ConceptNameOptionsResult {
   generationNote: string;
 }
 
+export type MatrixType =
+  | 'entityDifferentiationMatrix'
+  | 'brandExperienceMatrix'
+  | 'productExperienceMatrix'
+  | 'operationTrustMatrix'
+  | 'none';
+
+export interface BrandExperienceMatrixItem {
+  brandMeaning: string;
+  visitorQuestion: string;
+  experienceStage: string;
+  processOrProofPoint: string;
+  spatialMoment: string;
+  sensoryOrEmotionalCue: string;
+  memoryAfterVisit: string;
+}
+
 export type RfpConceptType =
   | 'multi_entity_pavilion'
   | 'single_brand_experience'
@@ -582,6 +599,8 @@ export interface ConceptCandidatesResult {
   generatedAt?: string;
   hiddenNeeds: HiddenNeedsLayer;
   strategicApproach: StrategicApproachLayer;
+  matrixType?: MatrixType;
+  brandExperienceMatrix?: BrandExperienceMatrixItem[];
   entityDifferentiationMatrix: EntityDifferentiationItem[];
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
