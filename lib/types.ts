@@ -433,6 +433,27 @@ export interface SignatureProofIdea {
 
 export type EntityBalanceStatus = 'balanced' | 'over-focused' | 'unknown';
 
+export type ConceptNameLanguageMode = 'Korean' | 'English' | 'bilingual';
+
+export interface ConceptNameOption {
+  conceptName: string;
+  languageMode: ConceptNameLanguageMode;
+  shortMeaning: string;
+  whyItFits: string;
+  coverTitleScore: number;
+  memorabilityScore: number;
+  rfpSpecificityScore: number;
+  expandabilityScore: number;
+  risk: string;
+}
+
+export interface ConceptNameOptionsResult {
+  selectedDirectionId: string;
+  options: ConceptNameOption[];
+  recommendedOptionIndex: number;
+  generationNote: string;
+}
+
 export interface ConceptCandidate {
   conceptId: string;
   strategicDirectionType: string;
@@ -512,6 +533,9 @@ export interface ConceptCandidate {
   coversWholeRfp?: boolean;
   conceptNameEvidenceLevel?: ConceptNameEvidenceLevel;
   repairedName?: boolean;
+  finalConceptName?: string;
+  finalConceptSlogan?: string;
+  selectedDirection?: ConceptCandidate;
 }
 
 
@@ -653,6 +677,7 @@ export interface ProposalState {
   conceptGenerationResult?: ConceptCandidatesResult;
   proposalNarrative?: ProposalNarrative;
   selectedConcept?: ConceptCandidate;
+  conceptNameOptions?: ConceptNameOption[];
   outline?: SlideOutline[];
   slides?: SlideContent[];
   retrievalEvidence?: RetrievalEvidenceItem[];

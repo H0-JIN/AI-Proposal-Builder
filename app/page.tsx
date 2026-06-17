@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -1604,6 +1604,7 @@ function appendUploadedDocument(document: UploadedDocument) {
     conceptGenerationResult: undefined,
     proposalNarrative: undefined,
     selectedConcept: undefined,
+    conceptNameOptions: undefined,
     outline: undefined,
     slides: undefined,
   });
@@ -1780,7 +1781,7 @@ export default function Home() {
   );
   const hasUploadedDocumentOrRfp = useMemo(() => Boolean(analysisInput.briefText.trim()), [analysisInput.briefText]);
   const canAnalyze = useMemo(() => Boolean(state.input.projectName && state.input.clientName && analysisInput.briefText) && !hasFastVisionAnalysisInProgress, [state.input.clientName, state.input.projectName, analysisInput.briefText, hasFastVisionAnalysisInProgress]);
-  const canGenerateProposalStructure = Boolean(state.selectedConcept && state.analysis && hasUploadedDocumentOrRfp);
+  const canGenerateProposalStructure = Boolean(state.selectedConcept?.finalConceptName?.trim() && state.analysis && hasUploadedDocumentOrRfp);
   const activeVisionDocument = uploadedDocuments.find((document) => document.visionStatus === 'quick_analyzing' || document.visionStatus === 'analyzing' || document.extractionStatus === 'Vision 분석 중' || document.extractionStatus === '빠른 Vision 분석 중' || document.extractionStatus === '전체 Vision 분석 중' || document.extractionStatus === '하이브리드 PDF 분석 중');
   const currentUploadNotice = activeVisionDocument?.warningMessage
     ? { type: 'warning' as const, message: activeVisionDocument.warningMessage }
@@ -1793,7 +1794,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -3019,7 +3020,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: analysisInput, documentChunks });
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(analysisInput, analysis);
     } catch (err) {
@@ -3038,7 +3039,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(mergedInput, analysis);
     } catch (err) {
@@ -3066,6 +3067,7 @@ export default function Home() {
       conceptRecommendation: undefined,
       conceptGenerationResult: undefined,
       selectedConcept: undefined,
+      conceptNameOptions: undefined,
       outline: undefined,
       slides: undefined,
     }));
@@ -3091,6 +3093,7 @@ export default function Home() {
         conceptRecommendation: conceptResult.recommendation,
         conceptGenerationResult: conceptResult,
         selectedConcept: undefined,
+        conceptNameOptions: undefined,
         outline: undefined,
         slides: undefined,
       }));
@@ -3109,7 +3112,39 @@ export default function Home() {
   };
 
   const selectConcept = (concept: ConceptCandidate) => {
-    setState((current) => ({ ...current, selectedConcept: concept, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, selectedConcept: { ...concept, finalConceptName: '', finalConceptSlogan: '', selectedDirection: concept }, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+  };
+
+  const runConceptNames = async () => {
+    if (!state.analysis || !state.selectedConcept) return;
+    setError('');
+    setLoading('컨셉명 후보 생성 중...');
+    try {
+      const result = await postJson<ConceptNameOptionsResult>('/api/concept-names', { input: analysisInput, analysis: state.analysis, selectedDirection: state.selectedConcept, proposalNarrative: state.proposalNarrative });
+      setState((current) => ({ ...current, conceptNameOptions: result.options, outline: undefined, slides: undefined }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.');
+    } finally {
+      setLoading('');
+    }
+  };
+
+  const selectConceptNameOption = (option: ConceptNameOption) => {
+    setState((current) => current.selectedConcept ? ({
+      ...current,
+      selectedConcept: {
+        ...current.selectedConcept,
+        finalConceptName: option.conceptName,
+        finalConceptSlogan: option.shortMeaning,
+        selectedDirection: current.selectedConcept.selectedDirection ?? current.selectedConcept,
+      },
+      outline: undefined,
+      slides: undefined,
+    }) : current);
+  };
+
+  const updateFinalConceptField = (field: 'finalConceptName' | 'finalConceptSlogan', value: string) => {
+    setState((current) => current.selectedConcept ? ({ ...current, selectedConcept: { ...current.selectedConcept, [field]: value }, outline: undefined, slides: undefined }) : current);
   };
 
 
@@ -3505,19 +3540,19 @@ export default function Home() {
         )}
 
         {step === 'concepts' && state.analysis && (state.conceptCandidates?.length || state.selectedConcept || loading.includes('새 후보')) && (
-          <SectionCard title="콘셉트 후보 선택">
+          <SectionCard title="전략 방향 선택">
             <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 text-blue-950">
               <p className="text-sm font-black uppercase tracking-[0.2em] text-blue-700">Required Step</p>
-              <h3 className="mt-2 text-xl font-black">제안서 구조 생성 전에 콘셉트 후보 3개 중 하나를 선택해주세요.</h3>
+              <h3 className="mt-2 text-xl font-black">제안서 구조 생성 전에 전략 방향 3개 중 하나를 선택해주세요.</h3>
               <p className="mt-2 text-sm leading-6">
-                선택한 콘셉트는 이후 제안서 구조, 장표별 문안, PPTX의 Core Concept / Key Experience Asset Concept / 공간·콘텐츠 / 미디어·인터랙션 장표 기준으로 저장됩니다.
+                먼저 전략 방향을 선택한 뒤, 선택한 방향을 바탕으로 최종 컨셉명을 생성하세요. 방향명은 최종 컨셉명이 아니며 구조/PPT 생성에는 확정된 컨셉명을 사용합니다.
               </p>
               <p className="mt-3 text-xs font-bold text-blue-700">
                 prompt {state.conceptGenerationResult?.conceptPromptVersion || conceptPromptVersion} · attempt {(state.conceptGenerationResult?.generationAttempt ?? conceptGenerationAttemptRef.current) || '-'} · generated {state.conceptGenerationResult?.generatedAt || (loading.includes('새 후보') ? 'generating...' : '-')}
               </p>
               {state.selectedConcept && (
                 <p className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm font-black text-blue-800">
-                  선택된 콘셉트: {getPresentationConceptName(state.selectedConcept)}
+                  선택된 전략 방향: {state.selectedConcept.strategicDirectionLabel || state.selectedConcept.conceptId}
                 </p>
               )}
             </div>
@@ -3541,7 +3576,7 @@ export default function Home() {
                 return (
                   <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
-                    <h3 className="mt-2 text-2xl font-black text-slate-950">{getPresentationConceptName(concept)}</h3>
+                    <h3 className="mt-2 text-2xl font-black text-slate-950">{concept.strategicDirectionLabel || `전략 방향 ${concept.conceptId}`}</h3>
                     {concept.namingGuardWarning && (
                       <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 확인 권장</p>
                     )}
@@ -3576,8 +3611,8 @@ export default function Home() {
                       <div><dt className="font-black text-slate-950">Winning Thesis</dt><dd>{conciseText(concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach, 115)}</dd></div>
                       <div><dt className="font-black text-slate-950">Concept Leap</dt><dd>{conciseText(concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept), 115)}</dd></div>
                       <div><dt className="font-black text-slate-950">Signature Proof Idea</dt><dd>{conciseText(concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.keyExperienceAssetDirection, 115)}</dd></div>
-                      <div><dt className="font-black text-slate-950">Core Concept Name</dt><dd>{getPresentationConceptName(concept)}</dd></div>
-                      <div><dt className="font-black text-slate-950">One-line Slogan</dt><dd>{conciseText(getConceptTagline(concept), 110)}</dd></div>
+                      <div><dt className="font-black text-slate-950">Strategic Emphasis</dt><dd>{conciseText(concept.whatThisDirectionEmphasizes, 120)}</dd></div>
+                      <div><dt className="font-black text-slate-950">When to Choose</dt><dd>{conciseText(concept.whenToChooseThisDirection, 120)}</dd></div>
                       {conceptKeywordChips(concept).length > 0 && (
                         <div>
                           <dt className="font-black text-slate-950">3 Execution Keywords</dt>
@@ -3593,12 +3628,49 @@ export default function Home() {
                       onClick={() => selectConcept(concept)}
                       className={`mt-5 rounded-2xl px-4 py-3 font-bold transition ${selected ? 'bg-blue-600 text-white' : 'bg-slate-950 text-white hover:bg-blue-700'}`}
                     >
-                      {selected ? '선택됨' : '이 콘셉트 선택'}
+                      {selected ? '선택됨' : '이 전략 방향 선택'}
                     </button>
                   </article>
                 );
               })}
             </div>
+            {state.selectedConcept && (
+              <div className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50 p-5">
+                <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Final naming step</p>
+                <h3 className="mt-2 text-2xl font-black text-slate-950">컨셉명 후보 생성</h3>
+                <p className="mt-2 text-sm font-bold leading-6 text-indigo-900">선택한 방향을 바탕으로 최종 컨셉명을 생성하세요. 최종 컨셉명과 슬로건이 확정되어야 제안서 구조 생성으로 진행할 수 있습니다.</p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <PrimaryButton onClick={runConceptNames} disabled={Boolean(loading)}>이 방향으로 컨셉명 생성</PrimaryButton>
+                </div>
+                {state.conceptNameOptions?.length ? (
+                  <div className="mt-5 grid gap-3 md:grid-cols-2">
+                    {state.conceptNameOptions.map((option) => {
+                      const selected = state.selectedConcept?.finalConceptName === option.conceptName;
+                      return (
+                        <button key={option.conceptName} type="button" onClick={() => selectConceptNameOption(option)} className={`rounded-2xl border p-4 text-left transition ${selected ? 'border-indigo-500 bg-white shadow-lg shadow-indigo-100' : 'border-indigo-100 bg-white/70 hover:border-indigo-300'}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <h4 className="text-lg font-black text-slate-950">{option.conceptName}</h4>
+                            <span className="rounded-full bg-indigo-100 px-2 py-1 text-[11px] font-black text-indigo-700">{option.languageMode}</span>
+                          </div>
+                          <p className="mt-2 text-sm font-bold text-indigo-700">{option.shortMeaning}</p>
+                          <p className="mt-2 text-xs font-semibold leading-5 text-slate-600">{option.whyItFits}</p>
+                          <p className="mt-2 text-xs font-bold text-slate-500">Cover {option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.rfpSpecificityScore} · Expand {option.expandabilityScore}</p>
+                          {option.risk && <p className="mt-2 text-xs font-bold text-amber-700">Risk: {option.risk}</p>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <label className="block text-sm font-black text-slate-800">최종 컨셉명 수동 편집
+                    <input value={state.selectedConcept.finalConceptName ?? ''} onChange={(event) => updateFinalConceptField('finalConceptName', event.target.value)} placeholder="최종 컨셉명을 입력하거나 후보를 선택하세요" className="mt-2 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-indigo-500" />
+                  </label>
+                  <label className="block text-sm font-black text-slate-800">최종 컨셉 슬로건 수동 편집
+                    <input value={state.selectedConcept.finalConceptSlogan ?? ''} onChange={(event) => updateFinalConceptField('finalConceptSlogan', event.target.value)} placeholder="한 줄 슬로건을 입력하세요" className="mt-2 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-indigo-500" />
+                  </label>
+                </div>
+              </div>
+            )}
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('analysis')}>분석 결과 보기</SecondaryButton>
               <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading)}>{loading.includes('새 후보') ? '새 후보 생성 중' : '콘셉트 다시 생성'}</SecondaryButton>

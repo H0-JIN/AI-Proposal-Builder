@@ -629,6 +629,36 @@ export const conceptCandidatesJsonSchema = {
   required: ['hiddenNeeds', 'strategicApproach', 'entityDifferentiationMatrix', 'conceptDevelopmentLogic', 'concepts', 'recommendation'],
 } as const;
 
+
+
+const conceptNameOptionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    conceptName: { type: 'string' },
+    languageMode: { type: 'string', enum: ['Korean', 'English', 'bilingual'] },
+    shortMeaning: { type: 'string' },
+    whyItFits: { type: 'string' },
+    coverTitleScore: { type: 'number' },
+    memorabilityScore: { type: 'number' },
+    rfpSpecificityScore: { type: 'number' },
+    expandabilityScore: { type: 'number' },
+    risk: { type: 'string' },
+  },
+  required: ['conceptName', 'languageMode', 'shortMeaning', 'whyItFits', 'coverTitleScore', 'memorabilityScore', 'rfpSpecificityScore', 'expandabilityScore', 'risk'],
+} as const;
+
+export const conceptNameOptionsJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    selectedDirectionId: { type: 'string' },
+    options: { type: 'array', minItems: 8, maxItems: 12, items: conceptNameOptionSchema },
+    recommendedOptionIndex: { type: 'number' },
+    generationNote: { type: 'string' },
+  },
+  required: ['selectedDirectionId', 'options', 'recommendedOptionIndex', 'generationNote'],
+} as const;
 export const outlineJsonSchema = {
   type: 'object',
   additionalProperties: false,
