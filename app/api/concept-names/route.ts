@@ -169,6 +169,13 @@ function truthyValidation() {
     currentRfpVocabularyUsed: true,
     notGeneric: true,
     notCrossRfpContaminated: true,
+    namesAreSpecificToSelectedDirection: true,
+    namesDoNotFitOtherDirections: true,
+    noDuplicateConceptLogic: true,
+    noNearDuplicateNames: true,
+    noGenericEnglishCombination: true,
+    connectedToDiagnosis: true,
+    connectedToBrandProductIntelligence: true,
   };
 }
 
@@ -191,7 +198,7 @@ function fallbackOptions(direction: ConceptCandidate, diagnosis?: RfpDiagnosis, 
     isGlobal ? `Visible ${englishAnchor}` : `${secondaryNoun}의 장면`,
     `${englishAnchor} Moment`,
     `${contextNoun} to Memory`,
-  ].filter((name) => !resemblesBlockedExample(name)).slice(0, isGlobal ? 8 : 6);
+  ].filter((name) => !resemblesBlockedExample(name)).slice(0, 3);
   const styles = ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] as const;
   return {
     selectedDirectionId: direction.conceptId,
@@ -249,7 +256,7 @@ export async function POST(request: Request) {
     const system = [
       'You are a senior Korean proposal concept naming director.',
       'Generate final cover-level concept name options only after a strategic direction has been selected.',
-      'Return 6 to 8 diverse final concept name options for the selected direction only, grouped by namingStyle.',
+      'Return exactly 3 strong final concept name options for the selected strategic direction only. Fewer, sharper, non-interchangeable options are required.',
       'Avoid consulting labels, analysis headings, internal strategy phrases, generic abstract nouns, awkward translated phrases, product-specific names, one-zone-specific names, one-entity-specific names, unsupported poetic metaphors, and generic tech/event slogans.',
       'Names must be proposal-cover concepts that express the winning claim and can expand into space, content, media, and operation.',
       'Internally use coreWinningCondition, strategicTension, proofBurden, selectedStrategicDirection, and signatureProofIdea, but translate all visible copy into planner-friendly Korean: proof=설득 장면/신뢰 장면/체감 포인트, evidence=근거/확인 요소, proof burden=반드시 보여줘야 할 것, signature proof idea=대표 체험 장면.',
@@ -272,14 +279,14 @@ Winning Thesis / Concept Leap / Signature Proof Idea 포함 전략 방향 JSON: 
 currentRfpVocabularySet: ${currentRfpVocabularySet.join(' / ')}
 Brand vocabulary: ${body.brandProductIntelligence?.brandSpecificVocabulary?.join(' / ') || 'none'}
 Words/tone to avoid: ${body.brandProductIntelligence?.wordsToAvoid?.join(' / ') || 'none'}
-Recent current-session names to avoid: ${body.recentNameOptions?.join(' / ') || 'none'}\n\n요구사항:\n- options는 반드시 6~8개. 적게 만들되 모두 표지에 올릴 수 있는 강한 후보여야 한다.\n- namingStyle 필드를 반드시 다음 중 하나로 다양화: Direct claim, Short bilingual title, Brand/category-specific phrase, Spatial/experience frame, Symbolic but grounded, Strong one-line statement.\n- 6~8개는 sensory/brand world, process/trust, product value, visitor memory, spatial journey, short bilingual title 등 서로 다른 스타일을 섞는다. 같은 구조로 반복하지 말라.
+Recent current-session names to avoid: ${body.recentNameOptions?.join(' / ') || 'none'}\n\n요구사항:\n- options는 반드시 정확히 3개. 모두 표지에 올릴 수 있는 강한 후보여야 한다.\n- namingStyle 필드를 반드시 다음 중 하나로 다양화: Direct claim, Short bilingual title, Brand/category-specific phrase, Spatial/experience frame, Symbolic but grounded, Strong one-line statement.\n- 3개는 선택된 방향의 axis, thesis, signature scene에서만 갈라지는 서로 다른 naming logic이어야 한다. 같은 구조로 반복하지 말라.
 - generic hook(현장/경험/체험/증명/가치/연결/흐름/여정/신뢰/균형)이 conceptName 또는 oneLineSlogan의 주어처럼 3회 이상 반복되면 약한 후보를 currentRfpVocabularySet 기반으로 재작성한다.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsRfp, strategicClaim, expandableTo(space/content/media/operation), validation, namingStyle, mainRisk, coverReadinessScore, specificityScore, memorabilityScore, coverTitleScore, rfpSpecificityScore, expandabilityScore, risk를 작성.\n- conceptName은 전략 라벨/슬라이드 제목/제품 카테고리/분석 heading이 아니라 제안서 첫 페이지 제목처럼 winning claim을 표현해야 하며 브랜드 경험 콘셉트, 전시 콘셉트, 공간 경험 프레임으로 확장 가능해야 한다. 임시 전략 방향명/컨설팅 목차명/단순 제품명/랜덤 영어 명사 조합이 아니다.
 - 각 option의 oneLineSlogan은 conceptName이 주장하는 승리 논리를 1문장으로 설명한다. whyItFitsRfp는 confirmed diagnosis의 coreWinningCondition, strategicTension, proofBurden, selected direction, signatureProofIdea 중 최소 2개와 연결한다.
-- generic English word combinations, vague abstract nouns, consulting-style labels, literal RFP summaries, any-name-fits-any-exhibition 후보를 거부하고 재생성한다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
+- generic English word combinations, vague abstract nouns, consulting-style labels, literal RFP summaries, any-name-fits-any-exhibition 후보를 거부하고 재생성한다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- Generate names only for this selected strategic direction. Do not generate names that could equally fit the other directions. 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
 - 각 후보 생성 전 내부적으로 What must this proposal prove? What belief shift should evaluator make? Strongest claim? Cover first-page fit? Expandable to space/content/media/operation? 을 검증하고 실패하면 버려라.
 - Korean proposal users: 최소 2개 Korean-first 후보를 포함하고, 글로벌/브랜드/전시 맥락이면 최소 2개 English 또는 bilingual 후보를 포함하라. English 후보에는 koreanSubtitle 또는 oneLineSlogan으로 자연스러운 한국어 설명을 제공하라.
 - main visible copy(conceptName, oneLineSlogan, shortMeaning, whyItFitsRfp, mainRisk)에 raw English internal terms(proof/evidence/proof burden/evaluator clarity/validation/source/score/signature proof idea)를 쓰지 말고 한국어 사용자 언어로 번역한다.
-- validation의 모든 boolean은 true인 후보만 반환하라: coverReady, connectedToCoreWinningCondition, connectedToSelectedDirection, currentRfpSpecific, noPromptExampleCopy, noCrossRfpContamination, notGenericEnglishCombination, notInternalStrategyLabel, notSlideTitle, notTooLong, expandableToProposalSystem, specificToCurrentRfp, noRepeatedMainHook, noInternalProofLanguageInMainCopy, currentRfpVocabularyUsed, notGeneric, notPromptExampleCopy, notCrossRfpContaminated.
+- validation의 모든 boolean은 true인 후보만 반환하라: namesAreSpecificToSelectedDirection, namesDoNotFitOtherDirections, noDuplicateConceptLogic, noNearDuplicateNames, noGenericEnglishCombination, connectedToDiagnosis, connectedToBrandProductIntelligence, coverReady, connectedToCoreWinningCondition, connectedToSelectedDirection, currentRfpSpecific, noPromptExampleCopy, noCrossRfpContamination, notGenericEnglishCombination, notInternalStrategyLabel, notSlideTitle, notTooLong, expandableToProposalSystem, specificToCurrentRfp, noRepeatedMainHook, noInternalProofLanguageInMainCopy, currentRfpVocabularyUsed, notGeneric, notCrossRfpContaminated.
 - 금지 예시명/이전 예시명을 그대로 출력하거나 변형하지 말라: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}.
 - 현재 RFP/진단/brandProductIntelligence에 없는 category word(예: Pocari/공장 방문 RFP의 hydrogen/energy/grid)를 쓰면 실패다. 수소/에너지 RFP에서만 현재 증거가 있을 때 허용한다.
 - brandProductIntelligence.wordsToAvoid와 무관 카테고리 어휘를 쓰면 실패다. Pocari와 수소 전시 양쪽에 그대로 맞는 이름, Moment/Memory/Proof/Evidence/Field/Flow/Grid 같은 범용어 중심 이름은 현재 RFP 강한 근거가 없으면 거부한다.
@@ -292,9 +299,9 @@ Recent current-session names to avoid: ${body.recentNameOptions?.join(' / ') || 
     const styles = ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] as const;
     const relevanceContext = [body.input.projectName, body.input.clientName, compact(body.analysis, 5000), compact(body.rfpDiagnosis, 2500), compact(body.brandProductIntelligence, 2500), compact(body.selectedDirection, 2500)].join(' ');
     const repeatedHooks = genericHookCounts(result.options ?? []);
-    const options = (result.options ?? []).slice(0, 8).map((option) => ({ ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) })).filter((option) => passesNameFirewall(option, relevanceContext, currentRfpVocabularySet, repeatedHooks)).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk, strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning, expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: option.whyItFitsRfp || option.shortMeaning, media: option.oneLineSlogan || option.shortMeaning, operation: option.mainRisk || option.risk }, validation: option.validation ?? truthyValidation(), coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore, specificityScore: option.specificityScore ?? option.rfpSpecificityScore }));
+    const options = (result.options ?? []).slice(0, 3).map((option) => ({ ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) })).filter((option) => passesNameFirewall(option, relevanceContext, currentRfpVocabularySet, repeatedHooks)).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk, strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning, expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: option.whyItFitsRfp || option.shortMeaning, media: option.oneLineSlogan || option.shortMeaning, operation: option.mainRisk || option.risk }, validation: option.validation ?? truthyValidation(), coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore, specificityScore: option.specificityScore ?? option.rfpSpecificityScore }));
     const normalized = { ...result, selectedDirectionId: body.selectedDirection.conceptId, options };
-    if (options.length < 6) return json({ ...successResponse(fallbackOptions(body.selectedDirection, body.rfpDiagnosis, body.analysis, currentRfpVocabularySet)), warning: 'LLM 후보가 검증 기준을 충분히 통과하지 못해 fallback 후보를 반환했습니다.' });
+    if (options.length < 3) return json({ ...successResponse(fallbackOptions(body.selectedDirection, body.rfpDiagnosis, body.analysis, currentRfpVocabularySet)), warning: 'LLM 후보가 검증 기준을 충분히 통과하지 못해 fallback 후보를 반환했습니다.' });
     return json(successResponse(normalized));
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';

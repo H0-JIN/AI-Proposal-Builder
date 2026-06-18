@@ -496,6 +496,13 @@ export interface ConceptNameOption {
     currentRfpVocabularyUsed?: boolean;
     notGeneric?: boolean;
     notCrossRfpContaminated?: boolean;
+    namesAreSpecificToSelectedDirection?: boolean;
+    namesDoNotFitOtherDirections?: boolean;
+    noDuplicateConceptLogic?: boolean;
+    noNearDuplicateNames?: boolean;
+    noGenericEnglishCombination?: boolean;
+    connectedToDiagnosis?: boolean;
+    connectedToBrandProductIntelligence?: boolean;
   };
   coverReadinessScore?: number;
   specificityScore?: number;

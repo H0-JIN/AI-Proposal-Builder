@@ -70,7 +70,7 @@ type ExtractTextResponse = {
   extractedPageCount?: number;
 };
 
-type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[]; diagnosis?: RfpDiagnosis };
+type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[]; diagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence };
 
 type DbSaveStatus = 'idle' | 'disabled' | 'saving' | 'saved' | 'failed' | 'partial';
 
@@ -3095,8 +3095,8 @@ export default function Home() {
     try {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: analysisInput, documentChunks });
-      const { result: analysis, evidence, diagnosis } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      const { result: analysis, evidence, diagnosis, brandProductIntelligence } = parseAnalysisApiResponse(analysisResponse);
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, brandProductIntelligence, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(analysisInput, analysis);
     } catch (err) {
@@ -3114,8 +3114,8 @@ export default function Home() {
     try {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
-      const { result: analysis, evidence, diagnosis } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      const { result: analysis, evidence, diagnosis, brandProductIntelligence } = parseAnalysisApiResponse(analysisResponse);
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, brandProductIntelligence, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(mergedInput, analysis);
     } catch (err) {
@@ -3264,7 +3264,7 @@ export default function Home() {
     }));
   };
 
-  const runConceptNames = async () => {
+  const runConceptNames = async (options: { append?: boolean } = {}) => {
     if (!state.analysis || !selectedStrategicDirection) return;
     setError('');
     setFinalNamingError('');
@@ -3280,12 +3280,12 @@ export default function Home() {
         brandExperienceMatrix: state.conceptGenerationResult?.brandExperienceMatrix,
       });
       const activeRelevantMatrix = getActiveMatrix(sanitizedNamingContext) ?? undefined;
-      const result = await postJson<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }>('/api/concept-names', { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection, selectedStrategicDirection: selectedDirection, primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, brandProductIntelligence: state.brandProductIntelligence, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
-      const options = result.nameOptions ?? result.options ?? [];
+      const result = await postJson<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }>('/api/concept-names', { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection, selectedStrategicDirection: selectedDirection, primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, brandProductIntelligence: state.brandProductIntelligence, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative, recentNameOptions: state.conceptNameOptions?.map((option) => option.conceptName) ?? [] });
+      const nameOptions = result.nameOptions ?? result.options ?? [];
       if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
-      if (!options.length) throw new Error('컨셉명 후보가 비어 있습니다.');
+      if (!nameOptions.length) throw new Error('컨셉명 후보가 비어 있습니다.');
       if (result.warning) setFinalNamingError(`Fallback 후보를 표시합니다: ${result.warning}`);
-      setState((current) => ({ ...current, conceptNameOptions: options, selectedFinalConceptNameOption: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, conceptNameOptions: options.append ? [...(current.conceptNameOptions ?? []), ...nameOptions] : nameOptions, selectedFinalConceptNameOption: options.append ? current.selectedFinalConceptNameOption : undefined, outline: undefined, slides: undefined }));
     } catch (err) {
       const message = err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.';
       setFinalNamingError(message);
@@ -3717,11 +3717,11 @@ export default function Home() {
                 <div className="rounded-3xl border border-sky-200 bg-sky-50 p-5">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <h3 className="text-2xl font-black text-sky-950">브랜드/제품 이해</h3>
+                      <h3 className="text-2xl font-black text-sky-950">RFP 기반 브랜드/제품 이해</h3>
                       <p className="mt-2 text-sm font-semibold leading-6 text-sky-900">AI가 RFP와 업로드 자료를 기준으로 브랜드·제품·카테고리 맥락을 정리했습니다. 필요하면 수정 후 전략 방향을 생성하세요.</p>
-                      <p className="mt-2 text-xs font-bold leading-5 text-sky-800">외부 기업/제품 조사는 아직 연결되지 않았습니다. 현재는 RFP와 업로드 자료를 기준으로 브랜드/제품 이해를 보완합니다.</p>
+                      <p className="mt-2 text-xs font-bold leading-5 text-sky-800">현재는 RFP와 업로드 자료를 기준으로 정리됩니다. 외부 웹 조사는 연결되어 있지 않습니다.</p>
                     </div>
-                    <SecondaryButton onClick={runBrandProductIntelligence} disabled={Boolean(loading) || !state.rfpDiagnosis}>{state.brandProductIntelligence ? '다시 정리' : '브랜드/제품 이해 생성'}</SecondaryButton>
+                    {state.brandProductIntelligence && <SecondaryButton onClick={runBrandProductIntelligence} disabled={Boolean(loading) || !state.rfpDiagnosis}>다시 정리</SecondaryButton>}
                   </div>
                   {state.brandProductIntelligence ? (
                     <details open className="mt-4 rounded-2xl border border-sky-200 bg-white p-4">
@@ -3744,7 +3744,7 @@ export default function Home() {
                       </div>
                     </details>
                   ) : (
-                    <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-sky-900">승부처 진단 후 브랜드/제품 이해를 생성해 주세요.</p>
+                    <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-sky-900">RFP 분석 완료 시 자동 생성됩니다. 추가 정보 반영 후 다시 분석하면 함께 갱신됩니다.</p>
                   )}
                 </div>
               )}
@@ -3848,7 +3848,7 @@ export default function Home() {
                     {selected && state.selectedConcept && (
                       <div className="mt-5 rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-900">
                         <p>선택된 방향입니다. 아래 ‘최종 컨셉명 후보’ 섹션에서 컨셉명을 생성하고 비교하세요.</p>
-                        <button type="button" onClick={runConceptNames} disabled={Boolean(loading) || !selectedStrategicDirectionExists} className="mt-3 rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white transition hover:bg-blue-700 disabled:opacity-50">{finalNamingLoading ? '컨셉명 후보 생성 중' : '컨셉명 생성하기'}</button>
+                        <button type="button" onClick={() => runConceptNames()} disabled={Boolean(loading) || !selectedStrategicDirectionExists} className="mt-3 rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white transition hover:bg-blue-700 disabled:opacity-50">{finalNamingLoading ? '컨셉명 후보 생성 중' : '컨셉명 생성하기'}</button>
                       </div>
                     )}
                   </article>
@@ -3865,14 +3865,15 @@ export default function Home() {
                     <p className="mt-3 rounded-2xl bg-indigo-50 px-4 py-3 text-sm font-bold leading-6 text-indigo-950">선택한 전략 방향: <b>{selectedStrategicDirectionLabel}</b><br />{state.selectedConcept.oneLineSummary || state.selectedConcept.whatThisDirectionEmphasizes || state.selectedConcept.coreMessage || ''}</p>
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <PrimaryButton onClick={runConceptNames} disabled={Boolean(loading) || !selectedStrategicDirectionExists}>{finalNamingLoading ? '컨셉명 후보 생성 중' : (state.conceptNameOptions?.length ? '컨셉명 다시 생성' : '컨셉명 생성')}</PrimaryButton>
-                    {finalNamingError && <button type="button" onClick={runConceptNames} className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">다시 시도</button>}
+                    <PrimaryButton onClick={() => runConceptNames()} disabled={Boolean(loading) || !selectedStrategicDirectionExists}>{finalNamingLoading ? '컨셉명 후보 생성 중' : (state.conceptNameOptions?.length ? '컨셉명 다시 생성' : '컨셉명 생성')}</PrimaryButton>
+                    {finalNamingError && <button type="button" onClick={() => runConceptNames()} className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">다시 시도</button>}
                   </div>
                 </div>
                 {finalNamingError && <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{finalNamingError}</p>}
                 <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'}</p></details>
                 {state.conceptNameOptions?.length ? (
-                  <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                  <>
+                  <div className="mt-5 grid gap-4 xl:grid-cols-3">
                     {state.conceptNameOptions.map((option) => {
                       const optionSelected = state.selectedFinalConceptNameOption?.id ? state.selectedFinalConceptNameOption.id === option.id : state.selectedConcept?.finalConceptName === option.conceptName;
                       return (
@@ -3885,7 +3886,7 @@ export default function Home() {
                           <p className="mt-2 text-sm font-bold leading-6 text-indigo-700">{option.oneLineSlogan}</p>
                           <div className="mt-3 space-y-3 text-sm font-semibold leading-6 text-slate-700">
                             <p><b className="text-slate-950">의미</b> {option.shortMeaning}</p>
-                            <p><b className="text-indigo-700">왜 RFP에 맞는가</b> {option.whyItFitsRfp || option.whyItFits}</p>
+                            <p><b className="text-indigo-700">선택 방향 적합성</b> {option.whyItFitsRfp || option.whyItFits}</p>
                             <p><b className="text-rose-700">주요 리스크</b> {option.mainRisk || option.risk}</p>
                             <CompactAccordion title="점수 보기">
                               <p>Cover {option.coverReadinessScore ?? option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.specificityScore ?? option.rfpSpecificityScore} · Expand {option.expandabilityScore}</p>
@@ -3911,6 +3912,8 @@ export default function Home() {
                       );
                     })}
                   </div>
+                  <button type="button" onClick={() => runConceptNames({ append: true })} disabled={Boolean(loading) || !selectedStrategicDirectionExists} className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-black text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50">컨셉명 3개 더 보기</button>
+                  </>
                 ) : <p className="mt-5 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50 px-4 py-5 text-sm font-bold text-indigo-900">컨셉명을 생성하면 후보 카드가 이 영역에 표시됩니다.</p>}
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <label className="block text-sm font-black text-slate-800">최종 컨셉명 수동 편집
