@@ -1,6 +1,25 @@
 const stringArray = { type: 'array', items: { type: 'string' } } as const;
 
 
+
+export const rfpDiagnosisJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    decisionMakerConcern: { type: 'string' },
+    coreWinningCondition: { type: 'string' },
+    hiddenNeed: { type: 'string' },
+    evaluatorDecisionRisk: { type: 'string' },
+    clientUniquePosition: { type: 'string' },
+    strategicTension: { type: 'string' },
+    proofBurden: { type: 'string' },
+    genericProposalFailureReason: { type: 'string' },
+    requiredProofElements: { type: 'array', minItems: 3, maxItems: 7, items: { type: 'string' } },
+    rfpEvidenceAnchors: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['decisionMakerConcern', 'coreWinningCondition', 'hiddenNeed', 'evaluatorDecisionRisk', 'clientUniquePosition', 'strategicTension', 'proofBurden', 'genericProposalFailureReason', 'requiredProofElements', 'rfpEvidenceAnchors'],
+} as const;
+
 const slidePurposeEnum = ['Problem', 'Insight', 'Strategy', 'Concept', 'Experience', 'Content', 'Proof', 'Impact'] as const;
 
 
@@ -524,6 +543,8 @@ export const conceptCandidatesJsonSchema = {
           antiPatternValidation: antiPatternValidationSchema,
           mainStrength: { type: 'string' },
           mainRisk: { type: 'string' },
+          requiredProofElementsAddressed: stringArray,
+          executionKeywords: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string' } },
           entityDifferentiationUse: entityDifferentiationUseSchema,
           conceptRationale: conceptRationaleSchema,
           conceptTitle: { type: 'string' },
@@ -606,6 +627,8 @@ export const conceptCandidatesJsonSchema = {
           'antiPatternValidation',
           'mainStrength',
           'mainRisk',
+          'requiredProofElementsAddressed',
+          'executionKeywords',
           'entityDifferentiationUse',
           'conceptRationale',
           'conceptTitle',

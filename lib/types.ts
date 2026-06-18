@@ -340,6 +340,19 @@ export interface ConceptMechanism {
   whyThisCanBecomeAConcept: string;
 }
 
+export interface RfpDiagnosis {
+  decisionMakerConcern: string;
+  coreWinningCondition: string;
+  hiddenNeed: string;
+  evaluatorDecisionRisk: string;
+  clientUniquePosition: string;
+  strategicTension: string;
+  proofBurden: string;
+  genericProposalFailureReason: string;
+  requiredProofElements: string[];
+  rfpEvidenceAnchors: string[];
+}
+
 export interface ConceptDevelopmentLogic {
   winningStrategyBrief?: string;
   proposalThesis?: string;
@@ -547,6 +560,8 @@ export interface ConceptCandidate {
   antiPatternValidation: AntiPatternValidation;
   mainStrength: string;
   mainRisk: string;
+  requiredProofElementsAddressed?: string[];
+  executionKeywords?: string[];
   entityDifferentiationUse: EntityDifferentiationUse;
   conceptRationale?: ConceptRationale;
   conceptTitle: string;
@@ -640,6 +655,7 @@ export interface ConceptCandidatesResult {
   multiEntityEvidenceCount?: number;
   singleBrandVisitorRoomEvidenceCount?: number;
   entityDifferentiationMatrix: EntityDifferentiationItem[];
+  rfpDiagnosis?: RfpDiagnosis;
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
@@ -762,6 +778,7 @@ export interface ProposalState {
   uploadedDocuments?: UploadedDocument[];
   dbUploadedDocuments?: UploadedDocument[];
   analysis?: AnalysisResult;
+  rfpDiagnosis?: RfpDiagnosis;
   conceptDevelopmentLogic?: ConceptDevelopmentLogic;
   conceptCandidates?: ConceptCandidate[];
   conceptRecommendation?: ConceptRecommendation;
