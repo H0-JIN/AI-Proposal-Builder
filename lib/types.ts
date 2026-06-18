@@ -439,6 +439,7 @@ export type EntityBalanceStatus = 'balanced' | 'over-focused' | 'unknown';
 export type ConceptNameLanguageMode = 'Korean' | 'English' | 'bilingual';
 
 export interface ConceptNameOption {
+  id?: string;
   conceptName: string;
   languageMode: ConceptNameLanguageMode;
   koreanSubtitle?: string;
@@ -499,6 +500,7 @@ export interface ConceptCandidate {
   secondaryRfpConceptTypes?: RfpConceptType[];
   strategicDirectionType: string;
   strategicDirectionLabel: string;
+  directionLabel?: string;
   whatThisDirectionEmphasizes: string;
   whenToChooseThisDirection: string;
   directionSource?: { rfpEvidence: string; proposalPatternLearning: string; lostPatternAvoidance: string };
@@ -750,6 +752,7 @@ export interface ProposalState {
   selectedStrategicDirection?: ConceptCandidate;
   selectedConcept?: ConceptCandidate;
   conceptNameOptions?: ConceptNameOption[];
+  selectedFinalConceptNameOption?: ConceptNameOption;
   outline?: SlideOutline[];
   slides?: SlideContent[];
   retrievalEvidence?: RetrievalEvidenceItem[];
