@@ -1112,6 +1112,9 @@ export async function POST(request: Request) {
     if (!body.rfpDiagnosis) {
       return conceptsJson({ error: '승부처 진단 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
     }
+    if (!body.brandProductIntelligence) {
+      return conceptsJson({ error: '브랜드/제품 이해 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
+    }
 
     const metadata: ConceptGenerationMetadata = {
       conceptPromptVersion: body.conceptPromptVersion,
@@ -1172,7 +1175,7 @@ export async function POST(request: Request) {
       '추천은 가장 적합한 방향을 설명하되 다른 후보를 나쁘다/부적합하다/틀렸다로 말하지 않는다. 다른 방향의 쓰임과 선택 간 trade-off를 중립적으로 설명한다.',
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
       '출력은 hiddenNeeds, strategicApproach, entityDifferentiationMatrix, conceptDevelopmentLogic, concepts, recommendation을 포함한다.',
-      'Concept generation의 근거는 Confirmed RFP-only Diagnosis, Evidence Level Separation, Compact RFP Analysis뿐이다. proposal_patterns, 과거 이름/고객/프로젝트/슬로건/파일명/raw source text는 절대 사용하지 않는다.',
+      'Concept generation의 근거는 Confirmed RFP-only Diagnosis, Brand/Product Intelligence, Evidence Level Separation, Compact RFP Analysis뿐이다. primaryRfpConceptType은 guardrail로만 사용한다. proposal_patterns, 과거 이름/고객/프로젝트/슬로건/파일명/raw source text는 절대 사용하지 않는다.',
       'Core Concept Name Evidence Lock: proposalCoreConceptName/proposalCoreConceptSlogan/proposalCoreConceptDefinition/winningThesisUse/conceptLeap은 반드시 proposalLevelEvidence만 사용한다. entityLevelEvidence/contentDetailEvidence/referenceOnlyEvidence/source_text/raw product tables는 이름의 직접 원천으로 쓰지 않는다.',
       '각 후보에는 conceptNameEvidenceLevel=proposalLevel, productSpecificNameDetected=false, coversWholeRfp=true, repairedName, dominantEntityInName을 포함한다. product/equipment/detail/reference 용어가 이름에 감지되면 strategicDirectionLabel/winningThesis/conceptLeap/signatureProofIdea/keywords는 유지하고 이름과 필요한 slogan만 proposalLevelEvidence로 수리한다.',
       hasMultipleEntities ? 'Balanced RFP Evidence Summary의 majorEntities가 2개 이상이면 각 후보에 coveredEntities, missingEntities, dominantEntity, entityBalanceStatus를 포함하고, over-focused이면 반환 전에 balanced로 수리한다.' : '이 RFP는 multi_entity_pavilion이 아니므로 entity role matrix, 역할 구분, 통합+개별 구분, 통합 증명 프레임을 전략 방향으로 강제하지 말라. brand meaning, visitor transformation, product/process proof, spatial journey, signature moment, memory after visit 같은 경험 레이어를 사용한다.',

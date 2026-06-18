@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { analysisJsonSchema, rfpDiagnosisJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, MatrixType, ProjectInput, RetrievalEvidenceItem, RfpConceptType, RfpDiagnosis } from '@/lib/types';
+import { analysisJsonSchema, brandProductIntelligenceJsonSchema, rfpDiagnosisJsonSchema } from '@/lib/schemas';
+import type { AnalysisResult, BrandProductIntelligence, MatrixType, ProjectInput, RetrievalEvidenceItem, RfpConceptType, RfpDiagnosis } from '@/lib/types';
 import type { DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -38,6 +38,25 @@ async function generateRfpOnlyDiagnosis(input: ProjectInput, analysis: AnalysisR
       'requiredProofElements는 3~7개, rfpEvidenceAnchors는 현재 RFP 분석 또는 현재 검색 근거에서 나온 짧은 근거만 작성한다.',
     ].join('\n'),
     user: `diagnosisContext = current RFP only\n${compact(diagnosisContext)}`,
+    timeoutMs: 12_000,
+  });
+}
+
+async function generateBrandProductIntelligence(input: ProjectInput, analysis: AnalysisResult, diagnosis: RfpDiagnosis, evidence: RetrievalEvidenceItem[]) {
+  // brand/product intelligence = current RFP-based understanding only. External web research and proposal_patterns are intentionally excluded.
+  return createStructuredJson<BrandProductIntelligence>({
+    schemaName: 'brand_product_intelligence',
+    schema: brandProductIntelligenceJsonSchema,
+    system: [
+      '너는 제안 전략을 위한 브랜드/제품 인텔리전스 편집자다.',
+      '이 레이어는 “RFP 기반 브랜드/제품 이해”이며, 외부 웹 조사나 출처 검색을 한 것처럼 쓰지 않는다.',
+      'RFP 요약을 반복하지 말고 브랜드/제품/카테고리 논리, 사용해야 할 어휘, 어울리지 않는 톤, 전략과 네이밍이 피해야 할 것/강조해야 할 것을 정리한다.',
+      '사용 가능: current RFP text, current RFP analysis, confirmed RFP-only diagnosis, user-provided additional information, uploaded/current RFP evidence.',
+      '절대 사용 금지: proposal_patterns, previous proposals, old proposal content, previous concept names, old project language, old client names, won/lost outcomes.',
+      '자료가 부족해 RFP에서 추론한 내용은 해당 문장에 “AI 보완”을 붙여 사용자가 편집할 수 있게 표시한다.',
+      'brandSpecificVocabulary는 현재 RFP의 브랜드/제품/카테고리에 맞는 실무 어휘만 넣고, wordsToAvoid에는 다른 카테고리로 오해되는 톤과 범용 컨셉어를 포함한다.',
+    ].join('\n'),
+    user: `Current RFP text:\n${input.briefText}\n\nCurrent RFP analysis:\n${compact(analysis, 6500)}\n\nConfirmed RFP-only diagnosis:\n${compact(diagnosis, 2200)}\n\nCurrent uploaded/RFP evidence:\n${compact(evidence, 4000)}\n\n외부 웹 조사는 연결되어 있지 않다. RFP와 업로드 자료 기준으로만 작성하고 부족한 추론은 “AI 보완”으로 표시하라.`,
     timeoutMs: 12_000,
   });
 }
@@ -158,8 +177,9 @@ ${input.briefText}`,
     };
 
     const diagnosis = await generateRfpOnlyDiagnosis(input, guardedResult, evidence);
+    const brandProductIntelligence = await generateBrandProductIntelligence(input, guardedResult, diagnosis, evidence);
 
-    return NextResponse.json({ result: guardedResult, evidence, diagnosis });
+    return NextResponse.json({ result: guardedResult, evidence, diagnosis, brandProductIntelligence });
   } catch (error) {
     const message = error instanceof Error ? error.message : '분석 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });
