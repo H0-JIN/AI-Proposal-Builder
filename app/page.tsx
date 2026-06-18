@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -1856,7 +1856,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, rfpDiagnosis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -3082,7 +3082,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: analysisInput, documentChunks });
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(analysisInput, analysis);
     } catch (err) {
@@ -3101,7 +3101,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
       const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(mergedInput, analysis);
     } catch (err) {
@@ -3111,8 +3111,34 @@ export default function Home() {
     }
   };
 
+  const runDiagnosis = async () => {
+    if (!state.analysis) return;
+    setError('');
+    setLoading('승부처 진단 중...');
+    try {
+      const response = await postJson<{ result: RfpDiagnosis }>('/api/diagnosis', { input: analysisInput, analysis: state.analysis });
+      setState((current) => ({ ...current, rfpDiagnosis: response.result, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '진단 생성 중 오류가 발생했습니다.');
+    } finally {
+      setLoading('');
+    }
+  };
+
+  const updateDiagnosisField = (key: keyof RfpDiagnosis, value: string) => {
+    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: { ...current.rfpDiagnosis, [key]: value }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+  };
+
+  const updateDiagnosisProofElements = (value: string) => {
+    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: { ...current.rfpDiagnosis, requiredProofElements: value.split('\n').map((item) => item.trim()).filter(Boolean) }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+  };
+
   const runConcepts = async (options: { retryLight?: boolean } = {}) => {
     if (!state.analysis) return;
+    if (!state.rfpDiagnosis) {
+      setError('승부처 진단을 먼저 확정해 주세요.');
+      return;
+    }
     const generationAttempt = conceptGenerationAttemptRef.current + 1;
     conceptGenerationAttemptRef.current = generationAttempt;
     const requestedAt = new Date().toISOString();
@@ -3143,6 +3169,7 @@ export default function Home() {
         input: analysisInput,
         analysis: state.analysis,
         proposalNarrative,
+        rfpDiagnosis: state.rfpDiagnosis,
         conceptPromptVersion,
         regenerationId,
         timestamp: requestedAt,
@@ -3211,7 +3238,7 @@ export default function Home() {
         brandExperienceMatrix: state.conceptGenerationResult?.brandExperienceMatrix,
       });
       const activeRelevantMatrix = getActiveMatrix(sanitizedNamingContext) ?? undefined;
-      const result = await postJson<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }>('/api/concept-names', { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection, selectedStrategicDirection: selectedDirection, primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, proposalPatternsUsedForDirections: state.conceptGenerationResult?.proposalPatternsUsedForDirections, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
+      const result = await postJson<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }>('/api/concept-names', { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection, selectedStrategicDirection: selectedDirection, primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
       const options = result.nameOptions ?? result.options ?? [];
       if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
       if (!options.length) throw new Error('컨셉명 후보가 비어 있습니다.');
@@ -3615,6 +3642,35 @@ export default function Home() {
                 </div>
               )}
               <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
+              <div className="rounded-3xl border border-indigo-200 bg-indigo-50 p-5">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h3 className="text-2xl font-black text-indigo-950">승부처 진단</h3>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-indigo-900">AI가 RFP만을 기준으로 이번 제안의 승부처를 진단했습니다. 필요하면 수정 후 전략 방향을 생성하세요.</p>
+                  </div>
+                  {!state.rfpDiagnosis && <PrimaryButton onClick={runDiagnosis} disabled={Boolean(loading)}>승부처 진단 생성</PrimaryButton>}
+                </div>
+                {state.rfpDiagnosis ? (
+                  <div className="mt-5 grid gap-4">
+                    {([['coreWinningCondition', 'Core Winning Condition'], ['hiddenNeed', 'Hidden Need'], ['strategicTension', 'Strategic Tension'], ['proofBurden', 'Proof Burden'], ['genericProposalFailureReason', 'Generic Proposal Failure Reason']] as const).map(([key, label]) => (
+                      <label key={key} className="block">
+                        <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-indigo-700">{label}</span>
+                        <textarea value={state.rfpDiagnosis?.[key] ?? ''} onChange={(event) => updateDiagnosisField(key, event.target.value)} className="min-h-20 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-indigo-500" />
+                      </label>
+                    ))}
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-indigo-700">Required Proof Elements</span>
+                      <textarea value={state.rfpDiagnosis.requiredProofElements.join('\n')} onChange={(event) => updateDiagnosisProofElements(event.target.value)} className="min-h-32 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-indigo-500" />
+                    </label>
+                    <details className="rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-xs font-semibold text-indigo-900">
+                      <summary className="cursor-pointer font-black">개발 정보 보기</summary>
+                      <pre className="mt-3 whitespace-pre-wrap">{JSON.stringify({ rfpEvidenceAnchors: state.rfpDiagnosis.rfpEvidenceAnchors, decisionMakerConcern: state.rfpDiagnosis.decisionMakerConcern, evaluatorDecisionRisk: state.rfpDiagnosis.evaluatorDecisionRisk, clientUniquePosition: state.rfpDiagnosis.clientUniquePosition }, null, 2)}</pre>
+                    </details>
+                  </div>
+                ) : (
+                  <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-indigo-900">전략 방향 생성 전에 RFP-only 승부처 진단이 필요합니다.</p>
+                )}
+              </div>
             </div>
             {hasConfirmationNeeds && (
               <div className="mt-6">
@@ -3629,10 +3685,10 @@ export default function Home() {
               {hasConfirmationNeeds ? (
                 <>
                   <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
-                  <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading)}>콘셉트 생성</SecondaryButton>
+                  <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.rfpDiagnosis}>진단 확정 후 전략 방향 생성</SecondaryButton>
                 </>
               ) : (
-                <PrimaryButton onClick={() => runConcepts()} disabled={Boolean(loading)}>콘셉트 후보 생성</PrimaryButton>
+                <PrimaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.rfpDiagnosis}>진단 확정 후 전략 방향 생성</PrimaryButton>
               )}
             </div>
           </SectionCard>
