@@ -3649,9 +3649,12 @@ export default function Home() {
               <p className="mt-3 text-xs font-bold text-blue-700">
                 prompt {state.conceptGenerationResult?.conceptPromptVersion || conceptPromptVersion} · attempt {(state.conceptGenerationResult?.generationAttempt ?? conceptGenerationAttemptRef.current) || '-'} · generated {state.conceptGenerationResult?.generatedAt || (loading.includes('새 후보') ? 'generating...' : '-')}
               </p>
-              <p className="mt-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-600">
-                rawPrimaryRfpConceptType: {state.conceptGenerationResult?.rawPrimaryRfpConceptType || state.analysis.primaryRfpConceptType || 'unknown'} · primaryRfpConceptType: {state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType || state.conceptCandidates?.[0]?.rfpConceptType || 'unknown'} · rawMatrixType: {state.conceptGenerationResult?.rawMatrixType || state.analysis.matrixType || 'none'} · matrixType: {state.conceptGenerationResult?.matrixType || state.analysis.matrixType || 'none'} · activeMatrixType: {state.conceptGenerationResult?.activeMatrixType || state.conceptGenerationResult?.matrixType || 'none'} · entityMatrixActive: {String(state.conceptGenerationResult?.entityMatrixActive ?? (state.conceptGenerationResult?.matrixType === 'entityDifferentiationMatrix'))} · brandMatrixActive: {String(state.conceptGenerationResult?.brandMatrixActive ?? (state.conceptGenerationResult?.matrixType === 'brandExperienceMatrix'))} · sanitizerApplied: {String(state.conceptGenerationResult?.sanitizerApplied ?? false)} · sanitizerReason: {state.conceptGenerationResult?.sanitizerReason || 'none'} · selectedDirectionLensSet: {(state.conceptGenerationResult?.selectedDirectionLensSet ?? state.analysis.selectedDirectionLensSet ?? []).join(' / ') || 'unknown'} · activeMatrixSummary: {state.conceptGenerationResult?.activeMatrixSummary || 'none'} · proposalPatternsUsedForDirections: {String(state.conceptGenerationResult?.proposalPatternsUsedForDirections ?? false)} · currentRfpOnlyMode: {String(state.conceptGenerationResult?.currentRfpOnlyMode ?? ((state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType) !== 'multi_entity_pavilion'))} · contaminationCheckPassed: {String(state.conceptGenerationResult?.contaminationCheckPassed ?? true)} · blockedTerms: {state.conceptGenerationResult?.blockedTerms?.join(' / ') || 'none'}
-              </p>
+              <details className="mt-3 rounded-2xl border border-blue-100 bg-white/70 px-3 py-2 text-[11px] font-bold text-slate-500">
+                <summary className="cursor-pointer font-black text-blue-700">개발 정보 보기</summary>
+                <p className="mt-2 leading-5">
+                  rawPrimaryRfpConceptType: {state.conceptGenerationResult?.rawPrimaryRfpConceptType || state.analysis.primaryRfpConceptType || 'unknown'} · primaryRfpConceptType: {state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType || state.conceptCandidates?.[0]?.rfpConceptType || 'unknown'} · rawMatrixType: {state.conceptGenerationResult?.rawMatrixType || state.analysis.matrixType || 'none'} · matrixType: {state.conceptGenerationResult?.matrixType || state.analysis.matrixType || 'none'} · activeMatrixType: {state.conceptGenerationResult?.activeMatrixType || state.conceptGenerationResult?.matrixType || 'none'} · entityMatrixActive: {String(state.conceptGenerationResult?.entityMatrixActive ?? (state.conceptGenerationResult?.matrixType === 'entityDifferentiationMatrix'))} · brandMatrixActive: {String(state.conceptGenerationResult?.brandMatrixActive ?? (state.conceptGenerationResult?.matrixType === 'brandExperienceMatrix'))} · classificationConfidence: {state.conceptGenerationResult?.classificationConfidence || state.analysis.classificationConfidence || 'unknown'} · classificationReason: {state.conceptGenerationResult?.classificationReason || state.analysis.classificationReason || 'none'} · multiEntityEvidenceCount: {state.conceptGenerationResult?.multiEntityEvidenceCount ?? state.analysis.multiEntityEvidenceCount ?? 0} · singleBrandVisitorRoomEvidenceCount: {state.conceptGenerationResult?.singleBrandVisitorRoomEvidenceCount ?? state.analysis.singleBrandVisitorRoomEvidenceCount ?? 0} · sanitizerApplied: {String(state.conceptGenerationResult?.sanitizerApplied ?? false)} · sanitizerReason: {state.conceptGenerationResult?.sanitizerReason || 'none'} · selectedDirectionLensSet: {(state.conceptGenerationResult?.selectedDirectionLensSet ?? state.analysis.selectedDirectionLensSet ?? []).join(' / ') || 'unknown'} · activeMatrixSummary: {state.conceptGenerationResult?.activeMatrixSummary || 'none'} · proposalPatternsUsedForDirections: {String(state.conceptGenerationResult?.proposalPatternsUsedForDirections ?? false)} · currentRfpOnlyMode: {String(state.conceptGenerationResult?.currentRfpOnlyMode ?? ((state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType) !== 'multi_entity_pavilion'))} · contaminationCheckPassed: {String(state.conceptGenerationResult?.contaminationCheckPassed ?? true)} · blockedTerms: {state.conceptGenerationResult?.blockedTerms?.join(' / ') || 'none'}
+                </p>
+              </details>
               {selectedStrategicDirectionExists && (
                 <p className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm font-black text-blue-800">
                   선택된 전략 방향: {selectedStrategicDirectionLabel}
@@ -3681,45 +3684,15 @@ export default function Home() {
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
                     <h3 className="mt-2 text-2xl font-black text-slate-950">{getStrategicDirectionLabel(concept)}</h3>
                     {concept.namingGuardWarning && (
-                      <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 확인 권장</p>
+                      <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 개발 정보에서 확인</p>
                     )}
-                    {concept.nameValidation && (
-                      <p className="mt-2 text-xs font-bold leading-5 text-slate-500">
-                        nameValidationStatus: {concept.nameValidation.nameValidationStatus}
-                        {concept.nameValidation.originalName && concept.nameValidation.originalName !== concept.nameValidation.repairedName ? ` · original: ${concept.nameValidation.originalName} → repaired: ${concept.nameValidation.repairedName}` : ` · name: ${concept.nameValidation.repairedName}`}
-                        {concept.nameValidation.reason ? ` · ${concept.nameValidation.reason}` : ''}
-                      </p>
-                    )}
-                    <p className="mt-2 inline-flex w-fit rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">Direction: {getStrategicDirectionLabel(concept)}</p>
-                    <p className="mt-2 text-[11px] font-bold leading-5 text-slate-400">
-                      primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · secondaryRfpConceptTypes: {concept.secondaryRfpConceptTypes?.length ? concept.secondaryRfpConceptTypes.join(' / ') : 'none'} · selectedDirectionLensSet: {concept.strategicDirectionType || concept.strategicDirectionLabel || concept.directionLabel || 'unknown'} · matrixType: {state.conceptGenerationResult?.matrixType || (concept.rfpConceptType === 'multi_entity_pavilion' ? 'entityDifferentiationMatrix' : (concept.rfpConceptType === 'visitor_center_or_tour' || concept.rfpConceptType === 'single_brand_experience') ? 'brandExperienceMatrix' : 'none')}
-                    </p>
-                    {(concept.directionDebug || concept.directionSource || concept.failurePatternAvoided || concept.winningPatternUsed) && (
-                      <p className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold leading-5 text-slate-500">
-                        Direction source: {concept.directionDebug?.source || (concept.directionSource ? 'mixed' : 'RFP')} · Failure avoided: {concept.directionDebug?.failurePatternAvoided || concept.failurePatternAvoided || concept.directionSource?.lostPatternAvoidance || 'no strong lost pattern'} · Winning pattern: {concept.directionDebug?.winningPatternUsed || concept.winningPatternUsed || concept.directionSource?.proposalPatternLearning || 'no strong pattern used'} · Confidence: {concept.directionDebug?.confidence || 'medium'}
-                      </p>
-                    )}
-                    {concept.entityBalanceStatus && (
-                      <p className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold leading-5 text-slate-600">
-                        evidence balance: {concept.entityBalanceStatus}
-                        {concept.dominantEntity ? ` · dominant: ${concept.dominantEntity}` : ''}
-                        {concept.coveredEntities?.length ? ` · covered: ${concept.coveredEntities.slice(0, 4).join(' / ')}` : ''}
-                      </p>
-                    )}
-                    {(concept.conceptNameEvidenceLevel || typeof concept.productSpecificNameDetected === 'boolean' || typeof concept.repairedName === 'boolean' || concept.dominantEntityInName) && (
-                      <p className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-800">
-                        naming source: {concept.conceptNameEvidenceLevel || 'proposalLevel'}
-                        {` · productSpecificNameDetected: ${Boolean(concept.productSpecificNameDetected)}`}
-                        {` · repairedName: ${Boolean(concept.repairedName)}`}
-                        {concept.dominantEntityInName ? ` · dominantEntityInName: ${concept.dominantEntityInName}` : ''}
-                      </p>
-                    )}
-                    {(concept.conceptNameKoreanSubtitle || (concept.conceptNameEnglish && concept.conceptNameEnglish !== getPresentationConceptName(concept) ? concept.conceptNameEnglish : '')) && (
-                      <p className="mt-2 text-sm font-bold text-slate-500">{concept.conceptNameKoreanSubtitle || concept.conceptNameEnglish}</p>
-                    )}
-                    <p className="mt-3 text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
+                    <p className="mt-3 text-sm font-bold leading-6 text-slate-700">{concept.oneLineSummary || concept.whatThisDirectionEmphasizes || concept.coreMessage || getConceptTagline(concept)}</p>
+                    <div className="mt-3 grid gap-2 text-sm font-bold leading-6 text-slate-700">
+                      <p><b className="text-blue-700">강점</b> {concept.mainStrength || concept.strengths?.[0] || concept.evaluationSummary || '-'}</p>
+                      <p><b className="text-rose-700">리스크</b> {concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution || '-'}</p>
+                    </div>
                     <div className="mt-4 flex-1 space-y-2">
-                      <CompactAccordion title="방향 요약">
+                      <CompactAccordion title="방향 상세">
                         <p>{concept.whatThisDirectionEmphasizes || concept.coreMessage || concept.strategicApproach || getConceptTagline(concept)}</p>
                         {conceptKeywordChips(concept).length > 0 && <div className="mt-2 flex flex-wrap gap-2">{conceptKeywordChips(concept).map((keyword) => <span key={keyword} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{keyword}</span>)}</div>}
                       </CompactAccordion>
@@ -3727,12 +3700,8 @@ export default function Home() {
                       <CompactAccordion title="Winning Thesis"><p>{concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach}</p></CompactAccordion>
                       <CompactAccordion title="Concept Leap"><p>{concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</p></CompactAccordion>
                       <CompactAccordion title="Signature Proof"><p>{concept.signatureProofIdea?.whyThisProvesTheConcept || concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.keyExperienceAssetDirection}</p></CompactAccordion>
-                      <CompactAccordion title="리스크 / 강점">
-                        <p><b>강점:</b> {concept.mainStrength || concept.strengths?.[0] || concept.evaluationSummary || '-'}</p>
-                        <p className="mt-2"><b>리스크:</b> {concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution || '-'}</p>
-                      </CompactAccordion>
-                      <CompactAccordion title="디버그">
-                        <p>primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · matrixType: {state.conceptGenerationResult?.matrixType || 'none'}</p>
+                      <CompactAccordion title="개발 정보 보기">
+                        <p>primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · secondaryRfpConceptTypes: {concept.secondaryRfpConceptTypes?.join(' / ') || 'none'} · matrixType: {state.conceptGenerationResult?.matrixType || 'none'}</p><p>nameValidationStatus: {concept.nameValidation?.nameValidationStatus || concept.nameValidationStatus || 'none'} · originalName: {concept.nameValidation?.originalName || 'none'} · repairedName: {concept.nameValidation?.repairedName || concept.repairedProposalCoreConceptName || 'none'}</p><p>conceptNameScopeClassification: {concept.conceptNameEvidenceLevel || 'proposalLevel'} · repairedNameFlag: {String(Boolean(concept.repairedName))}</p>
                         <p>proposalLearningUsed: {concept.directionSource?.proposalPatternLearning || concept.winningPatternUsed || concept.directionDebug?.winningPatternUsed || '현재 RFP 근거 우선'}</p>
                         <p>warning/lostPatternAvoided: {concept.directionSource?.lostPatternAvoidance || concept.failurePatternAvoided || concept.directionDebug?.failurePatternAvoided || concept.namingGuardWarning || '강한 lost pattern 없음'}</p>
                       </CompactAccordion>
@@ -3753,7 +3722,7 @@ export default function Home() {
                           {finalNamingError && <button type="button" onClick={runConceptNames} className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">다시 시도</button>}
                         </div>
                         {finalNamingError && <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{finalNamingError}</p>}
-                        <p className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'}</p>
+                        <details className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'}</p></details>
                         {state.conceptNameOptions?.length ? (
                           <div className="mt-5 grid gap-3 md:grid-cols-2">
                             {state.conceptNameOptions.map((option) => {

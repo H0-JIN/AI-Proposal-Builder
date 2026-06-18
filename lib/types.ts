@@ -274,6 +274,10 @@ export interface AnalysisResult {
   primaryRfpConceptType?: RfpConceptType;
   matrixType?: MatrixType;
   selectedDirectionLensSet?: string[];
+  classificationConfidence?: 'high' | 'medium' | 'low';
+  classificationReason?: string;
+  multiEntityEvidenceCount?: number;
+  singleBrandVisitorRoomEvidenceCount?: number;
   missingInfo: string[];
   rfpRequirements: AnalysisSection;
   clientTask: AnalysisSection;
@@ -501,6 +505,7 @@ export interface ConceptCandidate {
   strategicDirectionType: string;
   strategicDirectionLabel: string;
   directionLabel?: string;
+  oneLineSummary?: string;
   whatThisDirectionEmphasizes: string;
   whenToChooseThisDirection: string;
   directionSource?: { rfpEvidence: string; proposalPatternLearning: string; lostPatternAvoidance: string };
@@ -628,6 +633,10 @@ export interface ConceptCandidatesResult {
   contaminationCheckPassed?: boolean;
   blockedTerms?: string[];
   primaryRfpConceptType?: RfpConceptType;
+  classificationConfidence?: 'high' | 'medium' | 'low';
+  classificationReason?: string;
+  multiEntityEvidenceCount?: number;
+  singleBrandVisitorRoomEvidenceCount?: number;
   entityDifferentiationMatrix: EntityDifferentiationItem[];
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];

@@ -9,17 +9,23 @@ import { refineAnalysisConfirmationNeeds } from '@/lib/confirmationNeeds';
 import { buildProposalStructureGuard } from '@/lib/proposalStructureGuard';
 
 
-function inferAnalysisRfpGate(analysis: AnalysisResult): { primaryRfpConceptType: RfpConceptType; matrixType: MatrixType; selectedDirectionLensSet: string[] } {
+function countMatches(text: string, patterns: RegExp[]) { return patterns.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0); }
+
+function inferAnalysisRfpGate(analysis: AnalysisResult): { primaryRfpConceptType: RfpConceptType; matrixType: MatrixType; selectedDirectionLensSet: string[]; classificationConfidence: 'high' | 'medium' | 'low'; classificationReason: string; multiEntityEvidenceCount: number; singleBrandVisitorRoomEvidenceCount: number } {
   const text = [analysis.projectOverview, analysis.clientChallenge, analysis.targetInfo, analysis.spatialCondition, analysis.contentCondition, analysis.operationCondition, ...(analysis.requiredItems ?? []), ...(analysis.requiredScope ?? []), ...(analysis.scopeOfWork ?? []), ...(analysis.requiredDeliverables ?? []), ...(analysis.evaluationCriteria ?? []), ...(analysis.productInfo ?? [])].filter(Boolean).join(' ');
   const visitorOrBrand = /방문자센터|홍보관|체험관|전시관|visitor\s*center|brand\s*tour|factory\s*tour|tour|투어|견학|showroom|쇼룸|브랜드\s*경험|brand\s*experience/i.test(text);
-  const visitorRoomOverride = /견학룸|견학|브랜드\s*체험|브랜드\s*공간|공장\s*견학|방문객\s*체험|제품\s*이해|제조\s*공정|브랜드\s*스토리|체험룸|쇼룸|visitor\s*room|factory\s*tour|showroom/i.test(text);
-  const multiEntity = /공동관|공동\s*부스|공동\s*전시|파빌리온|pavilion|joint\s*(?:booth|pavilion|exhibition)|national\s*pavilion|shared\s*exhibition|consortium|컨소시엄|참여기업|참여\s*기관|협력사|계열사|기관별|기업별|브랜드별|도메인별|(?:여러|다수|복수|multiple|multi).*(?:기업|회사|브랜드|기관|stakeholder|이해관계자|business\s*unit|domain|도메인)|통합.*(?:구분|차별|역할)|(?:구분|차별|역할).*통합|unified.*(?:differentiated|role)/i.test(text);
-  if (visitorRoomOverride && !multiEntity) return { primaryRfpConceptType: /견학|견학룸|공장\s*견학|방문객\s*체험|체험룸|쇼룸|factory\s*tour|showroom|visitor\s*room/i.test(text) ? 'visitor_center_or_tour' : 'single_brand_experience', matrixType: 'brandExperienceMatrix', selectedDirectionLensSet: ['rfp_evidence_route', 'audience_transformation_route', 'specific_proof_route'] };
-  if (multiEntity) return { primaryRfpConceptType: 'multi_entity_pavilion', matrixType: 'entityDifferentiationMatrix', selectedDirectionLensSet: ['rfp_evidence_route', 'proposal_learning_route', 'lost_pattern_avoidance_route'] };
-  if (visitorOrBrand) return { primaryRfpConceptType: /방문자센터|홍보관|체험관|전시관|visitor\s*center|tour|투어|견학|factory\s*tour/i.test(text) ? 'visitor_center_or_tour' : 'single_brand_experience', matrixType: 'brandExperienceMatrix', selectedDirectionLensSet: ['rfp_evidence_route', 'audience_transformation_route', 'specific_proof_route'] };
-  if (/제품|상품|product|demo|시연|기능|성능/i.test(text)) return { primaryRfpConceptType: 'product_experience_space', matrixType: 'productExperienceMatrix', selectedDirectionLensSet: ['rfp_evidence_route', 'audience_transformation_route', 'specific_proof_route'] };
-  if (/운영|동선|등록|안전|인력|operation|logistics/i.test(text)) return { primaryRfpConceptType: 'operation_heavy_event', matrixType: 'operationTrustMatrix', selectedDirectionLensSet: ['rfp_evidence_route', 'audience_transformation_route', 'specific_proof_route'] };
-  return { primaryRfpConceptType: 'unknown', matrixType: 'none', selectedDirectionLensSet: [] };
+  const visitorRoomPattern = /견학룸|견학|브랜드\s*체험|브랜드\s*공간|공장\s*견학|방문객\s*체험|제품\s*이해|제조\s*공정|브랜드\s*스토리|체험룸|쇼룸|투어|visitor\s*room|brand\s*tour|brand\s*experience(?:\s*space)?|factory\s*tour|visitor\s*center|showroom/i;
+  const multiEntityEvidenceCount = countMatches(text, [/공동관|공동\s*부스|공동\s*전시|파빌리온|joint\s*(?:booth|pavilion|exhibition)|national\s*pavilion|shared\s*exhibition|consortium|컨소시엄/i, /참여기업|참여\s*기관|협력사|계열사|기관별|기업별|브랜드별|(?:여러|다수|복수|multiple|multi).{0,20}(?:기업|회사|브랜드|기관)/i, /도메인별|business\s*unit|multiple\s*domains|각\s*(?:사업부|도메인).*독립|독립.*(?:사업부|도메인)/i, /통합.*(?:개별|구분|차별|역할)|(?:개별|구분|차별|역할).*통합|unified.*(?:differentiated|role)|balance.*(?:identity|distinction)|각\s*(?:기업|기관|브랜드|도메인).*역할/i]);
+  const singleBrandVisitorRoomEvidenceCount = countMatches(text, [visitorRoomPattern]);
+  const visitorRoomOverride = singleBrandVisitorRoomEvidenceCount > 0;
+  const multiEntity = multiEntityEvidenceCount >= 2;
+  const meta = { classificationConfidence: 'high' as const, multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount };
+  if (visitorRoomOverride && multiEntityEvidenceCount < 2) return { primaryRfpConceptType: /견학|견학룸|공장\s*견학|방문객\s*체험|체험룸|쇼룸|factory\s*tour|showroom|visitor\s*room|visitor\s*center/i.test(text) ? 'visitor_center_or_tour' : 'single_brand_experience', matrixType: 'brandExperienceMatrix', selectedDirectionLensSet: ['rfp_evidence_route', 'audience_transformation_route', 'specific_proof_route'], classificationReason: 'single-brand visitor room/brand tour override; fewer than 2 equal proposal-owner signals', ...meta };
+  if (multiEntity) return { primaryRfpConceptType: 'multi_entity_pavilion', matrixType: 'entityDifferentiationMatrix', selectedDirectionLensSet: ['rfp_evidence_route', 'proposal_learning_route', 'lost_pattern_avoidance_route'], classificationReason: '2+ equal proposal-owning entity/pavilion signals detected', ...meta };
+  if (visitorOrBrand) return { primaryRfpConceptType: /방문자센터|홍보관|체험관|전시관|visitor\s*center|tour|투어|견학|factory\s*tour/i.test(text) ? 'visitor_center_or_tour' : 'single_brand_experience', matrixType: 'brandExperienceMatrix', selectedDirectionLensSet: ['rfp_evidence_route', 'audience_transformation_route', 'specific_proof_route'], classificationReason: 'brand/visitor experience signals without multi-entity owner evidence', ...meta };
+  if (/제품|상품|product|demo|시연|기능|성능/i.test(text)) return { primaryRfpConceptType: 'product_experience_space', matrixType: 'productExperienceMatrix', selectedDirectionLensSet: ['rfp_evidence_route', 'audience_transformation_route', 'specific_proof_route'], classificationReason: 'product experience signals without multi-entity owner evidence', ...meta };
+  if (/운영|동선|등록|안전|인력|operation|logistics/i.test(text)) return { primaryRfpConceptType: 'operation_heavy_event', matrixType: 'operationTrustMatrix', selectedDirectionLensSet: ['rfp_evidence_route', 'audience_transformation_route', 'specific_proof_route'], classificationReason: 'operation-heavy signals without multi-entity owner evidence', ...meta };
+  return { primaryRfpConceptType: 'unknown', matrixType: 'none', selectedDirectionLensSet: [], classificationConfidence: 'low', classificationReason: 'no strong RFP concept type signals detected', multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount };
 }
 
 export async function POST(request: Request) {
@@ -104,6 +110,10 @@ ${input.briefText}`,
       primaryRfpConceptType: rfpGate.primaryRfpConceptType,
       matrixType: rfpGate.matrixType,
       selectedDirectionLensSet: rfpGate.selectedDirectionLensSet,
+      classificationConfidence: rfpGate.classificationConfidence,
+      classificationReason: rfpGate.classificationReason,
+      multiEntityEvidenceCount: rfpGate.multiEntityEvidenceCount,
+      singleBrandVisitorRoomEvidenceCount: rfpGate.singleBrandVisitorRoomEvidenceCount,
       proposalStructureGuard: [
         refinedResult.proposalStructureGuard,
         structureGuard.proposalScopeTypes.includes('contentDevelopment')
