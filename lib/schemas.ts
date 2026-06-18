@@ -486,6 +486,23 @@ const directionDebugSchema = {
   },
   required: ['source', 'failurePatternAvoided', 'winningPatternUsed', 'confidence'],
 } as const;
+
+const strategicDirectionQualityValidationSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    isStrategicBet: { type: 'boolean' },
+    isOnlyBasicRequirement: { type: 'boolean' },
+    addressesCoreWinningCondition: { type: 'boolean' },
+    addressesStrategicTension: { type: 'boolean' },
+    addressesProofBurden: { type: 'boolean' },
+    hasDistinctPointOfView: { type: 'boolean' },
+    couldFitAnyRfp: { type: 'boolean' },
+    validationReason: { type: 'string' },
+  },
+  required: ['isStrategicBet', 'isOnlyBasicRequirement', 'addressesCoreWinningCondition', 'addressesStrategicTension', 'addressesProofBurden', 'hasDistinctPointOfView', 'couldFitAnyRfp', 'validationReason'],
+} as const;
+
 export const conceptCandidatesJsonSchema = {
   type: 'object',
   additionalProperties: false,
@@ -507,6 +524,7 @@ export const conceptCandidatesJsonSchema = {
           secondaryRfpConceptTypes: { type: 'array', items: { type: 'string', enum: rfpConceptTypeEnum } },
           strategicDirectionType: { type: 'string' },
           strategicDirectionLabel: { type: 'string' },
+          strategicDirectionQualityValidation: strategicDirectionQualityValidationSchema,
           whatThisDirectionEmphasizes: { type: 'string' },
           whenToChooseThisDirection: { type: 'string' },
           directionSource: directionSourceSchema,
@@ -591,6 +609,7 @@ export const conceptCandidatesJsonSchema = {
           'secondaryRfpConceptTypes',
           'strategicDirectionType',
           'strategicDirectionLabel',
+          'strategicDirectionQualityValidation',
           'whatThisDirectionEmphasizes',
           'whenToChooseThisDirection',
           'directionSource',

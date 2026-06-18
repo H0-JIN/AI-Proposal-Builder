@@ -3805,11 +3805,16 @@ export default function Home() {
                           </div>
                           {option.koreanSubtitle && <p className="mt-1 text-sm font-black leading-6 text-slate-500">{option.koreanSubtitle}</p>}
                           <p className="mt-2 text-sm font-bold leading-6 text-indigo-700">{option.oneLineSlogan}</p>
-                          <div className="mt-3 space-y-2">
-                            <CompactAccordion title="의미"><p>{option.shortMeaning}</p><p className="mt-2">Style: {option.namingStyle}</p></CompactAccordion>
-                            <CompactAccordion title="왜 맞는가"><p>{option.whyItFitsRfp || option.whyItFits}</p></CompactAccordion>
-                            <CompactAccordion title="리스크"><p>{option.mainRisk || option.risk}</p></CompactAccordion>
-                            <CompactAccordion title="점수"><p>Cover {option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.rfpSpecificityScore} · Expand {option.expandabilityScore}</p></CompactAccordion>
+                          <div className="mt-3 space-y-3 text-sm font-semibold leading-6 text-slate-700">
+                            <p><b className="text-slate-950">의미</b> {option.shortMeaning}</p>
+                            <p><b className="text-indigo-700">왜 RFP에 맞는가</b> {option.whyItFitsRfp || option.whyItFits}</p>
+                            <p><b className="text-rose-700">주요 리스크</b> {option.mainRisk || option.risk}</p>
+                            <CompactAccordion title="점수 / 상세 근거">
+                              <p>Cover {option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.rfpSpecificityScore} · Expand {option.expandabilityScore}</p>
+                              <p className="mt-2">Style: {option.namingStyle}</p>
+                              <p className="mt-2">상세 rationale: {option.whyItFitsRfp || option.whyItFits}</p>
+                              <p className="mt-2">Debug/Risk: {option.risk}</p>
+                            </CompactAccordion>
                           </div>
                           <button type="button" onClick={() => selectConceptNameOption(option)} className={`mt-4 inline-flex rounded-xl px-4 py-2 text-sm font-black ${optionSelected ? 'bg-indigo-600 text-white' : 'bg-slate-950 text-white'}`}>{optionSelected ? '선택됨' : '이 이름 선택'}</button>
                         </article>

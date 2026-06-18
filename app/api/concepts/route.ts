@@ -78,6 +78,58 @@ const CORE_CONCEPT_CATEGORIES = new Set<ChunkCategory>(['projectObjective', 'pro
 const DETAIL_CONCEPT_CATEGORIES = new Set<ChunkCategory>(['productFeature', 'designDirection', 'backgroundInsight', 'referenceOnly', 'existingAsset']);
 const DETAIL_ENTITY_TERMS = /EO|optical|optic|optics|equipment|spec|lens|sensor|camera|product|제품|장비|광학|사양|스펙|조준경|시스템|이미지|reference|레퍼런스|참고/i;
 
+const BASIC_DIRECTION_PATTERN = /요구\s*충족|요건\s*충족|범위\s*포괄|범위\s*커버|scope\s*coverage|fulfill(?:ing)?\s*requirements|cover(?:ing)?\s*(?:all\s*)?scope|정보\s*전달|information\s*delivery|communicat(?:e|ing)\s*information|안정\s*운영|stable\s*operation|balanced?\s*planning|균형\s*구성|기획과\s*운영|콘텐츠\s*정리|organizing\s*content|basic\s*feasibility|visitor\s*understanding|브랜드\s*커뮤니케이션|통합\s*관리/i;
+
+function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: StrategicDirectionPlanItem) {
+  const text = [
+    concept.strategicDirectionLabel,
+    concept.whatThisDirectionEmphasizes,
+    concept.whenToChooseThisDirection,
+    concept.winningThesisUse?.winningClaim,
+    concept.conceptLeap?.conceptLeap,
+    concept.signatureProofIdea?.whyThisProvesTheConcept,
+    concept.mainStrength,
+  ].filter(Boolean).join(' ');
+  const isOnlyBasicRequirement = BASIC_DIRECTION_PATTERN.test(text);
+  const addressesCoreWinningCondition = Boolean(concept.winningThesisUse?.winningClaim || planItem.emphasis);
+  const addressesStrategicTension = Boolean(concept.winningThesisUse?.audiencePerceptionGap || concept.winningThesisUse?.contextShift || concept.conceptLeap?.fromStatement || planItem.directionAxis);
+  const addressesProofBurden = Boolean(concept.winningThesisUse?.whatMustBeProven || concept.signatureProofIdea?.whyThisProvesTheConcept || concept.requiredProofElementsAddressed?.length || planItem.rfpEvidence);
+  const hasDistinctPointOfView = Boolean(concept.conceptLeap?.conceptLeap || concept.signatureProofIdea?.whyThisIsNotGeneric || planItem.directionAxis) && !isOnlyBasicRequirement;
+  const couldFitAnyRfp = !concept.directionSource?.rfpEvidence && !(concept.rfpGrounding?.length) || /^(전략 방향|브랜드 경험 방향|정보 전달|안정 운영|요구 충족|균형 구성|통합 관리|콘텐츠 정리)$/i.test((concept.strategicDirectionLabel || '').trim());
+  const isStrategicBet = !isOnlyBasicRequirement && addressesCoreWinningCondition && addressesProofBurden && hasDistinctPointOfView && !couldFitAnyRfp;
+  return {
+    isStrategicBet,
+    isOnlyBasicRequirement,
+    addressesCoreWinningCondition,
+    addressesStrategicTension,
+    addressesProofBurden,
+    hasDistinctPointOfView,
+    couldFitAnyRfp,
+    validationReason: isStrategicBet
+      ? '현재 RFP의 winning condition과 proof burden을 해결하는 선택지로 검증됨.'
+      : '기본 수행조건/범용 방향으로 감지되어 confirmed diagnosis 기반 전략적 베팅으로 수리 필요.',
+  };
+}
+
+function repairBasicStrategicDirection(concept: ConceptCandidate, planItem: StrategicDirectionPlanItem): ConceptCandidate {
+  const repaired = {
+    ...concept,
+    strategicDirectionLabel: planItem.label,
+    strategicDirectionType: planItem.type,
+    directionAxis: planItem.directionAxis || planItem.type,
+    whatThisDirectionEmphasizes: planItem.emphasis,
+    whenToChooseThisDirection: planItem.chooseWhen,
+    winningThesisUse: { ...(concept.winningThesisUse ?? {}), winningClaim: planItem.emphasis, whatMustBeProven: concept.winningThesisUse?.whatMustBeProven || planItem.rfpEvidence } as ConceptCandidate['winningThesisUse'],
+    conceptLeap: { ...(concept.conceptLeap ?? {}), conceptLeap: `${planItem.label} 관점에서 평가자가 믿어야 할 핵심 판단을 대표 장면과 증거 구조로 전환합니다.`, corePromise: planItem.emphasis } as ConceptCandidate['conceptLeap'],
+    signatureProofIdea: { ...(concept.signatureProofIdea ?? {}), whyThisProvesTheConcept: concept.signatureProofIdea?.whyThisProvesTheConcept || `${planItem.rfpEvidence}를 근거로 선택 위험을 낮추는 대표 증명 장면을 제시합니다.`, whyThisIsNotGeneric: concept.signatureProofIdea?.whyThisIsNotGeneric || 'confirmed RFP-only diagnosis의 winning condition, tension, proof burden에서 도출한 방향이므로 범용 수행조건이 아닙니다.' } as ConceptCandidate['signatureProofIdea'],
+    proposalCoreConceptName: planItem.label,
+    conceptName: planItem.label,
+    mainStrength: planItem.emphasis,
+    mainRisk: concept.mainRisk || '전략적 주장이 선명한 만큼 후속 outline에서 실행 세부 증거를 충분히 배치해야 합니다.',
+  };
+  return { ...repaired, strategicDirectionQualityValidation: buildDirectionQualityValidation(repaired, planItem) };
+}
+
 function inferEvidenceRoleFromCategory(category?: ChunkCategory): EvidenceRole {
   if (!category) return 'core';
   if (category === 'referenceOnly' || category === 'existingAsset' || category === 'designDirection' || category === 'backgroundInsight') return 'reference';
@@ -590,7 +642,7 @@ function formatStrategicDirectionPlanForPrompt(plan: StrategicDirectionPlanItem[
 - rfpEvidenceUsed: ${item.rfpEvidenceUsed}
 - proposalLearningUsed: ${item.proposalLearningUsed}
 - lostPatternAvoided: ${item.lostPatternAvoided}
-- hierarchy: primaryRfpConceptType is guardrail/context only; current RFP evidence and discovery brief define direction axes; proposal_patterns modify/support/warn only; outcome/lost reasons validate only.
+- hierarchy: primaryRfpConceptType is guardrail/context only; current RFP evidence and confirmed diagnosis define direction axes; proposal_patterns are disabled until outline/proof/risk stages.
 - emphasis: ${item.emphasis}
 - chooseWhen: ${item.chooseWhen}`).join('\n')}`;
 }
@@ -599,7 +651,7 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
   const fallbackThesis = { ...(concept.winningThesisUse ?? {}), winningClaim: planItem.emphasis };
   const fallbackLeap = { ...(concept.conceptLeap ?? {}), conceptLeap: `${planItem.label} 방향으로 현재 RFP의 브랜드/제품/방문 경험 근거를 대표 장면과 선택 이유로 전환합니다.`, corePromise: planItem.emphasis };
   const fallbackProof = { ...(concept.signatureProofIdea ?? {}), whyThisProvesTheConcept: `${planItem.rfpEvidence}를 방문객이 체감하는 증거 장면으로 보여줍니다.` };
-  const gated = {
+  const gated: ConceptCandidate = {
     ...concept,
     rfpConceptType: planItem.rfpConceptType,
     secondaryRfpConceptTypes: planItem.secondaryRfpConceptTypes,
@@ -614,6 +666,7 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
     whatThisDirectionEmphasizes: concept.whatThisDirectionEmphasizes || planItem.emphasis,
     whenToChooseThisDirection: concept.whenToChooseThisDirection || planItem.chooseWhen,
   };
+  gated.strategicDirectionQualityValidation = buildDirectionQualityValidation(gated, planItem);
   if (planItem.rfpConceptType !== 'multi_entity_pavilion') {
     const joined = [gated.strategicDirectionLabel, gated.whatThisDirectionEmphasizes, gated.whenToChooseThisDirection, gated.strategicApproach, gated.coreMessage, gated.proposalCoreConceptName, gated.proposalCoreConceptSlogan, gated.proposalCoreConceptDefinition, gated.whyThisIsCoreConcept, gated.experiencePrinciple, gated.visitorJourney, gated.contentMediaImplication, gated.mainStrength, gated.mainRisk, gated.conceptLeap?.conceptLeap, gated.conceptLeap?.corePromise, gated.winningThesisUse?.winningClaim, gated.signatureProofIdea?.signatureScene, gated.signatureProofIdea?.signatureContent, gated.signatureProofIdea?.whyThisProvesTheConcept].join(' ');
     if (MULTI_ENTITY_LEAKAGE_PATTERN.test(joined)) {
@@ -635,14 +688,24 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
       gated.mainRisk = '현재 RFP 근거만으로 방향을 세우므로 세부 연출은 후속 구조 단계에서 보완해야 합니다.';
     }
   }
-  return gated;
+  const quality = buildDirectionQualityValidation(gated, planItem);
+  return quality.isStrategicBet && !quality.isOnlyBasicRequirement && quality.addressesCoreWinningCondition && quality.addressesProofBurden && !quality.couldFitAnyRfp
+    ? { ...gated, strategicDirectionQualityValidation: quality }
+    : repairBasicStrategicDirection(gated, planItem);
 }
 
 
 function validateDynamicDirections(concepts: ConceptCandidate[]) {
   const labels = concepts.map((concept) => concept.strategicDirectionLabel || '');
   const axes = concepts.map((concept) => concept.directionAxis || concept.strategicDirectionType || '');
+  const quality = concepts.map((concept) => concept.strategicDirectionQualityValidation);
   return {
+    allDirectionsAreStrategicBets: quality.every((item) => item?.isStrategicBet === true),
+    noBasicRequirementDirections: quality.every((item) => item?.isOnlyBasicRequirement === false),
+    allDirectionsAddressCoreWinningCondition: quality.every((item) => item?.addressesCoreWinningCondition === true),
+    allDirectionsAddressProofBurden: quality.every((item) => item?.addressesProofBurden === true),
+    noCouldFitAnyRfpDirections: quality.every((item) => item?.couldFitAnyRfp === false),
+    weakDirectionLabels: concepts.filter((concept) => concept.strategicDirectionQualityValidation?.isStrategicBet !== true).map((concept) => concept.strategicDirectionLabel),
     directionsAreRfpSpecific: concepts.every((concept) => Boolean(concept.directionSource?.rfpEvidence || concept.rfpGrounding?.length)),
     noFixedPresetLabels: labels.every((label) => !/^(브랜드 세계관 몰입|제조\/공정 신뢰 증명|방문객 체험 전환|제품 가치 증명|히어로 데모|공동관 정체성|주체별 역할 명확화|통합 임팩트|통합 아이덴티티|통합\+역할 차별화|상징적 리더십|unified identity|unified \+ differentiated roles|symbolic leadership)$/i.test(label.trim())),
     directionAxesAreDistinct: new Set(axes.map((axis) => axis.trim().toLowerCase())).size === axes.length,
@@ -700,8 +763,8 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
     hasEntityDifferentiationMatrix: params.matrixType === 'entityDifferentiationMatrix' && Boolean((result.entityDifferentiationMatrix?.length ? result.entityDifferentiationMatrix : params.entityMatrix).length),
     entityMatrixActive: params.matrixType === 'entityDifferentiationMatrix',
     brandMatrixActive: params.matrixType === 'brandExperienceMatrix',
-    proposalPatternsUsedForDirections: params.primaryType === 'multi_entity_pavilion',
-    currentRfpOnlyMode: params.primaryType !== 'multi_entity_pavilion',
+    proposalPatternsUsedForDirections: false,
+    currentRfpOnlyMode: true,
     contaminationCheckPassed,
     blockedTerms,
     sanitizerApplied: Boolean(params.sanitizerApplied),
@@ -1090,7 +1153,7 @@ export async function POST(request: Request) {
       '3개 후보는 winner-loser 비교가 아니라 서로 다른 전략 방향 옵션이어야 한다.',
       'primaryRfpConceptType은 invalid logic 차단, evidence selection, contamination 방지, matrix/context 선택용 guardrail이다. strategicDirectionLabel을 type preset으로 처방하지 말라. current RFP evidence, hidden need, evaluator risk, client position, category shift, perception gap, required proof, signature opportunity에서 direction axis를 발견한다. proposal_patterns는 이 단계에서 완전히 비활성화되어야 하며 direction source, modifier, caution으로도 사용하지 않는다.',
       '각 후보는 rfpConceptType, secondaryRfpConceptTypes, strategicDirectionType, strategicDirectionLabel, directionSource, whatThisDirectionEmphasizes, whenToChooseThisDirection, failurePatternAvoided, winningPatternUsed를 반드시 포함한다. strategicDirectionLabel은 discovery brief의 direction axis와 현재 RFP evidence에서 새로 만든 2~8단어의 짧은 방향명이어야 하며 type별 고정 preset, 과거 RFP 언어, 말줄임표를 금지한다.',
-      'strategicDirectionLabel은 카드에 보이는 짧은 한국어 방향명이다. proposalCoreConceptName/conceptName은 DB/schema 호환을 위한 임시 direction title일 뿐이며 최종 컨셉명이 아니다. 최종 컨셉명은 사용자가 방향 선택 후 별도 naming step에서 생성한다.',
+      'strategicDirectionLabel은 카드에 보이는 짧은 한국어 방향명이다. 정보 전달/안정 운영/요구 충족/균형 구성/통합 관리/콘텐츠 정리 같은 실행 라벨을 금지하고, evaluator belief, decision risk, proof burden, unique stance를 압축한 짧고 날카로운 전략적 움직임으로 작성한다. proposalCoreConceptName/conceptName은 DB/schema 호환을 위한 임시 direction title일 뿐이며 최종 컨셉명이 아니다. 최종 컨셉명은 사용자가 방향 선택 후 별도 naming step에서 생성한다.',
       '추천은 가장 적합한 방향을 설명하되 다른 후보를 나쁘다/부적합하다/틀렸다로 말하지 않는다. 다른 방향의 쓰임과 선택 간 trade-off를 중립적으로 설명한다.',
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
       '출력은 hiddenNeeds, strategicApproach, entityDifferentiationMatrix, conceptDevelopmentLogic, concepts, recommendation을 포함한다.',
@@ -1188,10 +1251,13 @@ ${selectedMatrixType === 'entityDifferentiationMatrix' ? `Active Matrix JSON: ${
 Confirmed RFP-only Diagnosis (authoritative strategy source):
 ${JSON.stringify(body.rfpDiagnosis, null, 2)}
 
-proposalLearningBrief: disabled for diagnosis/strategy; proposal_patterns are outline-stage only.
-${JSON.stringify(proposalLearningBrief, null, 2)}
+proposalLearningBrief: disabled for diagnosis/strategy/naming; proposal_patterns are outline-stage only.
+[]
 
 Direction validation required before return:
+- output strategicDirectionQualityValidation for each direction with isStrategicBet, isOnlyBasicRequirement, addressesCoreWinningCondition, addressesStrategicTension, addressesProofBurden, hasDistinctPointOfView, couldFitAnyRfp, validationReason.
+- required pass values: isStrategicBet=true, isOnlyBasicRequirement=false, addressesCoreWinningCondition=true, addressesProofBurden=true, couldFitAnyRfp=false. If any fails, regenerate only that direction from Confirmed RFP-only Diagnosis and current RFP evidence.
+- reject basic execution directions: satisfying requirements, covering scope, organizing information, stable operation, balanced planning, basic feasibility, simple content delivery, general visitor understanding, generic brand communication. These may be proof details, not main direction cards.
 - each direction must explicitly connect to confirmed diagnosis: coreWinningCondition, strategicTension, proofBurden, genericProposalFailureReason
 - each direction must address at least one requiredProofElement in requiredProofElementsAddressed
 - no direction may rely on proposal_patterns or old project language
@@ -1204,10 +1270,7 @@ Direction validation required before return:
 - noOldProposalLanguage: true
 If any item fails, repair only the weak direction.
 
-${selectedRfpConceptType === 'multi_entity_pavilion' ? `proposal_patterns compact diagnostics: DISABLED for strategic direction generation. Do not use proposal_patterns, previous proposal language, won/lost outcomes, old slogans, old project structures, or old client names.
-${proposalPatternDiagnostics}
-
-proposal_patterns compact JSON: []` : 'proposal_patterns direction usage: disabled for this non-multi-entity RFP. Optional caution only; do not use for direction or concept naming.'}
+proposal_patterns direction usage: DISABLED for all RFP types. Do not use proposal_patterns, previous proposal language, won/lost outcomes, old slogans, old project structures, old client names, or old categories for diagnosis, strategic direction generation, or final concept naming.
 
 Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Option → Hidden Needs → Strategic Approach → Winning Thesis → Concept Leap → Signature Proof Idea → Entity/Content/Audience Differentiation if applicable → Strategic Direction Option → Winning Thesis → Concept Leap → Signature Proof Idea → Proposal Core Concept → Experience Principle → Visitor Journey → Content/Media Execution → Anti-pattern Validation. Do not generate Visitor Journey before Proposal Core Concept. Choose recommendation by best-fit strategic direction, RFP specificity, originality, whole-proposal organizing power, expandability to space/content/media/operation, evaluator clarity, and anti-pattern avoidance. recommendation.whyNotOthers must use neutral trade-off language and must explain what the other directions are useful for, not why they are bad.`;
 

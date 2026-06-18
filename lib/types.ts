@@ -511,12 +511,24 @@ export type RfpConceptType =
   | 'technology_showcase'
   | 'unknown';
 
+export interface StrategicDirectionQualityValidation {
+  isStrategicBet: boolean;
+  isOnlyBasicRequirement: boolean;
+  addressesCoreWinningCondition: boolean;
+  addressesStrategicTension: boolean;
+  addressesProofBurden: boolean;
+  hasDistinctPointOfView: boolean;
+  couldFitAnyRfp: boolean;
+  validationReason: string;
+}
+
 export interface ConceptCandidate {
   conceptId: string;
   rfpConceptType: RfpConceptType;
   secondaryRfpConceptTypes?: RfpConceptType[];
   strategicDirectionType: string;
   strategicDirectionLabel: string;
+  strategicDirectionQualityValidation?: StrategicDirectionQualityValidation;
   directionLabel?: string;
   oneLineSummary?: string;
   directionAxis?: string;
@@ -660,6 +672,12 @@ export interface ConceptCandidatesResult {
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
   directionValidation?: {
+    allDirectionsAreStrategicBets?: boolean;
+    noBasicRequirementDirections?: boolean;
+    allDirectionsAddressCoreWinningCondition?: boolean;
+    allDirectionsAddressProofBurden?: boolean;
+    noCouldFitAnyRfpDirections?: boolean;
+    weakDirectionLabels?: string[];
     directionsAreRfpSpecific?: boolean;
     noFixedPresetLabels?: boolean;
     directionAxesAreDistinct?: boolean;
