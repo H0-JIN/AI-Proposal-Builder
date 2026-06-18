@@ -1672,6 +1672,20 @@ function getStrategicDirectionId(concept?: ConceptCandidate) {
   return concept?.conceptId || getStrategicDirectionLabel(concept);
 }
 
+
+function shortText(value: string | undefined, max = 120) {
+  const text = (value || '').trim().replace(/\s+/g, ' ');
+  return text.length <= max ? text : `${text.slice(0, max).replace(/[,.·;:\s]+$/g, '')}`;
+}
+
+function getStrategicBet(concept: ConceptCandidate) {
+  return shortText(concept.oneLineStrategicBet || concept.oneLineSummary || concept.whatThisDirectionEmphasizes || concept.coreMessage || getConceptTagline(concept), 150) || '이 방향은 현재 RFP의 핵심 증거를 통해 평가자의 선택 이유를 설득하는 전략입니다.';
+}
+
+function getSignatureProofSummary(concept: ConceptCandidate) {
+  return shortText(concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.signatureProofIdea?.signatureSpatialMove || concept.signatureProofIdea?.signatureMediaOrInteraction || concept.keyExperienceAssetDirection, 110) || '대표 증거 장면을 짧고 명확하게 제시합니다.';
+}
+
 function labelValue(label: string, value?: string) {
   const trimmed = value?.trim();
   return trimmed ? `${label}: ${trimmed}` : null;
@@ -3737,28 +3751,28 @@ export default function Home() {
                 return (
                   <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
-                    <h3 className="mt-2 text-2xl font-black text-slate-950">{getStrategicDirectionLabel(concept)}</h3>
-                    {concept.namingGuardWarning && (
-                      <p className="mt-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">네이밍 자동 보정 · 개발 정보에서 확인</p>
-                    )}
-                    <p className="mt-3 text-sm font-bold leading-6 text-slate-700">{concept.oneLineSummary || concept.whatThisDirectionEmphasizes || concept.coreMessage || getConceptTagline(concept)}</p>
-                    <div className="mt-3 grid gap-2 text-sm font-bold leading-6 text-slate-700">
-                      <p><b className="text-indigo-700">선택 기준</b> {concept.whenToChooseThisDirection || '이 방향의 강점과 리스크가 현재 제안 상황에 맞을 때 선택하세요.'}</p>
-                      <p><b className="text-blue-700">강점</b> {concept.mainStrength || concept.strengths?.[0] || concept.evaluationSummary || '-'}</p>
-                      <p><b className="text-rose-700">리스크</b> {concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution || '-'}</p>
+                    <h3 className="mt-2 text-2xl font-black leading-tight text-slate-950">{getStrategicDirectionLabel(concept)}</h3>
+                    <div className="mt-4 grid gap-3 text-sm font-bold leading-6 text-slate-700">
+                      <p><b className="text-slate-950">전략적 베팅</b> {getStrategicBet(concept)}</p>
+                      <p><b className="text-indigo-700">선택 기준</b> {concept.whenToChooseThisDirection || '클라이언트가 이 방향의 증명 방식과 리스크를 가장 중요하게 볼 때 선택합니다.'}</p>
+                      <p><b className="text-blue-700">대표 증거 아이디어</b> {getSignatureProofSummary(concept)}</p>
+                      <p><b className="text-rose-700">주요 리스크</b> {shortText(concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution, 130) || '-'}</p>
                     </div>
                     <div className="mt-4 flex-1 space-y-2">
                       <CompactAccordion title="상세 보기">
                         <p>{concept.whatThisDirectionEmphasizes || concept.coreMessage || concept.strategicApproach || getConceptTagline(concept)}</p>
                         {conceptKeywordChips(concept).length > 0 && <div className="mt-2 flex flex-wrap gap-2">{conceptKeywordChips(concept).map((keyword) => <span key={keyword} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{keyword}</span>)}</div>}
                       </CompactAccordion>
-                      <CompactAccordion title="Winning Thesis"><p>{concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach}</p></CompactAccordion>
-                      <CompactAccordion title="Concept Leap"><p>{concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</p></CompactAccordion>
-                      <CompactAccordion title="Signature Proof"><p>{concept.signatureProofIdea?.whyThisProvesTheConcept || concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.keyExperienceAssetDirection}</p></CompactAccordion>
-                      <CompactAccordion title="근거/검증 정보 보기">
-                        <p>primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · secondaryRfpConceptTypes: {concept.secondaryRfpConceptTypes?.join(' / ') || 'none'} · matrixType: {state.conceptGenerationResult?.matrixType || 'none'}</p><p>nameValidationStatus: {concept.nameValidation?.nameValidationStatus || concept.nameValidationStatus || 'none'} · originalName: {concept.nameValidation?.originalName || 'none'} · repairedName: {concept.nameValidation?.repairedName || concept.repairedProposalCoreConceptName || 'none'}</p><p>conceptNameScopeClassification: {concept.conceptNameEvidenceLevel || 'proposalLevel'} · repairedNameFlag: {String(Boolean(concept.repairedName))}</p>
-                        <p>proposalLearningUsed: {concept.directionSource?.proposalPatternLearning || concept.winningPatternUsed || concept.directionDebug?.winningPatternUsed || '현재 RFP 근거 우선'}</p>
-                        <p>warning/lostPatternAvoided: {concept.directionSource?.lostPatternAvoidance || concept.failurePatternAvoided || concept.directionDebug?.failurePatternAvoided || concept.namingGuardWarning || '강한 lost pattern 없음'}</p>
+                      <CompactAccordion title="상세 근거 보기">
+                        <p><b>Winning Thesis</b> {concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach}</p>
+                        <p className="mt-2"><b>Concept Leap</b> {concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</p>
+                        <p className="mt-2"><b>Proof Burden</b> {concept.winningThesisUse?.whatMustBeProven || concept.signatureProofIdea?.whyThisProvesTheConcept}</p>
+                        <p className="mt-2"><b>Required Proof</b> {concept.requiredProofElementsAddressed?.join(' · ') || '-'}</p>
+                      </CompactAccordion>
+                      <CompactAccordion title="개발 정보 보기">
+                        <p>primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · secondaryRfpConceptTypes: {concept.secondaryRfpConceptTypes?.join(' / ') || 'none'} · matrixType: {state.conceptGenerationResult?.matrixType || 'none'}</p>
+                        <p className="mt-2">directionSource: {concept.directionSource?.rfpEvidence || '현재 RFP 근거'} · validationStatus: {concept.strategicDirectionQualityValidation?.validationReason || 'none'}</p>
+                        <p className="mt-2">debug: {concept.directionDebug?.source || 'none'} · sanitizer/debug logs are hidden from the main card.</p>
                       </CompactAccordion>
                     </div>
                     <button
@@ -3792,7 +3806,7 @@ export default function Home() {
                   </div>
                 </div>
                 {finalNamingError && <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{finalNamingError}</p>}
-                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">근거/검증 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'}</p></details>
+                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'}</p></details>
                 {state.conceptNameOptions?.length ? (
                   <div className="mt-5 grid gap-4 xl:grid-cols-2">
                     {state.conceptNameOptions.map((option) => {

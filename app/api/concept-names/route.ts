@@ -25,10 +25,58 @@ function errorResponse(error: string, details?: string) {
   return { ok: false, error, ...(details ? { details } : {}) };
 }
 
+const BLOCKED_EXAMPLE_CONCEPT_NAMES = [
+  'Hydrogen, Here.',
+  'The Hydrogen Reality',
+  'Now, Hydrogen',
+  'Here Comes Hydrogen',
+  'The Future Runs Here',
+  'From Vision to Current',
+  'Future Grid',
+  'Nexus',
+  'Pulse',
+  'Vanguard',
+  'Sphere',
+];
+
+function normalizeName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9가-힣]/gi, '');
+}
+
+function resemblesBlockedExample(name: string) {
+  const normalized = normalizeName(name);
+  return BLOCKED_EXAMPLE_CONCEPT_NAMES.some((blocked) => {
+    const b = normalizeName(blocked);
+    return normalized === b || normalized.includes(b) || b.includes(normalized);
+  });
+}
+
+function hasUnsupportedCategoryTerms(name: string, context: string) {
+  const lowerContext = context.toLowerCase();
+  const unsupportedGroups = [
+    { terms: ['hydrogen', '수소', 'energy', '에너지', 'grid'], evidence: /hydrogen|수소|energy|에너지|grid|전력|전기/i },
+    { terms: ['pocari', '포카리', 'beverage', 'drink', '음료'], evidence: /pocari|포카리|beverage|drink|음료|이온|factory|공장/i },
+  ];
+  return unsupportedGroups.some((group) => group.terms.some((term) => name.toLowerCase().includes(term.toLowerCase())) && !group.evidence.test(lowerContext));
+}
+
+function passesNameFirewall(option: ConceptNameOptionsResult['options'][number], context: string) {
+  const name = option.conceptName || '';
+  if (!name.trim()) return false;
+  if (resemblesBlockedExample(name)) return false;
+  if (hasUnsupportedCategoryTerms(name, context)) return false;
+  const validation = option.validation;
+  return !validation || Object.values(validation).every(Boolean);
+}
+
 function truthyValidation() {
   return {
     coverReady: true,
     connectedToCoreWinningCondition: true,
+    connectedToSelectedDirection: true,
+    currentRfpSpecific: true,
+    noPromptExampleCopy: true,
+    noCrossRfpContamination: true,
     notGenericEnglishCombination: true,
     notInternalStrategyLabel: true,
     notSlideTitle: true,
@@ -46,17 +94,17 @@ function fallbackOptions(direction: ConceptCandidate, diagnosis?: RfpDiagnosis, 
   const projectHint = [analysis?.projectOverview, direction.rfpConceptType].filter(Boolean).join(' / ');
   const isGlobal = /global|exhibition|expo|pavilion|brand|tour|center|전시|브랜드|해외|글로벌|박람회/i.test(projectHint);
   const contextNoun = /hydrogen|수소/i.test(projectHint + coreWinningCondition + strategicTension) ? '수소' : /pocari|포카리|음료|drink|beverage/i.test(projectHint) ? '기억' : /brand|브랜드/i.test(projectHint) ? '브랜드' : /pavilion|expo|전시|박람회/i.test(projectHint) ? '현장' : '증명';
-  const englishAnchor = contextNoun === '수소' ? 'Hydrogen' : contextNoun === '기억' ? 'Memory' : contextNoun === '브랜드' ? 'Brand' : 'Proof';
+  const englishAnchor = contextNoun === '수소' ? 'H2' : contextNoun === '기억' ? 'Memory' : contextNoun === '브랜드' ? 'Brand' : 'Proof';
   const rawNames = [
-    `${contextNoun}, 여기서`,
-    `이미 시작된 ${contextNoun}`,
-    `${contextNoun}이 믿어지는 순간`,
-    `${contextNoun}의 현재`,
-    isGlobal ? `${englishAnchor} Made Present` : `믿음의 현장`,
-    isGlobal ? `Where ${englishAnchor} Works` : `확신의 장면`,
-    `${englishAnchor} in Proof`,
-    `Claim Made Visible`,
-  ].slice(0, isGlobal ? 8 : 6);
+    `${contextNoun}가 남는 방`,
+    `${contextNoun}을 믿는 장면`,
+    `${contextNoun}의 감각 증거`,
+    `${contextNoun}가 선명해지는 길`,
+    isGlobal ? `${englishAnchor} Evidence Room` : `믿음의 현장`,
+    isGlobal ? `Visible ${englishAnchor} Promise` : `확신의 장면`,
+    `${englishAnchor} Proof Moment`,
+    `Belief Made Visible`,
+  ].filter((name) => !resemblesBlockedExample(name)).slice(0, isGlobal ? 8 : 6);
   const styles = ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] as const;
   return {
     selectedDirectionId: direction.conceptId,
@@ -117,6 +165,7 @@ export async function POST(request: Request) {
       'Names must be proposal-cover concepts that express the winning claim and can expand into space, content, media, and operation.',
       'Derive names by this hierarchy: 1 coreWinningCondition, 2 strategicTension, 3 proofBurden, 4 selectedStrategicDirection, 5 signatureProofIdea, 6 current RFP brand/category context. Never start from generic category words, random English nouns, product names, previous names, or proposal_patterns.',
       'Use only selected strategic direction, confirmed diagnosis, and current RFP analysis. Do not use proposal_patterns, previous proposal names, old clients/categories, WDS/pavilion wording, won/lost outcomes, old slogans, or old structures.',
+      `Blocked example names are banned as outputs and paraphrase sources: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}. Do not output or imitate them.`,
     ].join('\n');
 
     const user = `프로젝트: ${body.input.projectName}\n클라이언트: ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
@@ -133,7 +182,9 @@ Winning Thesis / Concept Leap / Signature Proof Idea 포함 전략 방향 JSON: 
 - generic English word combinations, vague abstract nouns, consulting-style labels, literal RFP summaries, any-name-fits-any-exhibition 후보를 거부하고 재생성한다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
 - 각 후보 생성 전 내부적으로 What must this proposal prove? What belief shift should evaluator make? Strongest claim? Cover first-page fit? Expandable to space/content/media/operation? 을 검증하고 실패하면 버려라.
 - Korean proposal users: 최소 2개 Korean-first 후보를 포함하고, 글로벌/브랜드/전시 맥락이면 최소 2개 English 또는 bilingual 후보를 포함하라. English 후보에는 koreanSubtitle 또는 oneLineSlogan으로 자연스러운 한국어 설명을 제공하라.
-- validation의 8개 boolean은 모두 true인 후보만 반환하라: coverReady, connectedToCoreWinningCondition, notGenericEnglishCombination, notInternalStrategyLabel, notSlideTitle, notTooLong, expandableToProposalSystem, specificToCurrentRfp.
+- validation의 모든 boolean은 true인 후보만 반환하라: coverReady, connectedToCoreWinningCondition, connectedToSelectedDirection, currentRfpSpecific, noPromptExampleCopy, noCrossRfpContamination, notGenericEnglishCombination, notInternalStrategyLabel, notSlideTitle, notTooLong, expandableToProposalSystem, specificToCurrentRfp.
+- 금지 예시명/이전 예시명을 그대로 출력하거나 변형하지 말라: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}.
+- 현재 RFP/진단에 없는 category word(예: Pocari/공장 방문 RFP의 hydrogen/energy/grid)를 쓰면 실패다. 수소/에너지 RFP에서만 현재 증거가 있을 때 허용한다.
 - Final naming source lock: selectedStrategicDirection, confirmed diagnosis, current RFP summary만 네이밍 근거로 사용하라. proposal_patterns, previous proposal names, old clients/categories/wording은 사용하지 말라. hardcoded direction presets는 사용하지 말라.
 - matrixType이 entityDifferentiationMatrix가 아니면 Entity Differentiation Matrix, 역할 구분, 통합+역할 차별화, 상징적 리더십을 네이밍 근거로 사용하지 말라.
 - single_brand_experience 또는 visitor_center_or_tour는 brand meaning, sensory cue, product value, process/proof, visitor memory, transformation after visit에서 이름을 도출하고 multi-entity role separation, pavilion leadership, stakeholder integration으로 네이밍하지 말라.
@@ -141,7 +192,8 @@ Winning Thesis / Concept Leap / Signature Proof Idea 포함 전략 방향 JSON: 
 
     const result = await createStructuredJson<ConceptNameOptionsResult>({ schemaName: 'concept_name_options', schema: conceptNameOptionsJsonSchema, system, user, timeoutMs: 18_000 });
     const styles = ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] as const;
-    const options = (result.options ?? []).slice(0, 8).filter((option) => !option.validation || Object.values(option.validation).every(Boolean)).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk, strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning, expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: option.whyItFitsRfp || option.shortMeaning, media: option.oneLineSlogan || option.shortMeaning, operation: option.mainRisk || option.risk }, validation: option.validation ?? truthyValidation(), coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore, specificityScore: option.specificityScore ?? option.rfpSpecificityScore }));
+    const relevanceContext = [body.input.projectName, body.input.clientName, compact(body.analysis, 5000), compact(body.rfpDiagnosis, 2500), compact(body.selectedDirection, 2500)].join(' ');
+    const options = (result.options ?? []).slice(0, 8).filter((option) => passesNameFirewall(option, relevanceContext)).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk, strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning, expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: option.whyItFitsRfp || option.shortMeaning, media: option.oneLineSlogan || option.shortMeaning, operation: option.mainRisk || option.risk }, validation: option.validation ?? truthyValidation(), coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore, specificityScore: option.specificityScore ?? option.rfpSpecificityScore }));
     const normalized = { ...result, selectedDirectionId: body.selectedDirection.conceptId, options };
     if (options.length < 6) return json({ ...successResponse(fallbackOptions(body.selectedDirection, body.rfpDiagnosis, body.analysis)), warning: 'LLM 후보가 검증 기준을 충분히 통과하지 못해 fallback 후보를 반환했습니다.' });
     return json(successResponse(normalized));
