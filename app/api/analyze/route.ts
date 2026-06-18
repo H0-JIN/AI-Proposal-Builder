@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { analysisJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, MatrixType, ProjectInput, RetrievalEvidenceItem, RfpConceptType } from '@/lib/types';
+import { analysisJsonSchema, rfpDiagnosisJsonSchema } from '@/lib/schemas';
+import type { AnalysisResult, MatrixType, ProjectInput, RetrievalEvidenceItem, RfpConceptType, RfpDiagnosis } from '@/lib/types';
 import type { DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -8,6 +8,39 @@ import { buildEvidenceItems, flattenCategoryEvidenceGroups, formatCategoryEviden
 import { refineAnalysisConfirmationNeeds } from '@/lib/confirmationNeeds';
 import { buildProposalStructureGuard } from '@/lib/proposalStructureGuard';
 
+
+
+function compact(value: unknown, max = 9000) {
+  const text = JSON.stringify(value, null, 2);
+  return text.length > max ? `${text.slice(0, max)}
+...truncated` : text;
+}
+
+async function generateRfpOnlyDiagnosis(input: ProjectInput, analysis: AnalysisResult, evidence: RetrievalEvidenceItem[]) {
+  // diagnosisContext = current RFP only. proposal_patterns and historical proposal data are intentionally excluded.
+  const diagnosisContext = {
+    input: { projectName: input.projectName, clientName: input.clientName, proposalType: input.proposalType, briefText: input.briefText },
+    analysis,
+    currentRfpEvidence: evidence,
+  };
+
+  return createStructuredJson<RfpDiagnosis>({
+    schemaName: 'rfp_only_diagnosis',
+    schema: rfpDiagnosisJsonSchema,
+    system: [
+      '너는 제안 전략 진단가다. 현재 RFP 원문, 현재 RFP 분석, 현재 RFP 검색 근거만 사용해 이번 제안의 고유 승부처를 한국어로 진단한다.',
+      'diagnosisContext = current RFP only. proposalPatternContext = outline stage only. 이 단계에서는 proposal_patterns를 검색하거나 추정하거나 사용하지 않는다.',
+      '절대 사용 금지: proposal_patterns, previous proposals, reference projects, won/lost outcomes, outcomeReason, old concept names, old slogans, old proposal structures, old client/project names.',
+      '전략 방향이나 최종 컨셉명을 만들지 말고, 전략 방향 생성을 위한 RFP-only 진단만 작성한다.',
+      '모든 사용자-facing 필드는 한국어 제안 기획 언어로 작성한다. “This proposal wins if...” 같은 영어 문장을 쓰지 않는다.',
+      'coreWinningCondition은 “이 제안은 ___을 단순히 설명하는 것이 아니라, ___로 증명할 때 이긴다.”처럼 승부 조건을 한 문장으로 쓴다.',
+      'hiddenNeed, strategicTension, proofBurden, genericProposalFailureReason은 현재 RFP의 목적/평가/제약/요구 산출물에서 추론 가능한 범위로만 쓴다.',
+      'requiredProofElements는 3~7개, rfpEvidenceAnchors는 현재 RFP 분석 또는 현재 검색 근거에서 나온 짧은 근거만 작성한다.',
+    ].join('\n'),
+    user: `diagnosisContext = current RFP only\n${compact(diagnosisContext)}`,
+    timeoutMs: 12_000,
+  });
+}
 
 function countMatches(text: string, patterns: RegExp[]) { return patterns.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0); }
 
@@ -124,7 +157,9 @@ ${input.briefText}`,
       ].filter(Boolean).join(' '),
     };
 
-    return NextResponse.json({ result: guardedResult, evidence });
+    const diagnosis = await generateRfpOnlyDiagnosis(input, guardedResult, evidence);
+
+    return NextResponse.json({ result: guardedResult, evidence, diagnosis });
   } catch (error) {
     const message = error instanceof Error ? error.message : '분석 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });
