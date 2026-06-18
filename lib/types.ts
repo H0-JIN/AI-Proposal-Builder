@@ -464,12 +464,26 @@ export interface ConceptNameOption {
   shortMeaning: string;
   whyItFitsRfp: string;
   whyItFits?: string;
+  strategicClaim?: string;
+  expandableTo?: { space: string; content: string; media: string; operation: string };
+  validation?: {
+    coverReady: boolean;
+    connectedToCoreWinningCondition: boolean;
+    notGenericEnglishCombination: boolean;
+    notInternalStrategyLabel: boolean;
+    notSlideTitle: boolean;
+    notTooLong: boolean;
+    expandableToProposalSystem: boolean;
+    specificToCurrentRfp: boolean;
+  };
+  coverReadinessScore?: number;
+  specificityScore?: number;
   coverTitleScore: number;
   memorabilityScore: number;
   rfpSpecificityScore: number;
   expandabilityScore: number;
   risk: string;
-  namingStyle?: 'Direct strategic' | 'Brand / sensory' | 'Spatial / system' | 'Symbolic' | 'Global English / bilingual';
+  namingStyle?: 'Direct claim' | 'Short bilingual title' | 'Brand/category-specific phrase' | 'Spatial/experience frame' | 'Symbolic but grounded' | 'Strong one-line statement' | 'Direct strategic' | 'Brand / sensory' | 'Spatial / system' | 'Symbolic' | 'Global English / bilingual';
   mainRisk?: string;
 }
 

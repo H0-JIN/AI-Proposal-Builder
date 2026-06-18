@@ -3809,11 +3809,23 @@ export default function Home() {
                             <p><b className="text-slate-950">의미</b> {option.shortMeaning}</p>
                             <p><b className="text-indigo-700">왜 RFP에 맞는가</b> {option.whyItFitsRfp || option.whyItFits}</p>
                             <p><b className="text-rose-700">주요 리스크</b> {option.mainRisk || option.risk}</p>
-                            <CompactAccordion title="점수 / 상세 근거">
-                              <p>Cover {option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.rfpSpecificityScore} · Expand {option.expandabilityScore}</p>
+                            <CompactAccordion title="점수 보기">
+                              <p>Cover {option.coverReadinessScore ?? option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.specificityScore ?? option.rfpSpecificityScore} · Expand {option.expandabilityScore}</p>
                               <p className="mt-2">Style: {option.namingStyle}</p>
+                            </CompactAccordion>
+                            {option.expandableTo && (
+                              <CompactAccordion title="확장 가능성 보기">
+                                <p><b>Space</b> {option.expandableTo.space}</p>
+                                <p className="mt-2"><b>Content</b> {option.expandableTo.content}</p>
+                                <p className="mt-2"><b>Media</b> {option.expandableTo.media}</p>
+                                <p className="mt-2"><b>Operation</b> {option.expandableTo.operation}</p>
+                              </CompactAccordion>
+                            )}
+                            <CompactAccordion title="상세 근거 보기">
+                              {option.strategicClaim && <p><b>전략적 주장</b> {option.strategicClaim}</p>}
                               <p className="mt-2">상세 rationale: {option.whyItFitsRfp || option.whyItFits}</p>
                               <p className="mt-2">Debug/Risk: {option.risk}</p>
+                              {option.validation && <p className="mt-2">Validation: {Object.entries(option.validation).filter(([, value]) => value).map(([key]) => key).join(' · ')}</p>}
                             </CompactAccordion>
                           </div>
                           <button type="button" onClick={() => selectConceptNameOption(option)} className={`mt-4 inline-flex rounded-xl px-4 py-2 text-sm font-black ${optionSelected ? 'bg-indigo-600 text-white' : 'bg-slate-950 text-white'}`}>{optionSelected ? '선택됨' : '이 이름 선택'}</button>
