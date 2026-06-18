@@ -339,7 +339,7 @@ interface StrategicDirectionPlanItem {
 }
 
 const MULTI_ENTITY_LEAKAGE_PATTERN = /국가|국가관|국격|그룹|연합|공동관|계열사|대기업\s*집단|하나의\s*큰\s*존재감|통합된\s*관람\s*이해|통합\s*아이덴티티|통합\s*\+?\s*역할\s*차별화|역할\s*(?:구분|차별화)|상징적\s*리더십|공동\s*시너지|연합\s*시너지|national\s*pavilion|joint\s*pavilion|alliance|coalition|group\s*presence|unified\s*identity|role\s*differentiation|symbolic\s*leadership|entity\s*role|multi[-\s]*entity|consortium|Entity\s*Differentiation\s*Matrix|entity\s*role\s*matrix/i;
-const VISITOR_BRAND_OVERRIDE_PATTERN = /견학룸|견학|브랜드\s*체험|브랜드\s*공간|공장\s*견학|방문객\s*체험|제품\s*이해|제조\s*공정|브랜드\s*스토리|체험룸|쇼룸|visitor\s*room|brand\s*experience|factory\s*tour|showroom/i;
+const VISITOR_BRAND_OVERRIDE_PATTERN = /견학룸|견학|브랜드\s*체험|브랜드\s*공간|공장\s*견학|방문객\s*체험|제품\s*이해|제조\s*공정|브랜드\s*스토리|체험룸|쇼룸|투어|visitor\s*room|brand\s*tour|brand\s*experience(?:\s*space)?|factory\s*tour|visitor\s*center|showroom/i;
 const BLOCKED_MULTI_ENTITY_TERMS = ['국가', '국가관', '그룹', '연합', '공동관', '계열사', '대기업 집단', '하나의 큰 존재감', '통합된 관람 이해', '통합 아이덴티티', '통합+역할 차별화', '역할 차별화', '역할 구분', '상징적 리더십', '공동 시너지', '연합 시너지', 'national pavilion', 'joint pavilion', 'alliance', 'coalition', 'group presence', 'unified identity', 'role differentiation', 'symbolic leadership', 'entity role', 'multi-entity', 'consortium'];
 
 const TYPE_SPECIFIC_FALLBACK_LABELS: Record<RfpConceptType, string[]> = {
@@ -349,7 +349,7 @@ const TYPE_SPECIFIC_FALLBACK_LABELS: Record<RfpConceptType, string[]> = {
   pop_up_or_campaign: ['공유 가능한 순간', '참여 의식', '브랜드 이미지 전환', '방문 후 확산', '시그니처 포토/미디어 경험'],
   content_media_experience: ['메시지 구조화', '히어로 미디어 장면', '관객 참여', '감정/인식 전환', '콘텐츠 기억 강화'],
   operation_heavy_event: ['실행 안정성', '서비스 경험', '운영 신뢰', '리스크 대응', '현장 운영 완성도'],
-  multi_entity_pavilion: ['통합 브랜드/관 정체성', '참여 주체별 역할 명확화', '상징적 임팩트', '도메인/시스템 구조화', '공동 성과 증명'],
+  multi_entity_pavilion: ['공동관 정체성', '주체별 역할 명확화', '통합 임팩트', '도메인 구조화', '역량 증명'],
   exhibition_booth: ['핵심 메시지 집중', '방문 동선 전환', '현장 참여 강화', '시그니처 전시 장면', '후속 기억 확산'],
   public_sector_exhibition: ['공공 메시지 이해', '시민 체감 경험', '정책 가치 증명', '참여 행동 전환', '신뢰 기반 확산'],
   technology_showcase: ['기술 가치 증명', '사용 시나리오 체감', '히어로 솔루션 데모', '미래 적용 이해', '혁신 신뢰 강화'],
@@ -391,13 +391,29 @@ function rfpEvidenceText(analysis: AnalysisResult, narrative: ProposalNarrative)
   ].filter(Boolean).join(' ');
 }
 
+function countMatches(text: string, patterns: RegExp[]) {
+  return patterns.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0);
+}
+
+function classifyRfpEvidence(evidenceText: string, hasMultipleEntities: boolean) {
+  const multiEntityEvidenceCount = countMatches(evidenceText, [
+    /공동관|공동\s*부스|공동\s*전시|파빌리온|joint\s*(?:booth|pavilion|exhibition)|national\s*pavilion|shared\s*exhibition|consortium|컨소시엄/i,
+    /참여기업|참여\s*기관|협력사|계열사|기관별|기업별|브랜드별|(?:여러|다수|복수|multiple|multi).{0,20}(?:기업|회사|브랜드|기관)/i,
+    /도메인별|business\s*unit|multiple\s*domains|각\s*(?:사업부|도메인).*독립|독립.*(?:사업부|도메인)/i,
+    /통합.*(?:개별|구분|차별|역할)|(?:개별|구분|차별|역할).*통합|unified.*(?:differentiated|role)|balance.*(?:identity|distinction)|각\s*(?:기업|기관|브랜드|도메인).*역할/i,
+  ]);
+  const singleBrandVisitorRoomEvidenceCount = countMatches(evidenceText, [VISITOR_BRAND_OVERRIDE_PATTERN]);
+  const hasContentOnlyNoise = /(?:audience|visitor|room|zone|content|process|display|touchpoint|제품|서비스|운영|부서|방문객|관람객|룸|존|콘텐츠|공정|공간|동선|터치포인트)/i.test(evidenceText);
+  const isMultiEntityPavilion = multiEntityEvidenceCount >= 2 || (hasMultipleEntities && multiEntityEvidenceCount >= 1 && !hasContentOnlyNoise);
+  return {
+    multiEntityEvidenceCount,
+    singleBrandVisitorRoomEvidenceCount,
+    isMultiEntityPavilion: singleBrandVisitorRoomEvidenceCount > 0 && multiEntityEvidenceCount < 2 ? false : isMultiEntityPavilion,
+  };
+}
+
 function hasMultiEntityPavilionEvidence(evidenceText: string, hasMultipleEntities: boolean) {
-  const audienceOnlySignal = /(?:임직원|학생|일반\s*방문객|VIP|관계자|고객|운영자|방문객|관람객|audience|visitor|customer|operator|staff)/i.test(evidenceText);
-  const contentOnlySignal = /(?:룸|room|존|zone|구역|콘텐츠|content|공정|process|제품|product|display|touchpoint|터치포인트|visitor\s*action)/i.test(evidenceText);
-  const pavilionSignal = /공동관|공동\s*부스|공동\s*전시|파빌리온|pavilion|joint\s*(?:booth|pavilion|exhibition)|national\s*pavilion|shared\s*exhibition|consortium|컨소시엄/i.test(evidenceText);
-  const equalOwnerSignal = /참여기업|참여\s*기관|협력사|계열사|기관별|기업별|브랜드별|도메인별|(?:여러|다수|복수|multiple|multi).*(?:기업|회사|브랜드|기관|stakeholder|이해관계자|business\s*unit|domain|도메인)/i.test(evidenceText);
-  const balanceSignal = /통합.*(?:구분|차별|역할)|(?:구분|차별|역할).*통합|unified.*(?:differentiated|role)|balance.*(?:identity|distinction)|각\s*(?:기업|기관|브랜드|도메인).*역할/i.test(evidenceText);
-  return pavilionSignal || equalOwnerSignal || balanceSignal || (hasMultipleEntities && !audienceOnlySignal && !contentOnlySignal);
+  return classifyRfpEvidence(evidenceText, hasMultipleEntities).isMultiEntityPavilion;
 }
 
 function matrixTypeForRfp(primaryType: RfpConceptType): MatrixType {
@@ -451,8 +467,8 @@ function primaryRfpConceptType(types: RfpConceptType[]): RfpConceptType {
 }
 
 function inferDirectionLabel(seed: string, fallback: string) {
-  const cleaned = compactText(seed, 26).replace(/[\"'“”‘’]/g, '').replace(/(?:해야|합니다|통해|위한|중심|전략|방향)$/g, '').trim();
-  if (cleaned.length >= 4 && !MULTI_ENTITY_LEAKAGE_PATTERN.test(cleaned)) return cleaned;
+  const cleaned = seed.trim().replace(/\s+/g, ' ').replace(/[…\.]{2,}/g, '').slice(0, 32).replace(/[\"'“”‘’]/g, '').replace(/(?:해야|합니다|통해|위한|중심|전략|방향)$/g, '').trim();
+  if (cleaned.length >= 4 && !MULTI_ENTITY_LEAKAGE_PATTERN.test(cleaned) && cleaned.split(/\s+/).length <= 8) return cleaned;
   return fallback;
 }
 
@@ -600,7 +616,7 @@ function validateDynamicDirections(concepts: ConceptCandidate[]) {
   };
 }
 
-function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { primaryType: RfpConceptType; matrixType: MatrixType; plan: StrategicDirectionPlanItem[]; brandExperienceMatrix: BrandExperienceMatrixItem[]; entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix']; sanitizerApplied?: boolean; sanitizerReason?: string; rawMatrixType?: MatrixType; rawPrimaryRfpConceptType?: RfpConceptType }): ConceptCandidatesResult {
+function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { primaryType: RfpConceptType; matrixType: MatrixType; plan: StrategicDirectionPlanItem[]; brandExperienceMatrix: BrandExperienceMatrixItem[]; entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix']; sanitizerApplied?: boolean; sanitizerReason?: string; rawMatrixType?: MatrixType; rawPrimaryRfpConceptType?: RfpConceptType; multiEntityEvidenceCount?: number; singleBrandVisitorRoomEvidenceCount?: number }): ConceptCandidatesResult {
   const activeMatrixSummary = summarizeActiveMatrix(params.matrixType, { entityCount: params.matrixType === 'entityDifferentiationMatrix' ? params.entityMatrix.length : 0, brandExperienceMatrix: params.brandExperienceMatrix });
   let concepts = result.concepts.map((concept, index) => enforceStrategicDirectionGate(concept, params.plan[index] ?? params.plan[0]));
   let joined = concepts.map((concept) => [concept.strategicDirectionLabel, concept.whatThisDirectionEmphasizes, concept.whenToChooseThisDirection, concept.winningThesisUse?.winningClaim, concept.conceptLeap?.conceptLeap, concept.signatureProofIdea?.whyThisProvesTheConcept, concept.proposalCoreConceptName, concept.proposalCoreConceptSlogan, concept.proposalCoreConceptDefinition, concept.whyThisIsCoreConcept, concept.experiencePrinciple, concept.visitorJourney, concept.contentMediaImplication, concept.mainStrength, concept.mainRisk].filter(Boolean).join(' ')).join(' ');
@@ -631,6 +647,10 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
     ...result,
     rawPrimaryRfpConceptType: params.rawPrimaryRfpConceptType ?? result.rawPrimaryRfpConceptType ?? params.primaryType,
     primaryRfpConceptType: params.primaryType,
+    classificationConfidence: params.primaryType === 'multi_entity_pavilion' ? 'high' : 'high',
+    classificationReason: params.primaryType === 'multi_entity_pavilion' ? 'multiple equal-weight proposal-owning entities detected with pavilion/joint structure' : 'single-brand/current-RFP gate prevents multi-entity classification without 2+ owner signals',
+    multiEntityEvidenceCount: params.multiEntityEvidenceCount ?? 0,
+    singleBrandVisitorRoomEvidenceCount: params.singleBrandVisitorRoomEvidenceCount ?? 0,
     rawMatrixType: params.rawMatrixType ?? result.rawMatrixType ?? result.matrixType,
     matrixType: params.matrixType,
     activeMatrixType: params.matrixType,
@@ -997,6 +1017,7 @@ export async function POST(request: Request) {
     const balancedEvidenceSummary = buildBalancedEvidenceSummary({ analysis: body.analysis, differentiationStrategy, documentChunks: body.documentChunks ?? [], proposalNarrative });
     const separatedEvidenceLevels = buildSeparatedEvidenceLevels({ analysis: body.analysis, differentiationStrategy, documentChunks: body.documentChunks ?? [], proposalNarrative });
     const hasMultipleEntities = differentiationStrategy.hasMultipleEntities;
+    const classificationEvidence = classifyRfpEvidence(rfpEvidenceText(body.analysis, proposalNarrative), hasMultipleEntities);
     const rfpConceptTypes = classifyRfpConceptTypes(body.analysis, proposalNarrative, hasMultipleEntities);
     const selectedRfpConceptType = primaryRfpConceptType(rfpConceptTypes);
     const proposalPatternGuidance = await retrieveProposalPatternsForOutline({ limit: maxProposalPatterns, antiPatternLimit: maxProposalPatterns });
@@ -1155,14 +1176,14 @@ Generation order reminder: Build proposalLearningBrief → Dynamic Strategic Dir
         generationAttempt: metadata.generationAttempt,
         generatedAt: metadata.generatedAt,
         concepts: generated.concepts.slice(0, maxCandidates),
-      }, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType })));
+      }, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount })));
       result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules });
       result = repairEntityBalance(result, balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(result, metadata));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'generation timeout';
       const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata);
-      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation(enforceResultMatrixGate(fallbackBase, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType })), { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
+      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(withNeutralDirectionRecommendation(enforceResultMatrixGate(fallbackBase, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount })), { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: proposalPatternGuidance.avoidanceRules }), balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(fallback, metadata));
     }
   } catch (error) {

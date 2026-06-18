@@ -107,7 +107,7 @@ Winning Thesis / Concept Leap / Signature Proof Idea 포함 전략 방향 JSON: 
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
     const fallbackDirection = { conceptId: 'fallback-direction', rfpConceptType: 'single_brand_experience', strategicDirectionLabel: '브랜드 경험 방향' } as ConceptCandidate;
     try {
-      return json({ ...successResponse(fallbackOptions(parsedBody?.selectedDirection ?? fallbackDirection)), warning: message });
+      return json({ ...successResponse(fallbackOptions(parsedBody?.selectedDirection ?? fallbackDirection)), warning: message, fallbackError: errorResponse('LLM/API 호출 실패로 fallback 컨셉명을 반환했습니다.', message) });
     } catch {
       return json({ ...successResponse(fallbackOptions(fallbackDirection)), warning: message, fallbackError: errorResponse('LLM/API 호출 실패로 fallback 컨셉명을 반환했습니다.', message) });
     }
