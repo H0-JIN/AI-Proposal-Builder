@@ -1683,7 +1683,7 @@ function getStrategicBet(concept: ConceptCandidate) {
 }
 
 function getSignatureProofSummary(concept: ConceptCandidate) {
-  return shortText(concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.signatureProofIdea?.signatureSpatialMove || concept.signatureProofIdea?.signatureMediaOrInteraction || concept.keyExperienceAssetDirection, 110) || '대표 증거 장면을 짧고 명확하게 제시합니다.';
+  return shortText(concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.signatureProofIdea?.signatureSpatialMove || concept.signatureProofIdea?.signatureMediaOrInteraction || concept.keyExperienceAssetDirection, 110) || '대표 체험 장면을 짧고 명확하게 제시합니다.';
 }
 
 function labelValue(label: string, value?: string) {
@@ -3753,9 +3753,9 @@ export default function Home() {
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
                     <h3 className="mt-2 text-2xl font-black leading-tight text-slate-950">{getStrategicDirectionLabel(concept)}</h3>
                     <div className="mt-4 grid gap-3 text-sm font-bold leading-6 text-slate-700">
-                      <p><b className="text-slate-950">전략적 베팅</b> {getStrategicBet(concept)}</p>
+                      <p><b className="text-slate-950">어떻게 설득하는가</b> {getStrategicBet(concept)}</p>
                       <p><b className="text-indigo-700">선택 기준</b> {concept.whenToChooseThisDirection || '클라이언트가 이 방향의 증명 방식과 리스크를 가장 중요하게 볼 때 선택합니다.'}</p>
-                      <p><b className="text-blue-700">대표 증거 아이디어</b> {getSignatureProofSummary(concept)}</p>
+                      <p><b className="text-blue-700">대표 체험 장면</b> {getSignatureProofSummary(concept)}</p>
                       <p><b className="text-rose-700">주요 리스크</b> {shortText(concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution, 130) || '-'}</p>
                     </div>
                     <div className="mt-4 flex-1 space-y-2">
@@ -3764,10 +3764,10 @@ export default function Home() {
                         {conceptKeywordChips(concept).length > 0 && <div className="mt-2 flex flex-wrap gap-2">{conceptKeywordChips(concept).map((keyword) => <span key={keyword} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{keyword}</span>)}</div>}
                       </CompactAccordion>
                       <CompactAccordion title="상세 근거 보기">
-                        <p><b>Winning Thesis</b> {concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach}</p>
-                        <p className="mt-2"><b>Concept Leap</b> {concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</p>
-                        <p className="mt-2"><b>Proof Burden</b> {concept.winningThesisUse?.whatMustBeProven || concept.signatureProofIdea?.whyThisProvesTheConcept}</p>
-                        <p className="mt-2"><b>Required Proof</b> {concept.requiredProofElementsAddressed?.join(' · ') || '-'}</p>
+                        <p><b>핵심 판단</b> {concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach}</p>
+                        <p className="mt-2"><b>전환 포인트</b> {concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</p>
+                        <p className="mt-2"><b>반드시 보여줘야 할 것</b> {concept.winningThesisUse?.whatMustBeProven || concept.signatureProofIdea?.whyThisProvesTheConcept}</p>
+                        <p className="mt-2"><b>필수 확인 요소</b> {concept.requiredProofElementsAddressed?.join(' · ') || '-'}</p>
                       </CompactAccordion>
                       <CompactAccordion title="개발 정보 보기">
                         <p>primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · secondaryRfpConceptTypes: {concept.secondaryRfpConceptTypes?.join(' / ') || 'none'} · matrixType: {state.conceptGenerationResult?.matrixType || 'none'}</p>
@@ -3829,17 +3829,17 @@ export default function Home() {
                             </CompactAccordion>
                             {option.expandableTo && (
                               <CompactAccordion title="확장 가능성 보기">
-                                <p><b>Space</b> {option.expandableTo.space}</p>
-                                <p className="mt-2"><b>Content</b> {option.expandableTo.content}</p>
-                                <p className="mt-2"><b>Media</b> {option.expandableTo.media}</p>
-                                <p className="mt-2"><b>Operation</b> {option.expandableTo.operation}</p>
+                                <p><b>공간</b> {option.expandableTo.space}</p>
+                                <p className="mt-2"><b>콘텐츠</b> {option.expandableTo.content}</p>
+                                <p className="mt-2"><b>미디어</b> {option.expandableTo.media}</p>
+                                <p className="mt-2"><b>운영</b> {option.expandableTo.operation}</p>
                               </CompactAccordion>
                             )}
                             <CompactAccordion title="상세 근거 보기">
                               {option.strategicClaim && <p><b>전략적 주장</b> {option.strategicClaim}</p>}
                               <p className="mt-2">상세 rationale: {option.whyItFitsRfp || option.whyItFits}</p>
-                              <p className="mt-2">Debug/Risk: {option.risk}</p>
-                              {option.validation && <p className="mt-2">Validation: {Object.entries(option.validation).filter(([, value]) => value).map(([key]) => key).join(' · ')}</p>}
+                              <p className="mt-2">개발 리스크: {option.risk}</p>
+                              {option.validation && <CompactAccordion title="개발 정보 보기"><p>{Object.entries(option.validation).filter(([, value]) => value).map(([key]) => key).join(' · ')}</p></CompactAccordion>}
                             </CompactAccordion>
                           </div>
                           <button type="button" onClick={() => selectConceptNameOption(option)} className={`mt-4 inline-flex rounded-xl px-4 py-2 text-sm font-black ${optionSelected ? 'bg-indigo-600 text-white' : 'bg-slate-950 text-white'}`}>{optionSelected ? '선택됨' : '이 이름 선택'}</button>
