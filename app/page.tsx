@@ -70,7 +70,7 @@ type ExtractTextResponse = {
   extractedPageCount?: number;
 };
 
-type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[] };
+type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[]; diagnosis?: RfpDiagnosis };
 
 type DbSaveStatus = 'idle' | 'disabled' | 'saving' | 'saved' | 'failed' | 'partial';
 
@@ -3081,8 +3081,8 @@ export default function Home() {
     try {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: analysisInput, documentChunks });
-      const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      const { result: analysis, evidence, diagnosis } = parseAnalysisApiResponse(analysisResponse);
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(analysisInput, analysis);
     } catch (err) {
@@ -3100,8 +3100,8 @@ export default function Home() {
     try {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
-      const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      const { result: analysis, evidence, diagnosis } = parseAnalysisApiResponse(analysisResponse);
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(mergedInput, analysis);
     } catch (err) {
@@ -3174,7 +3174,7 @@ export default function Home() {
         regenerationId,
         timestamp: requestedAt,
         attempt: generationAttempt,
-        options: { maxCandidates: 3, maxProposalPatterns: options.retryLight ? 5 : 8, retryLight: options.retryLight },
+        options: { maxCandidates: 3, retryLight: options.retryLight },
       });
       setState((current) => ({
         ...current,
@@ -3648,22 +3648,21 @@ export default function Home() {
                     <h3 className="text-2xl font-black text-indigo-950">승부처 진단</h3>
                     <p className="mt-2 text-sm font-semibold leading-6 text-indigo-900">AI가 RFP만을 기준으로 이번 제안의 승부처를 진단했습니다. 필요하면 수정 후 전략 방향을 생성하세요.</p>
                   </div>
-                  {!state.rfpDiagnosis && <PrimaryButton onClick={runDiagnosis} disabled={Boolean(loading)}>승부처 진단 생성</PrimaryButton>}
                 </div>
                 {state.rfpDiagnosis ? (
                   <div className="mt-5 grid gap-4">
-                    {([['coreWinningCondition', 'Core Winning Condition'], ['hiddenNeed', 'Hidden Need'], ['strategicTension', 'Strategic Tension'], ['proofBurden', 'Proof Burden'], ['genericProposalFailureReason', 'Generic Proposal Failure Reason']] as const).map(([key, label]) => (
+                    {([['coreWinningCondition', '승부 조건'], ['hiddenNeed', '숨은 니즈'], ['strategicTension', '전략적 긴장'], ['proofBurden', '증명 과제'], ['genericProposalFailureReason', '템플릿형 제안이 실패하는 이유']] as const).map(([key, label]) => (
                       <label key={key} className="block">
                         <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-indigo-700">{label}</span>
                         <textarea value={state.rfpDiagnosis?.[key] ?? ''} onChange={(event) => updateDiagnosisField(key, event.target.value)} className="min-h-20 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-indigo-500" />
                       </label>
                     ))}
                     <label className="block">
-                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-indigo-700">Required Proof Elements</span>
+                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-indigo-700">필수 증명 요소</span>
                       <textarea value={state.rfpDiagnosis.requiredProofElements.join('\n')} onChange={(event) => updateDiagnosisProofElements(event.target.value)} className="min-h-32 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-indigo-500" />
                     </label>
                     <details className="rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-xs font-semibold text-indigo-900">
-                      <summary className="cursor-pointer font-black">개발 정보 보기</summary>
+                      <summary className="cursor-pointer font-black">근거/검증 정보 보기</summary>
                       <pre className="mt-3 whitespace-pre-wrap">{JSON.stringify({ rfpEvidenceAnchors: state.rfpDiagnosis.rfpEvidenceAnchors, decisionMakerConcern: state.rfpDiagnosis.decisionMakerConcern, evaluatorDecisionRisk: state.rfpDiagnosis.evaluatorDecisionRisk, clientUniquePosition: state.rfpDiagnosis.clientUniquePosition }, null, 2)}</pre>
                     </details>
                   </div>
@@ -3706,7 +3705,7 @@ export default function Home() {
                 prompt {state.conceptGenerationResult?.conceptPromptVersion || conceptPromptVersion} · attempt {(state.conceptGenerationResult?.generationAttempt ?? conceptGenerationAttemptRef.current) || '-'} · generated {state.conceptGenerationResult?.generatedAt || (loading.includes('새 후보') ? 'generating...' : '-')}
               </p>
               <details className="mt-3 rounded-2xl border border-blue-100 bg-white/70 px-3 py-2 text-[11px] font-bold text-slate-500">
-                <summary className="cursor-pointer font-black text-blue-700">개발 정보 보기</summary>
+                <summary className="cursor-pointer font-black text-blue-700">근거/검증 정보 보기</summary>
                 <p className="mt-2 leading-5">
                   rawPrimaryRfpConceptType: {state.conceptGenerationResult?.rawPrimaryRfpConceptType || state.analysis.primaryRfpConceptType || 'unknown'} · primaryRfpConceptType: {state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType || state.conceptCandidates?.[0]?.rfpConceptType || 'unknown'} · rawMatrixType: {state.conceptGenerationResult?.rawMatrixType || state.analysis.matrixType || 'none'} · matrixType: {state.conceptGenerationResult?.matrixType || state.analysis.matrixType || 'none'} · activeMatrixType: {state.conceptGenerationResult?.activeMatrixType || state.conceptGenerationResult?.matrixType || 'none'} · entityMatrixActive: {String(state.conceptGenerationResult?.entityMatrixActive ?? (state.conceptGenerationResult?.matrixType === 'entityDifferentiationMatrix'))} · brandMatrixActive: {String(state.conceptGenerationResult?.brandMatrixActive ?? (state.conceptGenerationResult?.matrixType === 'brandExperienceMatrix'))} · classificationConfidence: {state.conceptGenerationResult?.classificationConfidence || state.analysis.classificationConfidence || 'unknown'} · classificationReason: {state.conceptGenerationResult?.classificationReason || state.analysis.classificationReason || 'none'} · multiEntityEvidenceCount: {state.conceptGenerationResult?.multiEntityEvidenceCount ?? state.analysis.multiEntityEvidenceCount ?? 0} · singleBrandVisitorRoomEvidenceCount: {state.conceptGenerationResult?.singleBrandVisitorRoomEvidenceCount ?? state.analysis.singleBrandVisitorRoomEvidenceCount ?? 0} · sanitizerApplied: {String(state.conceptGenerationResult?.sanitizerApplied ?? false)} · sanitizerReason: {state.conceptGenerationResult?.sanitizerReason || 'none'} · selectedDirectionLensSet: {(state.conceptGenerationResult?.selectedDirectionLensSet ?? state.analysis.selectedDirectionLensSet ?? []).join(' / ') || 'unknown'} · activeMatrixSummary: {state.conceptGenerationResult?.activeMatrixSummary || 'none'} · proposalPatternsUsedForDirections: {String(state.conceptGenerationResult?.proposalPatternsUsedForDirections ?? false)} · currentRfpOnlyMode: {String(state.conceptGenerationResult?.currentRfpOnlyMode ?? ((state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType) !== 'multi_entity_pavilion'))} · contaminationCheckPassed: {String(state.conceptGenerationResult?.contaminationCheckPassed ?? true)} · blockedTerms: {state.conceptGenerationResult?.blockedTerms?.join(' / ') || 'none'}
                 </p>
@@ -3744,19 +3743,19 @@ export default function Home() {
                     )}
                     <p className="mt-3 text-sm font-bold leading-6 text-slate-700">{concept.oneLineSummary || concept.whatThisDirectionEmphasizes || concept.coreMessage || getConceptTagline(concept)}</p>
                     <div className="mt-3 grid gap-2 text-sm font-bold leading-6 text-slate-700">
+                      <p><b className="text-indigo-700">선택 기준</b> {concept.whenToChooseThisDirection || '이 방향의 강점과 리스크가 현재 제안 상황에 맞을 때 선택하세요.'}</p>
                       <p><b className="text-blue-700">강점</b> {concept.mainStrength || concept.strengths?.[0] || concept.evaluationSummary || '-'}</p>
                       <p><b className="text-rose-700">리스크</b> {concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution || '-'}</p>
                     </div>
                     <div className="mt-4 flex-1 space-y-2">
-                      <CompactAccordion title="방향 상세">
+                      <CompactAccordion title="상세 보기">
                         <p>{concept.whatThisDirectionEmphasizes || concept.coreMessage || concept.strategicApproach || getConceptTagline(concept)}</p>
                         {conceptKeywordChips(concept).length > 0 && <div className="mt-2 flex flex-wrap gap-2">{conceptKeywordChips(concept).map((keyword) => <span key={keyword} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{keyword}</span>)}</div>}
                       </CompactAccordion>
-                      <CompactAccordion title="선택 기준"><p>{concept.whenToChooseThisDirection || concept.whyThisConcept || '이 방향의 강점과 리스크가 현재 제안 상황에 맞을 때 선택하세요.'}</p></CompactAccordion>
                       <CompactAccordion title="Winning Thesis"><p>{concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach}</p></CompactAccordion>
                       <CompactAccordion title="Concept Leap"><p>{concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</p></CompactAccordion>
                       <CompactAccordion title="Signature Proof"><p>{concept.signatureProofIdea?.whyThisProvesTheConcept || concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.keyExperienceAssetDirection}</p></CompactAccordion>
-                      <CompactAccordion title="개발 정보 보기">
+                      <CompactAccordion title="근거/검증 정보 보기">
                         <p>primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · secondaryRfpConceptTypes: {concept.secondaryRfpConceptTypes?.join(' / ') || 'none'} · matrixType: {state.conceptGenerationResult?.matrixType || 'none'}</p><p>nameValidationStatus: {concept.nameValidation?.nameValidationStatus || concept.nameValidationStatus || 'none'} · originalName: {concept.nameValidation?.originalName || 'none'} · repairedName: {concept.nameValidation?.repairedName || concept.repairedProposalCoreConceptName || 'none'}</p><p>conceptNameScopeClassification: {concept.conceptNameEvidenceLevel || 'proposalLevel'} · repairedNameFlag: {String(Boolean(concept.repairedName))}</p>
                         <p>proposalLearningUsed: {concept.directionSource?.proposalPatternLearning || concept.winningPatternUsed || concept.directionDebug?.winningPatternUsed || '현재 RFP 근거 우선'}</p>
                         <p>warning/lostPatternAvoided: {concept.directionSource?.lostPatternAvoidance || concept.failurePatternAvoided || concept.directionDebug?.failurePatternAvoided || concept.namingGuardWarning || '강한 lost pattern 없음'}</p>
@@ -3793,7 +3792,7 @@ export default function Home() {
                   </div>
                 </div>
                 {finalNamingError && <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{finalNamingError}</p>}
-                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'}</p></details>
+                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">근거/검증 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'}</p></details>
                 {state.conceptNameOptions?.length ? (
                   <div className="mt-5 grid gap-4 xl:grid-cols-2">
                     {state.conceptNameOptions.map((option) => {
