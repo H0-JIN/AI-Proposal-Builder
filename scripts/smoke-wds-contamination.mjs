@@ -13,26 +13,15 @@ const bannedDefaultLabels = [
   'symbolic leadership',
 ];
 
-const fallbackMatch = concepts.match(/const TYPE_SPECIFIC_FALLBACK_LABELS[\s\S]*?;\n\nfunction fallbackLabelsForType/);
-if (!fallbackMatch) throw new Error('TYPE_SPECIFIC_FALLBACK_LABELS not found');
-const fallbackBlock = fallbackMatch[0];
-const nonMultiFallbackBlock = fallbackBlock.replace(/multi_entity_pavilion:\s*\[[^\]]*\],/, 'multi_entity_pavilion: [],');
-for (const term of bannedDefaultLabels) {
-  if (nonMultiFallbackBlock.toLowerCase().includes(term.toLowerCase())) {
-    throw new Error(`Banned WDS label found in non-multi fallback labels: ${term}`);
-  }
+if (/const TYPE_SPECIFIC_FALLBACK_LABELS/.test(concepts) || /function fallbackLabelsForType/.test(concepts)) {
+  throw new Error('Fixed RFP-type fallback direction label presets must not drive strategic directions');
 }
 
-const universalFallbackPatterns = [
-  /fallbackPresets\s*=\s*\[[\s\S]*?\];/,
-  /fallbackLabelsForType\(type\).*?TYPE_SPECIFIC_FALLBACK_LABELS\.unknown/s,
-];
-for (const pattern of universalFallbackPatterns) {
-  const match = concepts.match(pattern);
-  if (!match) continue;
+const nonMultiRepairBlocks = concepts.match(/if \(params\.primaryType !== 'multi_entity_pavilion'[\s\S]*?blockedTerms =/g) ?? [];
+for (const block of nonMultiRepairBlocks) {
   for (const term of bannedDefaultLabels) {
-    if (match[0].toLowerCase().includes(term.toLowerCase())) {
-      throw new Error(`Banned WDS label found in universal fallback block: ${term}`);
+    if (block.toLowerCase().includes(term.toLowerCase())) {
+      throw new Error(`Banned WDS label found in non-multi repair block: ${term}`);
     }
   }
 }
@@ -43,6 +32,10 @@ if (!/matrixType !== 'entityDifferentiationMatrix' \|\| primaryRfpConceptType !=
 
 if (!/proposalPatternsUsedForDirections:\s*params\.primaryType === 'multi_entity_pavilion'/.test(concepts)) {
   throw new Error('proposalPatternsUsedForDirections is not disabled for non-multi-entity RFPs');
+}
+
+if (!/Strategic Direction Discovery Brief/.test(concepts) || !/possibleDirectionAxes/.test(concepts)) {
+  throw new Error('Strategic Direction Discovery Brief and possibleDirectionAxes are required');
 }
 
 console.log('WDS contamination smoke checks passed');

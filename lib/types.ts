@@ -506,6 +506,8 @@ export interface ConceptCandidate {
   strategicDirectionLabel: string;
   directionLabel?: string;
   oneLineSummary?: string;
+  directionAxis?: string;
+  whyThisDirectionExists?: string;
   whatThisDirectionEmphasizes: string;
   whenToChooseThisDirection: string;
   directionSource?: { rfpEvidence: string; proposalPatternLearning: string; lostPatternAvoidance: string };
@@ -642,6 +644,13 @@ export interface ConceptCandidatesResult {
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
   directionValidation?: {
+    directionsAreRfpSpecific?: boolean;
+    noFixedPresetLabels?: boolean;
+    directionAxesAreDistinct?: boolean;
+    currentRfpEvidenceDominates?: boolean;
+    proposalPatternsOnlyModify?: boolean;
+    noCrossRfpContamination?: boolean;
+    noInvalidMultiEntityLanguage?: boolean;
     noHardcodedPresetLabels: boolean;
     eachDirectionHasPatternReason: boolean;
     eachDirectionHasRfpEvidence: boolean;
