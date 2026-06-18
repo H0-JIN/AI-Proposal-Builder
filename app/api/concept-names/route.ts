@@ -29,9 +29,9 @@ function fallbackOptions(direction: ConceptCandidate): ConceptNameOptionsResult 
   const type = direction.rfpConceptType || 'unknown';
   const base = direction.strategicDirectionLabel || direction.directionLabel || direction.proposalCoreConceptName || direction.conceptName || '전략 방향';
   const thesis = direction.winningThesisUse?.winningClaim || direction.conceptLeap?.corePromise || direction.whatThisDirectionEmphasizes || '선택 방향의 전략 명제를 제안서 표지용 이름으로 압축합니다.';
-  const visitorNames = ['Brand World Room', 'Process Proof', 'Product Value Walk', 'Memory Signature', 'Sensory Proof', 'After Visit Glow', '브랜드의 방', '공정의 신뢰'];
+  const visitorNames = ['현실 증명', '체감 전환', '신뢰 장면화', '기억의 구조', '가치의 현장', '판단의 순간', '현재화된 미래', '확신의 장면'];
   const names = type === 'multi_entity_pavilion'
-    ? ['Pavilion Atlas', 'One Field, Many Signals', '공동의 장면', 'Capability Grid', 'The Shared Front', '도메인의 지도', 'Proof Pavilion', 'United Stage']
+    ? ['대표성 각인', '관계의 구조화', '압도적 증명', '공동의 장면', '도메인의 지도', '신뢰 장면화', 'The Proof Field', 'Shared Front']
     : visitorNames;
   return {
     selectedDirectionId: direction.conceptId,
@@ -77,9 +77,10 @@ export async function POST(request: Request) {
     const system = [
       'You are a senior Korean proposal concept naming director.',
       'Generate final cover-level concept name options only after a strategic direction has been selected.',
-      'Return 8 to 12 diverse final concept name options for the selected direction only.',
+      'Return 8 to 12 diverse final concept name options for the selected direction only, grouped by namingStyle.',
       'Avoid consulting labels, analysis headings, internal strategy phrases, generic abstract nouns, awkward translated phrases, product-specific names, one-zone-specific names, one-entity-specific names, unsupported poetic metaphors, and generic tech/event slogans.',
-      'Names must be proposal-level titles that can organize outline and PPT generation.',
+      'Names must be proposal-cover concepts that express the winning claim and can expand into space, content, media, and operation.',
+      'Derive names from coreWinningCondition, strategicTension, proofBurden, selected strategic direction, and signatureProofIdea—not generic category words, random English nouns, internal strategy labels, product names, or proposal_patterns.',
       'Use only selected strategic direction, confirmed diagnosis, and current RFP analysis. Do not use proposal_patterns, previous proposal names, old clients/categories, WDS/pavilion wording, won/lost outcomes, old slogans, or old structures.',
     ].join('\n');
 
@@ -92,7 +93,9 @@ Sanitizer Reason: ${sanitizedContext.sanitizerReason}
 Selected Direction Lens: ${body.selectedDirection.strategicDirectionLabel || body.selectedDirection.directionLabel || body.selectedDirection.strategicDirectionType}
 Confirmed RFP-only Diagnosis: ${compact(body.rfpDiagnosis, 2200)}
 Selected Strategic Direction Basis: ${compact({ winningThesis: body.selectedDirection.winningThesisUse, conceptLeap: body.selectedDirection.conceptLeap, signatureProofIdea: body.selectedDirection.signatureProofIdea, whatThisDirectionEmphasizes: body.selectedDirection.whatThisDirectionEmphasizes, rfpGrounding: body.selectedDirection.rfpGrounding }, 2200)}
-Winning Thesis / Concept Leap / Signature Proof Idea 포함 전략 방향 JSON: ${compact(body.selectedDirection, 4500)}\nConcept Development Logic: ${compact(body.conceptDevelopmentLogic, 2600)}\nRelevant Matrix Only: ${compact(activeMatrix, 2200)}\nLanguage Mode: ${body.languageMode || 'bilingual'}\nProposal Narrative: ${compact(body.proposalNarrative, 2200)}\n\n요구사항:\n- options는 반드시 8~12개.\n- namingStyle 필드를 반드시 다음 중 하나로 작성하고 8~12개를 그룹이 섞이도록 다양화: Direct strategic, Brand / sensory, Spatial / system, Symbolic, Global English / bilingual.\n- 10개가 같은 단어 변형처럼 보이면 실패.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsRfp, namingStyle, mainRisk, coverTitleScore, memorabilityScore, rfpSpecificityScore, expandabilityScore, risk를 작성.\n- conceptName은 제안서 표지 제목, 브랜드 경험 콘셉트, 전시 콘셉트, 공간 경험 프레임처럼 느껴져야 하며 임시 전략 방향명/컨설팅 목차명이 아니다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
+Winning Thesis / Concept Leap / Signature Proof Idea 포함 전략 방향 JSON: ${compact(body.selectedDirection, 4500)}\nConcept Development Logic: ${compact(body.conceptDevelopmentLogic, 2600)}\nRelevant Matrix Only: ${compact(activeMatrix, 2200)}\nLanguage Mode: ${body.languageMode || 'bilingual'}\nProposal Narrative: ${compact(body.proposalNarrative, 2200)}\n\n요구사항:\n- options는 반드시 8~12개.\n- namingStyle 필드를 반드시 다음 중 하나로 작성하고 8~12개를 style 그룹별로 다양화: Direct strategic, Brand / sensory, Spatial / system, Symbolic, Global English / bilingual.\n- 10개가 같은 단어 변형처럼 보이면 실패.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsRfp, namingStyle, mainRisk, coverTitleScore, memorabilityScore, rfpSpecificityScore, expandabilityScore, risk를 작성.\n- conceptName은 제안서 표지 제목처럼 winning claim을 표현해야 하며 브랜드 경험 콘셉트, 전시 콘셉트, 공간 경험 프레임으로 확장 가능해야 한다. 임시 전략 방향명/컨설팅 목차명/단순 제품명/랜덤 영어 명사 조합이 아니다.
+- 각 option의 oneLineSlogan은 conceptName이 주장하는 승리 논리를 1문장으로 설명한다. whyItFitsRfp는 confirmed diagnosis의 coreWinningCondition, strategicTension, proofBurden, selected direction, signatureProofIdea 중 최소 2개와 연결한다.
+- generic English word combinations, vague abstract nouns, consulting-style labels, literal RFP summaries, any-name-fits-any-exhibition 후보를 거부하고 재생성한다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
 - Final naming source lock: selectedStrategicDirection, confirmed diagnosis, current RFP summary만 네이밍 근거로 사용하라. proposal_patterns, previous proposal names, old clients/categories/wording은 사용하지 말라. hardcoded direction presets는 사용하지 말라.
 - matrixType이 entityDifferentiationMatrix가 아니면 Entity Differentiation Matrix, 역할 구분, 통합+역할 차별화, 상징적 리더십을 네이밍 근거로 사용하지 말라.
 - single_brand_experience 또는 visitor_center_or_tour는 brand meaning, sensory cue, product value, process/proof, visitor memory, transformation after visit에서 이름을 도출하고 multi-entity role separation, pavilion leadership, stakeholder integration으로 네이밍하지 말라.
