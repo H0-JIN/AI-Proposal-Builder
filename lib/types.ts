@@ -340,6 +340,18 @@ export interface ConceptMechanism {
   whyThisCanBecomeAConcept: string;
 }
 
+export interface BrandProductIntelligence {
+  clientOrBrandRole: string;
+  productOrServiceMeaning: string;
+  categoryContext: string;
+  audiencePerceptionGap: string;
+  brandSpecificVocabulary: string[];
+  wordsToAvoid: string[];
+  toneGuidance: string;
+  strategyImplication: string;
+  namingImplication: string;
+}
+
 export interface RfpDiagnosis {
   decisionMakerConcern: string;
   coreWinningCondition: string;
@@ -692,6 +704,7 @@ export interface ConceptCandidatesResult {
   singleBrandVisitorRoomEvidenceCount?: number;
   entityDifferentiationMatrix: EntityDifferentiationItem[];
   rfpDiagnosis?: RfpDiagnosis;
+  brandProductIntelligence?: BrandProductIntelligence;
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
@@ -821,6 +834,7 @@ export interface ProposalState {
   dbUploadedDocuments?: UploadedDocument[];
   analysis?: AnalysisResult;
   rfpDiagnosis?: RfpDiagnosis;
+  brandProductIntelligence?: BrandProductIntelligence;
   conceptDevelopmentLogic?: ConceptDevelopmentLogic;
   conceptCandidates?: ConceptCandidate[];
   conceptRecommendation?: ConceptRecommendation;

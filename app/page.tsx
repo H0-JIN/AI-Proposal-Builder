@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
 import { proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -1870,7 +1870,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, rfpDiagnosis: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, rfpDiagnosis: undefined, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -3096,7 +3096,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: analysisInput, documentChunks });
       const { result: analysis, evidence, diagnosis } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(analysisInput, analysis);
     } catch (err) {
@@ -3115,7 +3115,7 @@ export default function Home() {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
       const { result: analysis, evidence, diagnosis } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(mergedInput, analysis);
     } catch (err) {
@@ -3131,7 +3131,7 @@ export default function Home() {
     setLoading('승부처 진단 중...');
     try {
       const response = await postJson<{ result: RfpDiagnosis }>('/api/diagnosis', { input: analysisInput, analysis: state.analysis });
-      setState((current) => ({ ...current, rfpDiagnosis: response.result, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, rfpDiagnosis: response.result, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
     } catch (err) {
       setError(err instanceof Error ? err.message : '진단 생성 중 오류가 발생했습니다.');
     } finally {
@@ -3140,17 +3140,44 @@ export default function Home() {
   };
 
   const updateDiagnosisField = (key: keyof RfpDiagnosis, value: string) => {
-    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: { ...current.rfpDiagnosis, [key]: value }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: { ...current.rfpDiagnosis, [key]: value }, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
   };
 
   const updateDiagnosisProofElements = (value: string) => {
-    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: { ...current.rfpDiagnosis, requiredProofElements: value.split('\n').map((item) => item.trim()).filter(Boolean) }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: { ...current.rfpDiagnosis, requiredProofElements: value.split('\n').map((item) => item.trim()).filter(Boolean) }, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+  };
+
+
+  const runBrandProductIntelligence = async () => {
+    if (!state.analysis || !state.rfpDiagnosis) return;
+    setError('');
+    setLoading('브랜드/제품 이해 정리 중...');
+    try {
+      const response = await postJson<{ result: BrandProductIntelligence }>('/api/brand-product-intelligence', { input: analysisInput, analysis: state.analysis, rfpDiagnosis: state.rfpDiagnosis, uploadedDocuments: state.uploadedDocuments, additionalInfo: supplementalInfo });
+      setState((current) => ({ ...current, brandProductIntelligence: response.result, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '브랜드/제품 이해 생성 중 오류가 발생했습니다.');
+    } finally {
+      setLoading('');
+    }
+  };
+
+  const updateBrandProductIntelligenceField = (key: keyof BrandProductIntelligence, value: string) => {
+    setState((current) => current.brandProductIntelligence ? ({ ...current, brandProductIntelligence: { ...current.brandProductIntelligence, [key]: value }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+  };
+
+  const updateBrandProductIntelligenceList = (key: 'brandSpecificVocabulary' | 'wordsToAvoid', value: string) => {
+    setState((current) => current.brandProductIntelligence ? ({ ...current, brandProductIntelligence: { ...current.brandProductIntelligence, [key]: value.split('\n').map((item) => item.trim()).filter(Boolean) }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
   };
 
   const runConcepts = async (options: { retryLight?: boolean } = {}) => {
     if (!state.analysis) return;
     if (!state.rfpDiagnosis) {
       setError('승부처 진단을 먼저 확정해 주세요.');
+      return;
+    }
+    if (!state.brandProductIntelligence) {
+      setError('브랜드/제품 이해를 먼저 생성하거나 확정해 주세요.');
       return;
     }
     const generationAttempt = conceptGenerationAttemptRef.current + 1;
@@ -3184,6 +3211,7 @@ export default function Home() {
         analysis: state.analysis,
         proposalNarrative,
         rfpDiagnosis: state.rfpDiagnosis,
+        brandProductIntelligence: state.brandProductIntelligence,
         conceptPromptVersion,
         regenerationId,
         timestamp: requestedAt,
@@ -3252,7 +3280,7 @@ export default function Home() {
         brandExperienceMatrix: state.conceptGenerationResult?.brandExperienceMatrix,
       });
       const activeRelevantMatrix = getActiveMatrix(sanitizedNamingContext) ?? undefined;
-      const result = await postJson<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }>('/api/concept-names', { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection, selectedStrategicDirection: selectedDirection, primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
+      const result = await postJson<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }>('/api/concept-names', { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection, selectedStrategicDirection: selectedDirection, primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, brandProductIntelligence: state.brandProductIntelligence, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
       const options = result.nameOptions ?? result.options ?? [];
       if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
       if (!options.length) throw new Error('컨셉명 후보가 비어 있습니다.');
@@ -3684,6 +3712,42 @@ export default function Home() {
                   <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-indigo-900">전략 방향 생성 전에 RFP-only 승부처 진단이 필요합니다.</p>
                 )}
               </div>
+
+              {state.rfpDiagnosis && (
+                <div className="rounded-3xl border border-sky-200 bg-sky-50 p-5">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h3 className="text-2xl font-black text-sky-950">브랜드/제품 이해</h3>
+                      <p className="mt-2 text-sm font-semibold leading-6 text-sky-900">AI가 RFP와 업로드 자료를 기준으로 브랜드·제품·카테고리 맥락을 정리했습니다. 필요하면 수정 후 전략 방향을 생성하세요.</p>
+                      <p className="mt-2 text-xs font-bold leading-5 text-sky-800">외부 기업/제품 조사는 아직 연결되지 않았습니다. 현재는 RFP와 업로드 자료를 기준으로 브랜드/제품 이해를 보완합니다.</p>
+                    </div>
+                    <SecondaryButton onClick={runBrandProductIntelligence} disabled={Boolean(loading) || !state.rfpDiagnosis}>{state.brandProductIntelligence ? '다시 정리' : '브랜드/제품 이해 생성'}</SecondaryButton>
+                  </div>
+                  {state.brandProductIntelligence ? (
+                    <details open className="mt-4 rounded-2xl border border-sky-200 bg-white p-4">
+                      <summary className="cursor-pointer text-sm font-black text-sky-950">편집 필드 보기</summary>
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        {([['clientOrBrandRole', '클라이언트/브랜드 역할'], ['productOrServiceMeaning', '제품/서비스 의미'], ['categoryContext', '카테고리 맥락'], ['audiencePerceptionGap', '관람객 인식 장벽'], ['toneGuidance', '톤 가이드'], ['strategyImplication', '전략 반영 방향'], ['namingImplication', '네이밍 반영 방향']] as const).map(([key, label]) => (
+                          <label key={key} className="block">
+                            <span className="mb-2 block text-xs font-black text-sky-700">{label}</span>
+                            <textarea value={state.brandProductIntelligence?.[key] ?? ''} onChange={(event) => updateBrandProductIntelligenceField(key, event.target.value)} className="min-h-20 w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-sky-500" />
+                          </label>
+                        ))}
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-black text-sky-700">핵심 어휘</span>
+                          <textarea value={state.brandProductIntelligence.brandSpecificVocabulary.join('\n')} onChange={(event) => updateBrandProductIntelligenceList('brandSpecificVocabulary', event.target.value)} className="min-h-20 w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-sky-500" />
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-black text-sky-700">피해야 할 표현</span>
+                          <textarea value={state.brandProductIntelligence.wordsToAvoid.join('\n')} onChange={(event) => updateBrandProductIntelligenceList('wordsToAvoid', event.target.value)} className="min-h-20 w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-sky-500" />
+                        </label>
+                      </div>
+                    </details>
+                  ) : (
+                    <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-sky-900">승부처 진단 후 브랜드/제품 이해를 생성해 주세요.</p>
+                  )}
+                </div>
+              )}
             </div>
             {hasConfirmationNeeds && (
               <div className="mt-6">
@@ -3698,10 +3762,10 @@ export default function Home() {
               {hasConfirmationNeeds ? (
                 <>
                   <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
-                  <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.rfpDiagnosis}>진단 확정 후 전략 방향 생성</SecondaryButton>
+                  <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.rfpDiagnosis || !state.brandProductIntelligence}>진단·브랜드 이해 확정 후 전략 방향 생성</SecondaryButton>
                 </>
               ) : (
-                <PrimaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.rfpDiagnosis}>진단 확정 후 전략 방향 생성</PrimaryButton>
+                <PrimaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.rfpDiagnosis || !state.brandProductIntelligence}>진단·브랜드 이해 확정 후 전략 방향 생성</PrimaryButton>
               )}
             </div>
           </SectionCard>

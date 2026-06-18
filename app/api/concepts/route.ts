@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { conceptCandidatesJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProjectInput, ProposalNarrative, RfpConceptType, MatrixType, BrandExperienceMatrixItem, RfpDiagnosis } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProjectInput, ProposalNarrative, RfpConceptType, MatrixType, BrandExperienceMatrixItem, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
 import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -13,6 +13,7 @@ import { conceptPromptVersion } from '@/lib/conceptPromptVersion';
 import { getActiveMatrix, sanitizeConceptContextByRfpType, matrixTypeForRfpConceptType } from '@/lib/conceptContextSanitizer';
 
 const DEFAULT_CONCEPT_COUNT = 3;
+const ALLOWED_DIRECTION_AXES = ['representative_position', 'audience_understanding', 'signature_scene', 'product_value_proof', 'process_trust', 'category_shift', 'system/ecosystem_proof', 'spatial_journey', 'brand_memory', 'operational_confidence', 'evaluator_clarity', 'emotional_affinity', 'technology_reality_proof'] as const;
 const CONCEPT_GENERATION_TIMEOUT_MS = Number(process.env.CONCEPT_GENERATION_TIMEOUT_MS ?? 18_000);
 
 export const dynamic = 'force-dynamic';
@@ -722,9 +723,21 @@ function validateDynamicDirections(concepts: ConceptCandidate[]) {
   };
 }
 
+
+function enforceDistinctDirectionAxes(concepts: ConceptCandidate[], plan: StrategicDirectionPlanItem[]) {
+  const used = new Set<string>();
+  return concepts.map((concept, index) => {
+    const planItem = plan[index] ?? plan.find((item) => !used.has(item.directionAxis || item.type)) ?? plan[0];
+    const candidateAxis = concept.directionAxis && (ALLOWED_DIRECTION_AXES as readonly string[]).includes(concept.directionAxis) ? concept.directionAxis : planItem.directionAxis || planItem.type;
+    const axis = used.has(candidateAxis) ? (plan.find((item) => !used.has(item.directionAxis || item.type))?.directionAxis || ALLOWED_DIRECTION_AXES.find((item) => !used.has(item)) || candidateAxis) : candidateAxis;
+    used.add(axis);
+    return { ...concept, directionAxis: axis };
+  });
+}
+
 function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { primaryType: RfpConceptType; matrixType: MatrixType; plan: StrategicDirectionPlanItem[]; brandExperienceMatrix: BrandExperienceMatrixItem[]; entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix']; sanitizerApplied?: boolean; sanitizerReason?: string; rawMatrixType?: MatrixType; rawPrimaryRfpConceptType?: RfpConceptType; multiEntityEvidenceCount?: number; singleBrandVisitorRoomEvidenceCount?: number }): ConceptCandidatesResult {
   const activeMatrixSummary = summarizeActiveMatrix(params.matrixType, { entityCount: params.matrixType === 'entityDifferentiationMatrix' ? params.entityMatrix.length : 0, brandExperienceMatrix: params.brandExperienceMatrix });
-  let concepts = result.concepts.map((concept, index) => enforceStrategicDirectionGate(concept, params.plan[index] ?? params.plan[0]));
+  let concepts = enforceDistinctDirectionAxes(result.concepts.map((concept, index) => enforceStrategicDirectionGate(concept, params.plan[index] ?? params.plan[0])), params.plan);
   let joined = concepts.map((concept) => [concept.strategicDirectionLabel, concept.whatThisDirectionEmphasizes, concept.whenToChooseThisDirection, concept.winningThesisUse?.winningClaim, concept.conceptLeap?.conceptLeap, concept.signatureProofIdea?.whyThisProvesTheConcept, concept.proposalCoreConceptName, concept.proposalCoreConceptSlogan, concept.proposalCoreConceptDefinition, concept.whyThisIsCoreConcept, concept.experiencePrinciple, concept.visitorJourney, concept.contentMediaImplication, concept.mainStrength, concept.mainRisk].filter(Boolean).join(' ')).join(' ');
   let blockedTerms = params.primaryType === 'multi_entity_pavilion' ? [] : BLOCKED_MULTI_ENTITY_TERMS.filter((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(joined));
   if (params.primaryType !== 'multi_entity_pavilion' && blockedTerms.length) {
@@ -1083,6 +1096,7 @@ export async function POST(request: Request) {
       analysis: AnalysisResult;
       proposalNarrative?: ProposalNarrative;
       rfpDiagnosis?: RfpDiagnosis;
+      brandProductIntelligence?: BrandProductIntelligence;
       documentChunks?: DocumentChunk[];
       options?: { retryLight?: boolean; maxCandidates?: number; maxProposalPatterns?: number };
       conceptPromptVersion?: string;
@@ -1253,6 +1267,9 @@ ${selectedMatrixType === 'entityDifferentiationMatrix' ? `Active Matrix JSON: ${
 Confirmed RFP-only Diagnosis (authoritative strategy source):
 ${JSON.stringify(body.rfpDiagnosis, null, 2)}
 
+Brand/Product Intelligence (separate post-diagnosis layer; use for category tone, vocabulary, strategy/naming implications):
+${JSON.stringify(body.brandProductIntelligence, null, 2)}
+
 proposalLearningBrief: disabled for diagnosis/strategy/naming; proposal_patterns are outline-stage only.
 []
 
@@ -1261,6 +1278,10 @@ Direction validation required before return:
 - required pass values: isStrategicBet=true, isOnlyBasicRequirement=false, addressesCoreWinningCondition=true, addressesProofBurden=true, couldFitAnyRfp=false. If any fails, regenerate only that direction from Confirmed RFP-only Diagnosis and current RFP evidence.
 - reject basic execution directions: satisfying requirements, covering scope, organizing information, stable operation, balanced planning, basic feasibility, simple content delivery, general visitor understanding, generic brand communication. These may be proof details, not main direction cards.
 - each direction must explicitly connect to confirmed diagnosis: coreWinningCondition, strategicTension, proofBurden, genericProposalFailureReason
+- each direction must use brandProductIntelligence to keep category tone and vocabulary correct; avoid wordsToAvoid and wrong-category tone
+- classify directionAxis with one allowed value: representative_position, audience_understanding, signature_scene, product_value_proof, process_trust, category_shift, system/ecosystem_proof, spatial_journey, brand_memory, operational_confidence, evaluator_clarity, emotional_affinity, technology_reality_proof
+- the 3 directionAxis values must be distinct; if duplicated, regenerate the weaker direction with another axis derived from diagnosis + brandProductIntelligence
+- the 3 directions must differ in what they prove, who/what they persuade, mechanism, solved risk, and signature scene; reject if all could use the same concept name
 - each direction must address at least one requiredProofElement in requiredProofElementsAddressed
 - no direction may rely on proposal_patterns or old project language
 - no direction may be generic enough to fit any RFP
@@ -1294,6 +1315,7 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
         concepts: generated.concepts.slice(0, maxCandidates),
       }, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount })));
       result.rfpDiagnosis = body.rfpDiagnosis;
+      result.brandProductIntelligence = body.brandProductIntelligence;
       result.proposalPatternsUsedForDirections = false;
       result.currentRfpOnlyMode = true;
       result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: [] });
@@ -1304,6 +1326,7 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata);
       const fallbackSeed = withNeutralDirectionRecommendation(enforceResultMatrixGate(fallbackBase, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount }));
       fallbackSeed.rfpDiagnosis = body.rfpDiagnosis;
+      fallbackSeed.brandProductIntelligence = body.brandProductIntelligence;
       fallbackSeed.proposalPatternsUsedForDirections = false;
       fallbackSeed.currentRfpOnlyMode = true;
       const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(fallbackSeed, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: [] }), balancedEvidenceSummary);
