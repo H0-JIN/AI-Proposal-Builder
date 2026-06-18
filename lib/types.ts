@@ -479,6 +479,11 @@ export interface ConceptNameOption {
     notTooLong: boolean;
     expandableToProposalSystem: boolean;
     specificToCurrentRfp: boolean;
+    noRepeatedMainHook?: boolean;
+    noInternalProofLanguageInMainCopy?: boolean;
+    currentRfpVocabularyUsed?: boolean;
+    notGeneric?: boolean;
+    notCrossRfpContaminated?: boolean;
   };
   coverReadinessScore?: number;
   specificityScore?: number;
