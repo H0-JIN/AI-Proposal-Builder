@@ -469,6 +469,10 @@ export interface ConceptNameOption {
   validation?: {
     coverReady: boolean;
     connectedToCoreWinningCondition: boolean;
+    connectedToSelectedDirection?: boolean;
+    currentRfpSpecific?: boolean;
+    noPromptExampleCopy?: boolean;
+    noCrossRfpContamination?: boolean;
     notGenericEnglishCombination: boolean;
     notInternalStrategyLabel: boolean;
     notSlideTitle: boolean;
@@ -548,6 +552,7 @@ export interface ConceptCandidate {
   directionAxis?: string;
   whyThisDirectionExists?: string;
   whatThisDirectionEmphasizes: string;
+  oneLineStrategicBet?: string;
   whenToChooseThisDirection: string;
   directionSource?: { rfpEvidence: string; proposalPatternLearning: string; lostPatternAvoidance: string };
   failurePatternAvoided?: string;
