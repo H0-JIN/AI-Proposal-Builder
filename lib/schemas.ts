@@ -671,6 +671,7 @@ const conceptNameOptionSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    id: { type: 'string' },
     conceptName: { type: 'string' },
     languageMode: { type: 'string', enum: ['Korean', 'English', 'bilingual'] },
     koreanSubtitle: { type: 'string' },
