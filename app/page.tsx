@@ -351,6 +351,20 @@ function getUploadErrorMessage(error: unknown, fallback: string, responseStatus?
   return isLargePayloadError(error, responseStatus) ? LARGE_FILE_UPLOAD_GUIDANCE : error instanceof Error ? error.message : typeof error === 'string' && error ? error : fallback;
 }
 
+
+function CompactAccordion({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/80">
+      <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs font-black text-slate-800">
+        <span>{title}</span>
+        <span className="text-slate-500">{open ? '⌄' : '›'}</span>
+      </button>
+      {open && <div className="border-t border-slate-100 px-3 py-3 text-sm font-semibold leading-6 text-slate-700">{children}</div>}
+    </div>
+  );
+}
+
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -3197,8 +3211,12 @@ export default function Home() {
         brandExperienceMatrix: state.conceptGenerationResult?.brandExperienceMatrix,
       });
       const activeRelevantMatrix = getActiveMatrix(sanitizedNamingContext) ?? undefined;
-      const result = await postJson<ConceptNameOptionsResult>('/api/concept-names', { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection, selectedStrategicDirection: selectedDirection, primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, proposalPatternsUsedForDirections: state.conceptGenerationResult?.proposalPatternsUsedForDirections, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
-      setState((current) => ({ ...current, conceptNameOptions: result.options, selectedFinalConceptNameOption: undefined, outline: undefined, slides: undefined }));
+      const result = await postJson<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }>('/api/concept-names', { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection, selectedStrategicDirection: selectedDirection, primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, proposalPatternsUsedForDirections: state.conceptGenerationResult?.proposalPatternsUsedForDirections, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative });
+      const options = result.nameOptions ?? result.options ?? [];
+      if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
+      if (!options.length) throw new Error('컨셉명 후보가 비어 있습니다.');
+      if (result.warning) setFinalNamingError(`Fallback 후보를 표시합니다: ${result.warning}`);
+      setState((current) => ({ ...current, conceptNameOptions: options, selectedFinalConceptNameOption: undefined, outline: undefined, slides: undefined }));
     } catch (err) {
       const message = err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.';
       setFinalNamingError(message);
@@ -3659,7 +3677,7 @@ export default function Home() {
               {(state.conceptCandidates ?? []).map((concept) => {
                 const selected = selectedStrategicDirectionId === getStrategicDirectionId(concept);
                 return (
-                  <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100 lg:col-span-3' : 'border-slate-200 bg-white'}`}>
+                  <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
                     <h3 className="mt-2 text-2xl font-black text-slate-950">{getStrategicDirectionLabel(concept)}</h3>
                     {concept.namingGuardWarning && (
@@ -3700,37 +3718,25 @@ export default function Home() {
                       <p className="mt-2 text-sm font-bold text-slate-500">{concept.conceptNameKoreanSubtitle || concept.conceptNameEnglish}</p>
                     )}
                     <p className="mt-3 text-lg font-bold text-blue-700">{getConceptTagline(concept)}</p>
-                    <dl className={`mt-4 flex-1 gap-3 text-sm leading-6 text-slate-700 ${selected ? 'grid md:grid-cols-2' : 'space-y-3'}`}>
-                      {selected ? (
-                        <>
-                          <div><dt className="font-black text-slate-950">whatThisDirectionEmphasizes</dt><dd>{concept.whatThisDirectionEmphasizes || concept.strategicApproach || '선택한 RFP 분석 근거를 중심으로 한 전략 방향입니다.'}</dd></div>
-                          <div><dt className="font-black text-slate-950">whenToChooseThisDirection</dt><dd>{concept.whenToChooseThisDirection || concept.whyThisConcept || '이 방향의 강점과 리스크가 현재 제안 상황에 맞을 때 선택하세요.'}</dd></div>
-                          <div><dt className="font-black text-slate-950">winningThesis</dt><dd>{concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach}</dd></div>
-                          <div><dt className="font-black text-slate-950">conceptLeap</dt><dd>{concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</dd></div>
-                          <div><dt className="font-black text-slate-950">signatureProofIdea</dt><dd>{concept.signatureProofIdea?.whyThisProvesTheConcept || concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.keyExperienceAssetDirection}</dd></div>
-                        </>
-                      ) : (
-                        <>
-                          <div><dt className="font-black text-slate-950">Short Summary</dt><dd>{concept.whatThisDirectionEmphasizes || concept.coreMessage || concept.strategicApproach || getConceptTagline(concept)}</dd></div>
-                        </>
-                      )}
-                      {selected && conceptKeywordChips(concept).length > 0 && (
-                        <div>
-                          <dt className="font-black text-slate-950">3 Execution Keywords</dt>
-                          <dd className="mt-2 flex flex-wrap gap-2">
-                            {conceptKeywordChips(concept).map((keyword) => <span key={keyword} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{keyword}</span>)}
-                          </dd>
-                        </div>
-                      )}
-                      {selected && (
-                        <>
-                          <div><dt className="font-black text-slate-950">proposalLearningUsed</dt><dd>{concept.directionSource?.proposalPatternLearning || concept.winningPatternUsed || concept.directionDebug?.winningPatternUsed || '현재 RFP 근거 우선, proposal learning은 보조 원칙으로 사용'}</dd></div>
-                          <div><dt className="font-black text-slate-950">warning / lostPatternAvoided</dt><dd>{concept.directionSource?.lostPatternAvoidance || concept.failurePatternAvoided || concept.directionDebug?.failurePatternAvoided || concept.namingGuardWarning || '강한 lost pattern 없음'}</dd></div>
-                        </>
-                      )}
-                      <div><dt className="font-black text-slate-950">Main Strength</dt><dd>{concept.mainStrength || concept.strengths?.[0] || concept.evaluationSummary}</dd></div>
-                      <div><dt className="font-black text-slate-950">Main Risk</dt><dd>{concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution}</dd></div>
-                    </dl>
+                    <div className="mt-4 flex-1 space-y-2">
+                      <CompactAccordion title="방향 요약">
+                        <p>{concept.whatThisDirectionEmphasizes || concept.coreMessage || concept.strategicApproach || getConceptTagline(concept)}</p>
+                        {conceptKeywordChips(concept).length > 0 && <div className="mt-2 flex flex-wrap gap-2">{conceptKeywordChips(concept).map((keyword) => <span key={keyword} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{keyword}</span>)}</div>}
+                      </CompactAccordion>
+                      <CompactAccordion title="선택 기준"><p>{concept.whenToChooseThisDirection || concept.whyThisConcept || '이 방향의 강점과 리스크가 현재 제안 상황에 맞을 때 선택하세요.'}</p></CompactAccordion>
+                      <CompactAccordion title="Winning Thesis"><p>{concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach}</p></CompactAccordion>
+                      <CompactAccordion title="Concept Leap"><p>{concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</p></CompactAccordion>
+                      <CompactAccordion title="Signature Proof"><p>{concept.signatureProofIdea?.whyThisProvesTheConcept || concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.keyExperienceAssetDirection}</p></CompactAccordion>
+                      <CompactAccordion title="리스크 / 강점">
+                        <p><b>강점:</b> {concept.mainStrength || concept.strengths?.[0] || concept.evaluationSummary || '-'}</p>
+                        <p className="mt-2"><b>리스크:</b> {concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution || '-'}</p>
+                      </CompactAccordion>
+                      <CompactAccordion title="디버그">
+                        <p>primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · matrixType: {state.conceptGenerationResult?.matrixType || 'none'}</p>
+                        <p>proposalLearningUsed: {concept.directionSource?.proposalPatternLearning || concept.winningPatternUsed || concept.directionDebug?.winningPatternUsed || '현재 RFP 근거 우선'}</p>
+                        <p>warning/lostPatternAvoided: {concept.directionSource?.lostPatternAvoidance || concept.failurePatternAvoided || concept.directionDebug?.failurePatternAvoided || concept.namingGuardWarning || '강한 lost pattern 없음'}</p>
+                      </CompactAccordion>
+                    </div>
                     <button
                       onClick={() => selectConcept(concept)}
                       className={`mt-5 rounded-2xl px-4 py-3 font-bold transition ${selected ? 'bg-blue-600 text-white' : 'bg-slate-950 text-white hover:bg-blue-700'}`}
@@ -3760,13 +3766,12 @@ export default function Home() {
                                   </div>
                                   {option.koreanSubtitle && <p className="mt-1 text-xs font-black text-slate-500">{option.koreanSubtitle}</p>}
                                   <p className="mt-2 text-sm font-bold text-indigo-700">{option.oneLineSlogan}</p>
-                                  <dl className="mt-3 space-y-2 text-xs leading-5 text-slate-600">
-                                    <div><dt className="font-black text-slate-900">shortMeaning</dt><dd>{option.shortMeaning}</dd></div>
-                                    <div><dt className="font-black text-slate-900">whyItFitsRfp</dt><dd>{option.whyItFitsRfp || option.whyItFits}</dd></div>
-                                    <div><dt className="font-black text-slate-900">namingStyle</dt><dd>{option.namingStyle}</dd></div>
-                                    <div><dt className="font-black text-slate-900">scores</dt><dd>Cover {option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.rfpSpecificityScore} · Expand {option.expandabilityScore}</dd></div>
-                                    <div><dt className="font-black text-slate-900">risk</dt><dd>{option.mainRisk || option.risk}</dd></div>
-                                  </dl>
+                                  <div className="mt-3 space-y-2">
+                                    <CompactAccordion title="기본 정보"><p>{option.shortMeaning}</p><p className="mt-2">Style: {option.namingStyle}</p></CompactAccordion>
+                                    <CompactAccordion title="왜 맞는가"><p>{option.whyItFitsRfp || option.whyItFits}</p></CompactAccordion>
+                                    <CompactAccordion title="리스크"><p>{option.mainRisk || option.risk}</p></CompactAccordion>
+                                    <CompactAccordion title="점수"><p>Cover {option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.rfpSpecificityScore} · Expand {option.expandabilityScore}</p></CompactAccordion>
+                                  </div>
                                   <button type="button" onClick={() => selectConceptNameOption(option)} className={`mt-3 inline-flex rounded-xl px-3 py-2 text-xs font-black ${optionSelected ? 'bg-indigo-600 text-white' : 'bg-slate-950 text-white'}`}>{optionSelected ? '선택됨' : '이 이름 선택'}</button>
                                 </article>
                               );

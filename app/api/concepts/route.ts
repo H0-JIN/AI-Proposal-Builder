@@ -338,9 +338,9 @@ interface StrategicDirectionPlanItem {
   lostPatternAvoided: string;
 }
 
-const MULTI_ENTITY_LEAKAGE_PATTERN = /국가관|국격|국가\s*(?:브랜드|파빌리온|상징)|공동관|계열사|통합\s*(?:중심|아이덴티티|\+|\+개별)|통합\+역할|역할\s*(?:구분|차별화)|각\s*대상의\s*역할|상징적\s*리더십|\b리더십\b|pavilion|national\s*pavilion|joint\s*pavilion|unified\s*identity|unified\s*\+\s*differentiated\s*roles|symbolic\s*leadership|role\s*(?:separation|differentiation)|Entity\s*Differentiation\s*Matrix|entity\s*role\s*matrix/i;
+const MULTI_ENTITY_LEAKAGE_PATTERN = /국가|국가관|국격|그룹|연합|공동관|계열사|대기업\s*집단|하나의\s*큰\s*존재감|통합된\s*관람\s*이해|통합\s*아이덴티티|통합\s*\+?\s*역할\s*차별화|역할\s*(?:구분|차별화)|상징적\s*리더십|공동\s*시너지|연합\s*시너지|national\s*pavilion|joint\s*pavilion|alliance|coalition|group\s*presence|unified\s*identity|role\s*differentiation|symbolic\s*leadership|entity\s*role|multi[-\s]*entity|consortium|Entity\s*Differentiation\s*Matrix|entity\s*role\s*matrix/i;
 const VISITOR_BRAND_OVERRIDE_PATTERN = /견학룸|견학|브랜드\s*체험|브랜드\s*공간|공장\s*견학|방문객\s*체험|제품\s*이해|제조\s*공정|브랜드\s*스토리|체험룸|쇼룸|visitor\s*room|brand\s*experience|factory\s*tour|showroom/i;
-const BLOCKED_MULTI_ENTITY_TERMS = ['국가', '국격', '국가관', '계열사', '공동관', '통합 아이덴티티', '통합+역할 차별화', '역할 차별화', '역할 구분', '상징적 리더십', '리더십', 'pavilion', 'national pavilion', 'joint pavilion', 'unified identity', 'role differentiation', 'symbolic leadership'];
+const BLOCKED_MULTI_ENTITY_TERMS = ['국가', '국가관', '그룹', '연합', '공동관', '계열사', '대기업 집단', '하나의 큰 존재감', '통합된 관람 이해', '통합 아이덴티티', '통합+역할 차별화', '역할 차별화', '역할 구분', '상징적 리더십', '공동 시너지', '연합 시너지', 'national pavilion', 'joint pavilion', 'alliance', 'coalition', 'group presence', 'unified identity', 'role differentiation', 'symbolic leadership', 'entity role', 'multi-entity', 'consortium'];
 
 const TYPE_SPECIFIC_FALLBACK_LABELS: Record<RfpConceptType, string[]> = {
   visitor_center_or_tour: ['브랜드 세계관 몰입', '제조/공정 신뢰 증명', '방문객 체험 전환', '제품 가치 체감', '기억되는 시그니처 장면'],

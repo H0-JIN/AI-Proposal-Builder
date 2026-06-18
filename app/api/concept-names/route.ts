@@ -17,13 +17,22 @@ function compact(value: unknown, maxLength = 900) {
   return text.trim().replace(/\s+/g, ' ').slice(0, maxLength);
 }
 
+function successResponse(result: ConceptNameOptionsResult) {
+  return { ok: true, nameOptions: result.options, ...result };
+}
+
+function errorResponse(error: string, details?: string) {
+  return { ok: false, error, ...(details ? { details } : {}) };
+}
+
 function fallbackOptions(direction: ConceptCandidate): ConceptNameOptionsResult {
   const type = direction.rfpConceptType || 'unknown';
   const base = direction.strategicDirectionLabel || direction.directionLabel || direction.proposalCoreConceptName || direction.conceptName || '전략 방향';
   const thesis = direction.winningThesisUse?.winningClaim || direction.conceptLeap?.corePromise || direction.whatThisDirectionEmphasizes || '선택 방향의 전략 명제를 제안서 표지용 이름으로 압축합니다.';
+  const visitorNames = ['Brand World Room', 'Process Proof', 'Product Value Walk', 'Memory Signature', 'Sensory Proof', 'After Visit Glow', '브랜드의 방', '공정의 신뢰'];
   const names = type === 'multi_entity_pavilion'
     ? ['Pavilion Atlas', 'One Field, Many Signals', '공동의 장면', 'Capability Grid', 'The Shared Front', '도메인의 지도', 'Proof Pavilion', 'United Stage']
-    : ['Brand Room', 'Memory Loop', 'Proof Walk', '감각의 약속', 'After Visit', 'Trust Route', 'The Taste of Proof', '기억의 방'];
+    : visitorNames;
   return {
     selectedDirectionId: direction.conceptId,
     recommendedOptionIndex: 0,
@@ -48,9 +57,11 @@ function fallbackOptions(direction: ConceptCandidate): ConceptNameOptionsResult 
 }
 
 export async function POST(request: Request) {
+  let parsedBody: { selectedDirection?: ConceptCandidate } | null = null;
   try {
     const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; activeMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; primaryRfpConceptType?: string; languageMode?: string };
-    if (!body.input || !body.analysis || !body.selectedDirection) return json({ error: '프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.' }, { status: 400 });
+    parsedBody = body;
+    if (!body.input || !body.analysis || !body.selectedDirection) return json(errorResponse('프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.'), { status: 400 });
 
     const sanitizedContext = sanitizeConceptContextByRfpType({
       primaryRfpConceptType: body.selectedDirection.rfpConceptType || body.primaryRfpConceptType || body.analysis.primaryRfpConceptType || 'unknown',
@@ -89,9 +100,16 @@ Winning Thesis / Concept Leap / Signature Proof Idea 포함 전략 방향 JSON: 
     const result = await createStructuredJson<ConceptNameOptionsResult>({ schemaName: 'concept_name_options', schema: conceptNameOptionsJsonSchema, system, user, timeoutMs: 18_000 });
     const styles = ['Direct strategic', 'Brand / sensory', 'Spatial / system', 'Symbolic', 'Global English / bilingual'] as const;
     const options = (result.options ?? []).slice(0, 12).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk }));
-    if (options.length < 8) return json(fallbackOptions(body.selectedDirection));
-    return json({ ...result, selectedDirectionId: body.selectedDirection.conceptId, options });
+    const normalized = { ...result, selectedDirectionId: body.selectedDirection.conceptId, options };
+    if (options.length < 8) return json(successResponse(fallbackOptions(body.selectedDirection)));
+    return json(successResponse(normalized));
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.' }, { status: 500 });
+    const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
+    const fallbackDirection = { conceptId: 'fallback-direction', rfpConceptType: 'single_brand_experience', strategicDirectionLabel: '브랜드 경험 방향' } as ConceptCandidate;
+    try {
+      return json({ ...successResponse(fallbackOptions(parsedBody?.selectedDirection ?? fallbackDirection)), warning: message });
+    } catch {
+      return json({ ...successResponse(fallbackOptions(fallbackDirection)), warning: message, fallbackError: errorResponse('LLM/API 호출 실패로 fallback 컨셉명을 반환했습니다.', message) });
+    }
   }
 }
