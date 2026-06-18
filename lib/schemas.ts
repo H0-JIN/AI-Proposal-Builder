@@ -20,6 +20,24 @@ export const rfpDiagnosisJsonSchema = {
   required: ['decisionMakerConcern', 'coreWinningCondition', 'hiddenNeed', 'evaluatorDecisionRisk', 'clientUniquePosition', 'strategicTension', 'proofBurden', 'genericProposalFailureReason', 'requiredProofElements', 'rfpEvidenceAnchors'],
 } as const;
 
+
+export const brandProductIntelligenceJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    clientOrBrandRole: { type: 'string' },
+    productOrServiceMeaning: { type: 'string' },
+    categoryContext: { type: 'string' },
+    audiencePerceptionGap: { type: 'string' },
+    brandSpecificVocabulary: { type: 'array', minItems: 8, maxItems: 15, items: { type: 'string' } },
+    wordsToAvoid: { type: 'array', minItems: 3, maxItems: 15, items: { type: 'string' } },
+    toneGuidance: { type: 'string' },
+    strategyImplication: { type: 'string' },
+    namingImplication: { type: 'string' },
+  },
+  required: ['clientOrBrandRole', 'productOrServiceMeaning', 'categoryContext', 'audiencePerceptionGap', 'brandSpecificVocabulary', 'wordsToAvoid', 'toneGuidance', 'strategyImplication', 'namingImplication'],
+} as const;
+
 const slidePurposeEnum = ['Problem', 'Insight', 'Strategy', 'Concept', 'Experience', 'Content', 'Proof', 'Impact'] as const;
 
 
@@ -524,6 +542,7 @@ export const conceptCandidatesJsonSchema = {
           secondaryRfpConceptTypes: { type: 'array', items: { type: 'string', enum: rfpConceptTypeEnum } },
           strategicDirectionType: { type: 'string' },
           strategicDirectionLabel: { type: 'string' },
+          directionAxis: { type: 'string', enum: ['representative_position', 'audience_understanding', 'signature_scene', 'product_value_proof', 'process_trust', 'category_shift', 'system/ecosystem_proof', 'spatial_journey', 'brand_memory', 'operational_confidence', 'evaluator_clarity', 'emotional_affinity', 'technology_reality_proof'] },
           strategicDirectionQualityValidation: strategicDirectionQualityValidationSchema,
           whatThisDirectionEmphasizes: { type: 'string' },
           oneLineStrategicBet: { type: 'string' },
@@ -610,6 +629,7 @@ export const conceptCandidatesJsonSchema = {
           'secondaryRfpConceptTypes',
           'strategicDirectionType',
           'strategicDirectionLabel',
+          'directionAxis',
           'strategicDirectionQualityValidation',
           'whatThisDirectionEmphasizes',
           'oneLineStrategicBet',
