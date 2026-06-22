@@ -1,7 +1,7 @@
 import type { DocumentRole } from './dbTypes';
 import type { ChunkCategory, DocumentChunk, DocumentType } from './rag';
 
-export type ProposalType = 'basic' | 'cheil' | 'innocean' | 'hyundai' | 'mice_event_operation' | 'conference_forum';
+export type ProposalType = 'basic' | 'cheil' | 'innocean' | 'hyundai' | 'basic_proposal' | 'brand_experience' | 'experience_marketing' | 'corporate_technology_showcase' | 'exhibition_booth_content' | 'multi_entity_pavilion' | 'visitor_center_tour' | 'popup_retail_experience' | 'mice_event_operation' | 'conference_forum';
 
 export type ProposalScopeType =
   | 'contentDevelopment'
@@ -354,13 +354,19 @@ export interface BrandProductIntelligence {
 
 export interface RfpDiagnosis {
   decisionMakerConcern: string;
+  coreProposalThesis?: string;
   coreWinningCondition: string;
+  hiddenRequirement?: string;
   hiddenNeed: string;
   evaluatorDecisionRisk: string;
   clientUniquePosition: string;
+  strategicIssue?: string;
   strategicTension: string;
+  persuasionTask?: string;
   proofBurden: string;
+  genericProposalRisk?: string;
   genericProposalFailureReason: string;
+  requiredPersuasionElements?: string[];
   requiredProofElements: string[];
   rfpEvidenceAnchors: string[];
 }
@@ -873,10 +879,43 @@ export interface RetrievalEvidenceItem {
 }
 
 export const proposalTypeLabels: Record<ProposalType, string> = {
-  basic: '기본형',
-  cheil: '제일기획형',
-  innocean: '이노션형',
-  hyundai: '현대차그룹형',
-  mice_event_operation: 'MICE 행사 운영형',
-  conference_forum: '컨퍼런스 / 포럼형',
+  basic: '기본 제안형',
+  cheil: '브랜드 경험형',
+  innocean: '경험 마케팅형',
+  hyundai: '기술/제품 쇼케이스형',
+  basic_proposal: '기본 제안형',
+  brand_experience: '브랜드 경험형',
+  experience_marketing: '경험 마케팅형',
+  corporate_technology_showcase: '기술/제품 쇼케이스형',
+  exhibition_booth_content: '전시 부스/콘텐츠형',
+  multi_entity_pavilion: '다중 기업/공동관형',
+  visitor_center_tour: '견학/홍보관형',
+  popup_retail_experience: '팝업/리테일 경험형',
+  mice_event_operation: 'MICE 운영형',
+  conference_forum: '컨퍼런스/포럼형',
 };
+
+export const proposalTypeDescriptions: Record<ProposalType, string> = {
+  basic: '프로젝트 이해, 핵심 과제, 제안 전략, 컨셉, 공간/콘텐츠 구성, 실행 계획, 기대 효과가 이어지는 기본형 구조.',
+  cheil: '브랜드 과제, 관람객 인식, 경험 전략, 공간·콘텐츠 아이디어, 기억/확산 포인트, 실행 계획을 강조하는 브랜드 경험형 구조.',
+  innocean: '타깃 행동, 체험 동선, 브랜드 접점, 참여/공유 구조, 운영 실행성을 강조하는 경험 마케팅형 구조.',
+  hyundai: '기업 비전, 기술/제품 가치, 신뢰 가능한 설득 장면, 공간/미디어 전달 방식, 실행 가능성을 강조하는 기술·제품 쇼케이스형 구조.',
+  basic_proposal: '프로젝트 이해, 핵심 과제, 제안 전략, 컨셉, 공간/콘텐츠 구성, 실행 계획, 기대 효과가 이어지는 기본형 구조.',
+  brand_experience: '브랜드 과제, 관람객 인식, 경험 전략, 공간·콘텐츠 아이디어, 기억/확산 포인트, 실행 계획을 강조하는 브랜드 경험형 구조.',
+  experience_marketing: '타깃 행동, 체험 동선, 브랜드 접점, 참여/공유 구조, 운영 실행성을 강조하는 경험 마케팅형 구조.',
+  corporate_technology_showcase: '기업 비전, 기술/제품 가치, 신뢰 가능한 설득 장면, 공간/미디어 전달 방식, 실행 가능성을 강조하는 기술·제품 쇼케이스형 구조.',
+  exhibition_booth_content: '전시 목적, 메시지 구조, 부스/공간 구성, 핵심 콘텐츠, 관람 동선, 운영 대응을 강조하는 전시 부스/콘텐츠형 구조.',
+  multi_entity_pavilion: '여러 기업·기관·브랜드의 공통 메시지와 개별 역할을 함께 설계하는 공동관/다중 주체형 구조.',
+  visitor_center_tour: '브랜드 또는 생산/서비스 과정을 관람객이 이해하고 신뢰하도록 동선, 교육, 체험, 기억 요소를 설계하는 견학/홍보관형 구조.',
+  popup_retail_experience: '짧은 기간 안에 방문, 체험, 촬영, 공유, 구매 또는 브랜드 호감을 유도하는 팝업/리테일 경험형 구조.',
+  mice_event_operation: '행사 목적, 프로그램, 등록/입장, 운영 동선, 인력, 시스템, 리스크, 일정, 예산 대응을 강조하는 MICE 운영형 구조.',
+  conference_forum: '아젠다, 세션 구성, 연사/발표 시스템, 등록/네트워킹, 파트너 부스, 의전, 운영 안정성을 강조하는 컨퍼런스/포럼형 구조.',
+};
+
+export function normalizeProposalType(type?: ProposalType): ProposalType {
+  if (type === 'basic') return 'basic_proposal';
+  if (type === 'cheil') return 'brand_experience';
+  if (type === 'innocean') return 'experience_marketing';
+  if (type === 'hyundai') return 'corporate_technology_showcase';
+  return type ?? 'basic_proposal';
+}

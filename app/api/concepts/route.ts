@@ -1110,7 +1110,7 @@ export async function POST(request: Request) {
       return conceptsJson({ error: '프로젝트 입력값과 분석 결과가 필요합니다.' }, { status: 400 });
     }
     if (!body.rfpDiagnosis) {
-      return conceptsJson({ error: '승부처 진단 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
+      return conceptsJson({ error: '제안 전략 진단 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
     }
     if (!body.brandProductIntelligence) {
       return conceptsJson({ error: '브랜드/제품 이해 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });

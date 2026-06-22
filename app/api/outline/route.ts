@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { outlineJsonSchema } from '@/lib/schemas';
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ProjectInput, ProposalNarrative, SlideOutline } from '@/lib/types';
 import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
-import { proposalTypeLabels } from '@/lib/types';
+import { normalizeProposalType, proposalTypeDescriptions, proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { expandExperiencePlanOutline, extractProductCodes } from '@/lib/experiencePlan';
@@ -105,14 +105,7 @@ function ensureEntityDifferentiationOutlineSlide(slides: SlideOutline[], differe
   return [...slides.slice(0, insertIndex), newSlide, ...slides.slice(insertIndex)].map((slide, index) => ({ ...slide, slideNumber: index + 1 }));
 }
 
-const styleGuides = {
-  basic: '프로젝트 이해, 과제 정의, 경험 전략, 콘셉트, 공간/콘텐츠 구성, 운영 및 기대 효과가 이어지는 기본형 구조.',
-  cheil: '브랜드 과제, 소비자 인사이트, 경험 전략, 캠페인형 공간 아이디어, 확산/바이럴 포인트, 실행 계획을 강조하는 제일기획형 구조.',
-  innocean: '브랜드/제품 맥락, 타깃 행동 분석, 체험 시나리오, 공간/미디어 연출, 운영 및 실행 가능성을 강조하는 이노션형 구조.',
-  hyundai: '기업 비전, 기술/사업 가치, 신뢰감 있는 체험 구조, 공간/콘텐츠 전달 방식, 의전/운영 고려사항을 강조하는 현대차그룹형 구조.',
-  mice_event_operation: '행사 목적, 운영 전략, 프로그램/등록/부스/케이터링/시스템/인력/리스크/설치·철거/견적 대응을 강조하는 MICE 행사 운영형 구조.',
-  conference_forum: '컨퍼런스 아젠다, 세션/연사/발표 시스템, 등록/네트워킹/파트너 부스, 현장 운영, 의전, 리스크 관리와 성과를 강조하는 포럼형 구조.',
-};
+const styleGuides = proposalTypeDescriptions;
 
 export async function POST(request: Request) {
   try {
@@ -126,7 +119,7 @@ export async function POST(request: Request) {
     const missingInfoSummary = inputQuality.missingItems.map((item) => `${item.label}: ${item.description}`);
 
     const productCodes = extractProductCodes({ input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, conceptDevelopmentLogic: body.conceptDevelopmentLogic });
-    const effectiveProposalType = body.analysis.inferredProposalType ?? body.input.proposalType;
+    const effectiveProposalType = normalizeProposalType(body.analysis.inferredProposalType ?? body.input.proposalType);
     const isEventOperationType = effectiveProposalType === 'mice_event_operation' || effectiveProposalType === 'conference_forum';
     const structureGuard = buildProposalStructureGuard(body.input, body.analysis);
     const scopeLabelText = structureGuard.proposalScopeTypes.map((scope) => proposalScopeTypeLabels[scope]).join(' + ') || '감지된 세부 범위 없음';
@@ -211,7 +204,7 @@ export async function POST(request: Request) {
       ].join('\n'),
       user: `사용자 선택 제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
 RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}
-유형별 구조 가이드: ${styleGuides[effectiveProposalType]}
+제안 구조 유형 가이드: ${styleGuides[effectiveProposalType]}
 프로젝트명: ${body.input.projectName}
 클라이언트명: ${body.input.clientName}
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
 import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
-import { proposalTypeLabels } from '@/lib/types';
+import { normalizeProposalType, proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
 import { isInternalConceptComparisonSlide, removeInternalConceptComparisonSlides, sanitizeFinalPptxSlides, sanitizeFinalPptxText } from '@/lib/internalSlides';
@@ -70,7 +70,7 @@ type ExtractTextResponse = {
   extractedPageCount?: number;
 };
 
-type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[]; diagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence };
+type AnalysisApiResponse = AnalysisResult | { result: AnalysisResult; evidence?: RetrievalEvidenceItem[]; proposalStrategyDiagnosis?: RfpDiagnosis; diagnosis?: RfpDiagnosis; rfpDiagnosis?: RfpDiagnosis; winningDiagnosis?: RfpDiagnosis; victoryDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence };
 
 type DbSaveStatus = 'idle' | 'disabled' | 'saving' | 'saved' | 'failed' | 'partial';
 
@@ -171,6 +171,45 @@ const proposalOutcomeLabels: Record<ProposalOutcome, string> = {
 };
 
 const STORAGE_KEY = 'ai-proposal-builder-state';
+
+
+const diagnosisFieldAdapters = {
+  coreProposalThesis: 'coreWinningCondition',
+  hiddenRequirement: 'hiddenNeed',
+  strategicIssue: 'strategicTension',
+  persuasionTask: 'proofBurden',
+  genericProposalRisk: 'genericProposalFailureReason',
+} as const;
+
+type NewDiagnosisTextKey = keyof typeof diagnosisFieldAdapters;
+
+const diagnosisFieldLabels: Array<[NewDiagnosisTextKey, string]> = [
+  ['coreProposalThesis', '핵심 제안 명제'],
+  ['hiddenRequirement', '숨은 요구'],
+  ['strategicIssue', '전략적 쟁점'],
+  ['persuasionTask', '설득 과제'],
+  ['genericProposalRisk', '평범한 제안이 부족한 이유'],
+];
+
+function getDiagnosisText(diagnosis: RfpDiagnosis | undefined, key: NewDiagnosisTextKey) {
+  if (!diagnosis) return '';
+  const legacyKey = diagnosisFieldAdapters[key];
+  return (diagnosis[key] || diagnosis[legacyKey] || '').trim();
+}
+
+function getDiagnosisList(diagnosis: RfpDiagnosis | undefined) {
+  return diagnosis?.requiredPersuasionElements?.length ? diagnosis.requiredPersuasionElements : diagnosis?.requiredProofElements ?? [];
+}
+
+function withDiagnosisText(diagnosis: RfpDiagnosis, key: NewDiagnosisTextKey, value: string): RfpDiagnosis {
+  const legacyKey = diagnosisFieldAdapters[key];
+  return { ...diagnosis, [key]: value, [legacyKey]: value };
+}
+
+function withDiagnosisList(diagnosis: RfpDiagnosis, value: string): RfpDiagnosis {
+  const items = value.split('\n').map((item) => item.trim()).filter(Boolean);
+  return { ...diagnosis, requiredPersuasionElements: items, requiredProofElements: items };
+}
 
 const initialInput: ProjectInput = {
   proposalType: 'basic',
@@ -1110,7 +1149,7 @@ function KeyValueList({ data, evidence }: { data: AnalysisResult; evidence?: Ret
       </div>
       <div className="rounded-2xl bg-slate-50 p-4">
         <p className="text-sm font-semibold text-blue-700">RFP 기반 제안서 유형</p>
-        <p className="mt-1 text-slate-800">{data.inferredProposalType ? proposalTypeLabels[data.inferredProposalType] : '해당 없음'} · {data.proposalTypeReasoning}</p>
+        <p className="mt-1 text-slate-800">{data.inferredProposalType ? proposalTypeLabels[normalizeProposalType(data.inferredProposalType)] : '해당 없음'} · {data.proposalTypeReasoning}</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <RfpSummaryPanel sections={rfpSummarySections} />
@@ -1500,8 +1539,13 @@ function getAllDocumentChunks(documents: UploadedDocument[] = []) {
   return documents.flatMap((document) => document.chunks ?? []);
 }
 
-function parseAnalysisApiResponse(response: AnalysisApiResponse) {
-  if ('result' in response) return response;
+function parseAnalysisApiResponse(response: AnalysisApiResponse): { result: AnalysisResult; evidence?: RetrievalEvidenceItem[]; diagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence } {
+  if ('result' in response) {
+    return {
+      ...response,
+      diagnosis: response.proposalStrategyDiagnosis ?? response.diagnosis ?? response.rfpDiagnosis ?? response.winningDiagnosis ?? response.victoryDiagnosis,
+    };
+  }
   return { result: response, evidence: [] };
 }
 
@@ -1784,7 +1828,7 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[], selecte
     if (noteLines.length) {
       slide.addNotes(noteLines.join('\n'));
     }
-    slide.addText(`${input.clientName} · ${proposalTypeLabels[input.proposalType]}`, { x: 0.55, y: 6.95, w: 5, h: 0.2, fontSize: 8, color: '94A3B8' });
+    slide.addText(`${input.clientName} · ${proposalTypeLabels[normalizeProposalType(input.proposalType)]}`, { x: 0.55, y: 6.95, w: 5, h: 0.2, fontSize: 8, color: '94A3B8' });
   });
 
   await pptx.writeFile({ fileName: `${safeFileName(input.projectName)}_proposal.pptx` });
@@ -3128,7 +3172,7 @@ export default function Home() {
   const runDiagnosis = async () => {
     if (!state.analysis) return;
     setError('');
-    setLoading('승부처 진단 중...');
+    setLoading('제안 전략 진단 중...');
     try {
       const response = await postJson<{ result: RfpDiagnosis }>('/api/diagnosis', { input: analysisInput, analysis: state.analysis });
       setState((current) => ({ ...current, rfpDiagnosis: response.result, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
@@ -3139,12 +3183,12 @@ export default function Home() {
     }
   };
 
-  const updateDiagnosisField = (key: keyof RfpDiagnosis, value: string) => {
-    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: { ...current.rfpDiagnosis, [key]: value }, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+  const updateDiagnosisField = (key: NewDiagnosisTextKey, value: string) => {
+    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: withDiagnosisText(current.rfpDiagnosis, key, value), brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
   };
 
   const updateDiagnosisProofElements = (value: string) => {
-    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: { ...current.rfpDiagnosis, requiredProofElements: value.split('\n').map((item) => item.trim()).filter(Boolean) }, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: withDiagnosisList(current.rfpDiagnosis, value), brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
   };
 
 
@@ -3173,7 +3217,7 @@ export default function Home() {
   const runConcepts = async (options: { retryLight?: boolean } = {}) => {
     if (!state.analysis) return;
     if (!state.rfpDiagnosis) {
-      setError('승부처 진단을 먼저 확정해 주세요.');
+      setError('제안 전략 진단을 먼저 확정해 주세요.');
       return;
     }
     if (!state.brandProductIntelligence) {
@@ -3684,49 +3728,54 @@ export default function Home() {
                 </div>
               )}
               <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
-              <div className="rounded-3xl border border-indigo-200 bg-indigo-50 p-5">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <details className="rounded-3xl border border-indigo-200 bg-indigo-50 p-5">
+                <summary className="flex cursor-pointer list-none flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <h3 className="text-2xl font-black text-indigo-950">승부처 진단</h3>
-                    <p className="mt-2 text-sm font-semibold leading-6 text-indigo-900">AI가 RFP만을 기준으로 이번 제안의 승부처를 진단했습니다. 필요하면 수정 후 전략 방향을 생성하세요.</p>
+                    <h3 className="text-2xl font-black text-indigo-950">제안 전략 진단</h3>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-indigo-900">AI가 RFP를 기준으로 이번 제안에서 반드시 설득해야 할 핵심 전략을 정리했습니다. 필요하면 확인·수정 후 전략 방향을 생성하세요.</p>
+                    {state.rfpDiagnosis ? (
+                      <div className="mt-4 grid gap-2 text-sm font-bold text-indigo-950">
+                        {getDiagnosisText(state.rfpDiagnosis, 'coreProposalThesis') && <p><span className="text-indigo-700">핵심 제안 명제</span> · {getDiagnosisText(state.rfpDiagnosis, 'coreProposalThesis')}</p>}
+                        {getDiagnosisText(state.rfpDiagnosis, 'strategicIssue') && <p><span className="text-indigo-700">전략적 쟁점</span> · {getDiagnosisText(state.rfpDiagnosis, 'strategicIssue')}</p>}
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-indigo-900">전략 방향 생성 전에 제안 전략 진단이 필요합니다.</p>
+                    )}
                   </div>
-                </div>
-                {state.rfpDiagnosis ? (
+                  <span className="rounded-full bg-white px-4 py-2 text-sm font-black text-indigo-700 shadow-sm">진단 내용 보기·수정</span>
+                </summary>
+                {state.rfpDiagnosis && (
                   <div className="mt-5 grid gap-4">
-                    {([['coreWinningCondition', '승부 조건'], ['hiddenNeed', '숨은 니즈'], ['strategicTension', '전략적 긴장'], ['proofBurden', '증명 과제'], ['genericProposalFailureReason', '템플릿형 제안이 실패하는 이유']] as const).map(([key, label]) => (
+                    {diagnosisFieldLabels.map(([key, label]) => (
                       <label key={key} className="block">
                         <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-indigo-700">{label}</span>
-                        <textarea value={state.rfpDiagnosis?.[key] ?? ''} onChange={(event) => updateDiagnosisField(key, event.target.value)} className="min-h-20 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-indigo-500" />
+                        <textarea value={getDiagnosisText(state.rfpDiagnosis, key)} onChange={(event) => updateDiagnosisField(key, event.target.value)} className="min-h-20 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-indigo-500" />
                       </label>
                     ))}
                     <label className="block">
-                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-indigo-700">필수 증명 요소</span>
-                      <textarea value={state.rfpDiagnosis.requiredProofElements.join('\n')} onChange={(event) => updateDiagnosisProofElements(event.target.value)} className="min-h-32 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-indigo-500" />
+                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-indigo-700">필수 설득 요소</span>
+                      <textarea value={getDiagnosisList(state.rfpDiagnosis).join('\n')} onChange={(event) => updateDiagnosisProofElements(event.target.value)} className="min-h-32 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-indigo-500" />
                     </label>
                     <details className="rounded-2xl border border-indigo-200 bg-white px-4 py-3 text-xs font-semibold text-indigo-900">
-                      <summary className="cursor-pointer font-black">근거/검증 정보 보기</summary>
+                      <summary className="cursor-pointer font-black">개발/검증 정보 보기</summary>
                       <pre className="mt-3 whitespace-pre-wrap">{JSON.stringify({ rfpEvidenceAnchors: state.rfpDiagnosis.rfpEvidenceAnchors, decisionMakerConcern: state.rfpDiagnosis.decisionMakerConcern, evaluatorDecisionRisk: state.rfpDiagnosis.evaluatorDecisionRisk, clientUniquePosition: state.rfpDiagnosis.clientUniquePosition }, null, 2)}</pre>
                     </details>
                   </div>
-                ) : (
-                  <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-indigo-900">전략 방향 생성 전에 RFP-only 승부처 진단이 필요합니다.</p>
                 )}
-              </div>
+              </details>
 
               {state.rfpDiagnosis && (
-                <div className="rounded-3xl border border-sky-200 bg-sky-50 p-5">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <details className="rounded-3xl border border-sky-200 bg-sky-50 p-5">
+                  <summary className="flex cursor-pointer list-none flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <h3 className="text-2xl font-black text-sky-950">RFP 기반 브랜드/제품 이해</h3>
-                      <p className="mt-2 text-sm font-semibold leading-6 text-sky-900">AI가 RFP와 업로드 자료를 기준으로 브랜드·제품·카테고리 맥락을 정리했습니다. 필요하면 수정 후 전략 방향을 생성하세요.</p>
-                      <p className="mt-2 text-xs font-bold leading-5 text-sky-800">현재는 RFP와 업로드 자료를 기준으로 정리됩니다. 외부 웹 조사는 연결되어 있지 않습니다.</p>
+                      <h3 className="text-2xl font-black text-sky-950">브랜드/제품 이해</h3>
+                      <p className="mt-2 text-sm font-semibold leading-6 text-sky-900">RFP와 업로드 자료를 기준으로 정리됩니다.</p>
                     </div>
-                    {state.brandProductIntelligence && <SecondaryButton onClick={runBrandProductIntelligence} disabled={Boolean(loading) || !state.rfpDiagnosis}>다시 정리</SecondaryButton>}
-                  </div>
+                    <span className="rounded-full bg-white px-4 py-2 text-sm font-black text-sky-700 shadow-sm">브랜드/제품 이해 보기</span>
+                  </summary>
                   {state.brandProductIntelligence ? (
-                    <details open className="mt-4 rounded-2xl border border-sky-200 bg-white p-4">
-                      <summary className="cursor-pointer text-sm font-black text-sky-950">편집 필드 보기</summary>
-                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="mt-4 rounded-2xl border border-sky-200 bg-white p-4">
+                      <div className="grid gap-3 md:grid-cols-2">
                         {([['clientOrBrandRole', '클라이언트/브랜드 역할'], ['productOrServiceMeaning', '제품/서비스 의미'], ['categoryContext', '카테고리 맥락'], ['audiencePerceptionGap', '관람객 인식 장벽'], ['toneGuidance', '톤 가이드'], ['strategyImplication', '전략 반영 방향'], ['namingImplication', '네이밍 반영 방향']] as const).map(([key, label]) => (
                           <label key={key} className="block">
                             <span className="mb-2 block text-xs font-black text-sky-700">{label}</span>
@@ -3742,11 +3791,12 @@ export default function Home() {
                           <textarea value={state.brandProductIntelligence.wordsToAvoid.join('\n')} onChange={(event) => updateBrandProductIntelligenceList('wordsToAvoid', event.target.value)} className="min-h-20 w-full rounded-2xl border border-sky-200 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-sky-500" />
                         </label>
                       </div>
-                    </details>
+                    </div>
                   ) : (
                     <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-sky-900">RFP 분석 완료 시 자동 생성됩니다. 추가 정보 반영 후 다시 분석하면 함께 갱신됩니다.</p>
                   )}
-                </div>
+                  {state.brandProductIntelligence && <div className="mt-4"><SecondaryButton onClick={runBrandProductIntelligence} disabled={Boolean(loading) || !state.rfpDiagnosis}>다시 정리</SecondaryButton></div>}
+                </details>
               )}
             </div>
             {hasConfirmationNeeds && (
