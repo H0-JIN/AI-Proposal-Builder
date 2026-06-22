@@ -568,7 +568,7 @@ function buildStrategicDirectionDiscoveryBrief(analysis: AnalysisResult, narrati
     `audience_perception_change: ${audiencePerceptionGap}`,
     `required_proof: ${whatMustBeProven}`,
     `client_unique_position: ${clientUniquePosition}`,
-    `signature_experience: ${compactText(narrative.unifyingFrame || analysis.contentCondition || '대표 장면으로 기억되는 proof scene', 150)}`,
+    `signature_experience: ${compactText(narrative.unifyingFrame || analysis.contentCondition || '대표 장면으로 기억되는 설득 장면', 150)}`,
     `evaluator_clarity: ${evaluatorDecisionRisk}`,
   ];
   if (conceptType === 'multi_entity_pavilion' && hasMultipleEntities) axes.push(`ecosystem_system_proof: ${compactText(narrative.differentiationPrinciple || '복수 주체의 관계와 기여를 현재 RFP 근거로 명확화', 150)}`);
@@ -577,7 +577,7 @@ function buildStrategicDirectionDiscoveryBrief(analysis: AnalysisResult, narrati
 }
 
 function axisLabel(axis: string, evidence: string, index: number, conceptType: RfpConceptType) {
-  const fallback = ['카테고리 전환 증명', '관람 인식 전환', '실체 Proof 장면', '클라이언트 고유성', '평가 확신 설계'][index] || 'RFP 맞춤 방향';
+  const fallback = ['카테고리 전환 증명', '관람 인식 전환', '대표 장면 각인', '클라이언트 고유성', '평가 확신 설계'][index] || 'RFP 맞춤 방향';
   const axisName = axis.split(':')[0].replace(/_/g, ' ');
   const seed = `${axisName} ${evidence}`.replace(/category shift/i, '카테고리 전환').replace(/audience perception change/i, '인식 전환').replace(/required proof/i, '증명').replace(/client unique position/i, '고유 포지션').replace(/signature experience/i, '시그니처 장면').replace(/evaluator clarity/i, '평가 명확성').replace(/ecosystem system proof/i, '시스템 증명');
   const label = inferDirectionLabel(seed, fallback);

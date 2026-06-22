@@ -25,6 +25,41 @@ function errorResponse(error: string, details?: string) {
   return { ok: false, error, ...(details ? { details } : {}) };
 }
 
+
+type NamingDirectionInput = Partial<ConceptCandidate> & {
+  representativePersuasionScene?: string;
+  signatureExperienceIdea?: string | ConceptCandidate['signatureProofIdea'];
+  winningThesis?: ConceptCandidate['winningThesisUse'];
+  id?: string;
+};
+
+function normalizeSelectedDirectionForNaming(body: { selectedDirection?: NamingDirectionInput; selectedStrategicDirection?: NamingDirectionInput; conceptId?: string; strategicDirectionLabel?: string; directionAxis?: string; oneLineStrategicBet?: string; representativePersuasionScene?: string; winningThesis?: ConceptCandidate['winningThesisUse']; conceptLeap?: ConceptCandidate['conceptLeap']; signatureProofIdea?: ConceptCandidate['signatureProofIdea']; mainRisk?: string; primaryRfpConceptType?: string }) {
+  const source = body.selectedDirection ?? body.selectedStrategicDirection ?? {};
+  const signatureAlias = typeof source.signatureExperienceIdea === 'object' ? source.signatureExperienceIdea : undefined;
+  const signatureProofIdea = body.signatureProofIdea ?? source.signatureProofIdea ?? signatureAlias ?? {
+    signatureScene: body.representativePersuasionScene || source.representativePersuasionScene || '',
+    signatureContent: typeof source.signatureExperienceIdea === 'string' ? source.signatureExperienceIdea : '',
+    signatureSpatialMove: '',
+    signatureMediaOrInteraction: '',
+    whyThisProvesTheConcept: '',
+    whyThisIsNotGeneric: '',
+  };
+  const representativePersuasionScene = body.representativePersuasionScene || source.representativePersuasionScene || signatureProofIdea.signatureScene || signatureProofIdea.signatureContent || signatureProofIdea.signatureSpatialMove || signatureProofIdea.signatureMediaOrInteraction || '';
+  return {
+    ...source,
+    conceptId: source.conceptId || body.conceptId || source.id || 'selected-direction',
+    strategicDirectionLabel: body.strategicDirectionLabel || source.strategicDirectionLabel || source.directionLabel || source.proposalCoreConceptName || '전략 방향',
+    directionAxis: body.directionAxis || source.directionAxis || source.strategicDirectionType || source.strategicDirectionLabel || 'selected_direction_axis',
+    oneLineStrategicBet: body.oneLineStrategicBet || source.oneLineStrategicBet || source.oneLineSummary || source.whatThisDirectionEmphasizes || '',
+    winningThesisUse: body.winningThesis || source.winningThesisUse || source.winningThesis,
+    conceptLeap: body.conceptLeap || source.conceptLeap,
+    signatureProofIdea: { ...signatureProofIdea, signatureScene: signatureProofIdea.signatureScene || representativePersuasionScene },
+    representativePersuasionScene,
+    mainRisk: body.mainRisk || source.mainRisk || source.riskOrCaution || source.risks?.[0] || '',
+    rfpConceptType: source.rfpConceptType || body.primaryRfpConceptType || 'unknown',
+  } as ConceptCandidate & { representativePersuasionScene?: string };
+}
+
 const GENERIC_MAIN_HOOKS = ['현장', '현장의', '경험', '체험', '증명', '가치', '연결', '흐름', '여정', '신뢰', '균형'] as const;
 
 const INTERNAL_LANGUAGE_PATTERN = /\b(proof|evidence|proof burden|evaluator clarity|validation|source|score|signature proof idea)\b|증명 과제|증거|Proof|Evidence|Validation|Source|Score/gi;
@@ -198,7 +233,8 @@ function truthyValidation() {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; analysisSummary?: string; selectedDirection: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; activeMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; primaryRfpConceptType?: string; languageMode?: string; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[] };
-    if (!body.input || !body.analysis || !body.selectedDirection) return json(errorResponse('프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.'), { status: 400 });
+    if (!body.input || !body.analysis || (!body.selectedDirection && !body.selectedStrategicDirection)) return json(errorResponse('프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.'), { status: 400 });
+    body.selectedDirection = normalizeSelectedDirectionForNaming(body) as ConceptCandidate;
 
     const sanitizedContext = sanitizeConceptContextByRfpType({
       primaryRfpConceptType: body.selectedDirection.rfpConceptType || body.primaryRfpConceptType || body.analysis.primaryRfpConceptType || 'unknown',
