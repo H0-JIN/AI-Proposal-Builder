@@ -1720,6 +1720,90 @@ function getStrategicDirectionKey(concept?: ConceptCandidate) {
   return [concept?.conceptId, concept?.directionAxis, concept?.strategicDirectionLabel || concept?.directionLabel].filter(Boolean).join('::') || getStrategicDirectionId(concept);
 }
 
+
+const INVALID_DIRECTION_LABEL_PATTERN = /(KINTEX|2025|12월|2,?520㎡|Hero\s*콘텐츠\s*40%|콘텐츠\s*60%|B2B\s*대상|전시\s*목표|콘텐츠\s*개발|운영\s*구성|실체\s*Proof\s*장면|Proof\s*장면|\d{4}|\d+%|\d+㎡|킨텍스)/i;
+const REQUIREMENT_SUMMARY_PATTERN = /(일정|장소|부스|규모|평가|배점|납품|제출|착수|완료|대상|운영\s*구성|콘텐츠\s*개발)/;
+
+type NormalizedStrategicDirection = Pick<ConceptCandidate, 'conceptId' | 'strategicDirectionLabel' | 'directionAxis' | 'oneLineStrategicBet' | 'conceptLeap' | 'signatureProofIdea' | 'mainRisk'> & {
+  winningThesis?: ConceptCandidate['winningThesisUse'];
+  representativePersuasionScene: string;
+  whenToChooseThisDirection?: string;
+  whyThisDirectionExists?: string;
+  rfpConceptType?: ConceptCandidate['rfpConceptType'];
+  secondaryRfpConceptTypes?: ConceptCandidate['secondaryRfpConceptTypes'];
+};
+
+function isValidStrategicDirectionLabel(label?: string) {
+  const value = (label || '').trim();
+  if (!value || INVALID_DIRECTION_LABEL_PATTERN.test(value)) return false;
+  const words = value.split(/[\s/·|]+/).filter(Boolean);
+  if (words.length > 8) return false;
+  if (REQUIREMENT_SUMMARY_PATTERN.test(value) && words.length > 4) return false;
+  return true;
+}
+
+function normalizeStrategicDirectionForNaming(concept?: ConceptCandidate): NormalizedStrategicDirection | undefined {
+  if (!concept) return undefined;
+  const aliasSource = concept as ConceptCandidate & { representativePersuasionScene?: string; signatureExperienceIdea?: string | ConceptCandidate['signatureProofIdea']; winningThesis?: ConceptCandidate['winningThesisUse']; id?: string };
+  const signatureProofIdea = concept.signatureProofIdea || (typeof aliasSource.signatureExperienceIdea === 'object' ? aliasSource.signatureExperienceIdea : undefined) || {
+    signatureScene: typeof aliasSource.representativePersuasionScene === 'string' ? aliasSource.representativePersuasionScene : '',
+    signatureContent: typeof aliasSource.signatureExperienceIdea === 'string' ? aliasSource.signatureExperienceIdea : '',
+    signatureSpatialMove: '',
+    signatureMediaOrInteraction: '',
+    whyThisProvesTheConcept: '',
+    whyThisIsNotGeneric: '',
+  };
+  const representativePersuasionScene = shortText(
+    aliasSource.representativePersuasionScene ||
+    signatureProofIdea.signatureScene ||
+    signatureProofIdea.signatureContent ||
+    signatureProofIdea.signatureSpatialMove ||
+    signatureProofIdea.signatureMediaOrInteraction ||
+    concept.keyExperienceAssetDirection,
+    140,
+  ) || '대표 설득 장면을 짧고 명확하게 제시합니다.';
+  return {
+    conceptId: concept.conceptId || aliasSource.id || getStrategicDirectionId(concept),
+    strategicDirectionLabel: isValidStrategicDirectionLabel(concept.strategicDirectionLabel) ? concept.strategicDirectionLabel : getStrategicDirectionLabel({ ...concept, strategicDirectionLabel: concept.directionAxis || concept.strategicDirectionType || '전략 방향' }),
+    directionAxis: concept.directionAxis || concept.strategicDirectionType || concept.whatThisDirectionEmphasizes || concept.strategicDirectionLabel,
+    oneLineStrategicBet: getStrategicBet(concept),
+    winningThesis: concept.winningThesisUse || aliasSource.winningThesis,
+    conceptLeap: concept.conceptLeap,
+    signatureProofIdea: { ...signatureProofIdea, signatureScene: signatureProofIdea.signatureScene || representativePersuasionScene },
+    representativePersuasionScene,
+    mainRisk: concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution || '이 방향의 대표 장면이 약하면 차별성이 낮아질 수 있습니다.',
+    whenToChooseThisDirection: concept.whenToChooseThisDirection,
+    whyThisDirectionExists: concept.whyThisDirectionExists,
+    rfpConceptType: concept.rfpConceptType,
+    secondaryRfpConceptTypes: concept.secondaryRfpConceptTypes,
+  };
+}
+
+function validateStrategicDirectionForDisplay(concept: ConceptCandidate) {
+  const normalized = normalizeStrategicDirectionForNaming(concept);
+  const missingFields = [
+    ['strategicDirectionLabel', normalized?.strategicDirectionLabel],
+    ['directionAxis', normalized?.directionAxis],
+    ['oneLineStrategicBet', normalized?.oneLineStrategicBet],
+    ['representativePersuasionScene', normalized?.representativePersuasionScene],
+  ].filter(([, value]) => !String(value || '').trim()).map(([key]) => key).filter((key): key is string => Boolean(key));
+  const hasValidStrategicLabel = isValidStrategicDirectionLabel(normalized?.strategicDirectionLabel);
+  const joined = [normalized?.strategicDirectionLabel, normalized?.oneLineStrategicBet, normalized?.representativePersuasionScene].join(' ');
+  const notRequirementSummary = !REQUIREMENT_SUMMARY_PATTERN.test(normalized?.strategicDirectionLabel || '');
+  const notScheduleVenueScaleFact = !INVALID_DIRECTION_LABEL_PATTERN.test(joined);
+  return {
+    hasValidStrategicLabel,
+    labelIsNotRfpFact: !INVALID_DIRECTION_LABEL_PATTERN.test(normalized?.strategicDirectionLabel || ''),
+    hasDirectionAxis: Boolean(normalized?.directionAxis),
+    hasOneLineStrategicBet: Boolean(normalized?.oneLineStrategicBet),
+    hasRepresentativePersuasionScene: Boolean(normalized?.representativePersuasionScene),
+    notRequirementSummary,
+    notScheduleVenueScaleFact,
+    canGenerateConceptNames: Boolean(normalized && hasValidStrategicLabel && normalized.directionAxis && normalized.oneLineStrategicBet && normalized.representativePersuasionScene),
+    missingFields,
+  };
+}
+
 function optionDuplicateKey(option: ConceptNameOption) {
   return [option.conceptName, option.oneLineSlogan, option.shortMeaning, option.strategicClaim, option.whyItFitsRfp || option.whyItFits].filter(Boolean).join(' ').toLowerCase().replace(/[^a-z0-9가-힣]+/gi, ' ').trim();
 }
@@ -1872,6 +1956,7 @@ export default function Home() {
   const [dbUploadNotice, setDbUploadNotice] = useState<UploadNotice | null>(null);
   const [isDbUploadModalOpen, setIsDbUploadModalOpen] = useState(false);
   const [finalNamingError, setFinalNamingError] = useState('');
+  const [finalNamingDebug, setFinalNamingDebug] = useState<{ responseStatus?: number; responseErrorMessage?: string; selectedDirectionKey?: string; missingFields?: string[] }>({});
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -1922,6 +2007,7 @@ export default function Home() {
   const finalNamingLoading = loading === '컨셉명 후보 생성 중';
   const selectedDirectionKey = getStrategicDirectionKey(selectedStrategicDirection);
   const directionConceptNameOptions = selectedDirectionKey ? (state.conceptNameOptionsByDirection?.[selectedDirectionKey] ?? []) : [];
+  const visibleStrategicDirections = useMemo(() => (state.conceptCandidates ?? []).filter((concept) => validateStrategicDirectionForDisplay(concept).canGenerateConceptNames), [state.conceptCandidates]);
   const finalNameOptionsCount = directionConceptNameOptions.length;
   const finalConceptNameSelected = Boolean(state.selectedConcept?.finalConceptName?.trim());
   const canGenerateProposalStructure = Boolean(selectedStrategicDirectionExists && finalConceptNameSelected && state.analysis && hasUploadedDocumentOrRfp);
@@ -3313,6 +3399,7 @@ export default function Home() {
 
   const selectConcept = (concept: ConceptCandidate) => {
     setFinalNamingError('');
+    setFinalNamingDebug({});
     const selectedDirection = { ...concept };
     setState((current) => ({
       ...current,
@@ -3339,6 +3426,10 @@ export default function Home() {
     try {
       const selectedDirection = selectedStrategicDirection;
       const directionKey = getStrategicDirectionKey(selectedDirection);
+      const directionValidation = validateStrategicDirectionForDisplay(selectedDirection);
+      const selectedDirectionForNaming = normalizeStrategicDirectionForNaming(selectedDirection);
+      setFinalNamingDebug({ selectedDirectionKey: directionKey, missingFields: directionValidation.missingFields });
+      if (!selectedDirectionForNaming || !directionValidation.canGenerateConceptNames) throw new Error(`missing_fields=${directionValidation.missingFields.join(',') || 'invalid_direction'}`);
       const currentDirectionOptions = state.conceptNameOptionsByDirection?.[directionKey] ?? [];
       const otherDirectionOptions = Object.entries(state.conceptNameOptionsByDirection ?? {}).filter(([key]) => key !== directionKey).flatMap(([, value]) => value);
       const sanitizedNamingContext = sanitizeConceptContextByRfpType({
@@ -3350,12 +3441,16 @@ export default function Home() {
         brandExperienceMatrix: state.conceptGenerationResult?.brandExperienceMatrix,
       });
       const activeRelevantMatrix = getActiveMatrix(sanitizedNamingContext) ?? undefined;
-      const result = await postJson<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }>('/api/concept-names', { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection, selectedStrategicDirection: selectedDirection, selectedStrategicDirectionKey: directionKey, selectedStrategicDirectionId: selectedDirection.conceptId || (selectedDirection as { id?: string }).id, selectedStrategicDirectionConceptId: selectedDirection.conceptId, directionAxis: selectedDirection.directionAxis, strategicDirectionLabel: selectedDirection.strategicDirectionLabel, oneLineStrategicBet: selectedDirection.oneLineStrategicBet, representativePersuasionScene: getSignatureProofSummary(selectedDirection), generationNonce: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirection.winningThesisUse, conceptLeap: selectedDirection.conceptLeap, signatureProofIdea: selectedDirection.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, brandProductIntelligence: state.brandProductIntelligence, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative, recentNameOptions: currentDirectionOptions.map((option) => option.conceptName), existingNamesForSelectedDirection: currentDirectionOptions.map((option) => option.conceptName), blockedOtherDirectionNames: otherDirectionOptions.map((option) => option.conceptName) });
+      const namingPayload = { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection: selectedDirectionForNaming, selectedStrategicDirection: selectedDirectionForNaming, selectedStrategicDirectionKey: directionKey, selectedStrategicDirectionId: selectedDirectionForNaming.conceptId, selectedStrategicDirectionConceptId: selectedDirectionForNaming.conceptId, directionAxis: selectedDirectionForNaming.directionAxis, strategicDirectionLabel: selectedDirectionForNaming.strategicDirectionLabel, oneLineStrategicBet: selectedDirectionForNaming.oneLineStrategicBet, representativePersuasionScene: selectedDirectionForNaming.representativePersuasionScene, generationNonce: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirectionForNaming.winningThesis, conceptLeap: selectedDirectionForNaming.conceptLeap, signatureProofIdea: selectedDirectionForNaming.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, brandProductIntelligence: state.brandProductIntelligence, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative, recentNameOptions: currentDirectionOptions.map((option) => option.conceptName), existingNamesForSelectedDirection: currentDirectionOptions.map((option) => option.conceptName), blockedOtherDirectionNames: otherDirectionOptions.map((option) => option.conceptName) };
+      const namingResponse = await fetch('/api/concept-names', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, cache: 'no-store', body: JSON.stringify(namingPayload) });
+      setFinalNamingDebug((current) => ({ ...current, responseStatus: namingResponse.status }));
+      const result = await parseJsonResponse<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }> (namingResponse, '/api/concept-names');
+      if (!namingResponse.ok) throw new Error(result.error || result.details || '컨셉명 생성 중 오류가 발생했습니다.');
       const blockedOptions = [...currentDirectionOptions, ...otherDirectionOptions];
       const nameOptions = uniqueConceptNameOptions(result.nameOptions ?? result.options ?? [], blockedOptions);
       if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
       if (!nameOptions.length) throw new Error('컨셉명 후보가 비어 있습니다.');
-      if (result.warning) setFinalNamingError(`Fallback 후보를 표시합니다: ${result.warning}`);
+      if (result.warning) setFinalNamingError(`컨셉명 생성 경고: ${result.warning}`);
       setState((current) => {
         const latestDirectionOptions = current.conceptNameOptionsByDirection?.[directionKey] ?? [];
         const nextOptions = options.append ? uniqueConceptNameOptions([...latestDirectionOptions, ...nameOptions]) : nameOptions;
@@ -3367,6 +3462,7 @@ export default function Home() {
         ? '선택한 전략 방향과 충분히 구분되는 컨셉명이 생성되지 않았습니다. 다시 생성해 주세요.'
         : '선택한 전략 방향에 맞는 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.';
       setFinalNamingError(message);
+      setFinalNamingDebug((current) => ({ ...current, responseErrorMessage: rawMessage }));
       setError(message);
     } finally {
       setLoading('');
@@ -3894,7 +3990,7 @@ export default function Home() {
             <BrandExperienceMatrixPanel matrix={state.conceptGenerationResult?.brandExperienceMatrix} matrixType={state.conceptGenerationResult?.matrixType} />
             <ConceptRecommendationPanel recommendation={state.conceptRecommendation} />
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
-              {(state.conceptCandidates ?? []).map((concept) => {
+              {visibleStrategicDirections.map((concept) => {
                 const selected = selectedStrategicDirectionId === getStrategicDirectionId(concept);
                 return (
                   <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
@@ -3911,7 +4007,7 @@ export default function Home() {
                         <p>{concept.whatThisDirectionEmphasizes || concept.coreMessage || concept.strategicApproach || getConceptTagline(concept)}</p>
                         {conceptKeywordChips(concept).length > 0 && <div className="mt-2 flex flex-wrap gap-2">{conceptKeywordChips(concept).map((keyword) => <span key={keyword} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{keyword}</span>)}</div>}
                       </CompactAccordion>
-                      <CompactAccordion title="상세 근거 보기">
+                      <CompactAccordion title="근거 보기">
                         <p><b>핵심 판단</b> {concept.winningThesisUse?.winningClaim || concept.coreMessage || concept.strategicApproach}</p>
                         <p className="mt-2"><b>전환 포인트</b> {concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</p>
                         <p className="mt-2"><b>설득 과제</b> {concept.winningThesisUse?.whatMustBeProven || concept.signatureProofIdea?.whyThisProvesTheConcept}</p>
@@ -3954,7 +4050,7 @@ export default function Home() {
                   </div>
                 </div>
                 {finalNamingError && <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{finalNamingError}</p>}
-                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'}</p></details>
+                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'} · responseStatus: {finalNamingDebug.responseStatus || 'none'} · responseErrorMessage: {finalNamingDebug.responseErrorMessage || 'none'} · selectedDirectionKey: {finalNamingDebug.selectedDirectionKey || selectedDirectionKey || 'none'} · missingFields: {finalNamingDebug.missingFields?.join(', ') || 'none'}</p></details>
                 {directionConceptNameOptions.length ? (
                   <>
                   <div className="mt-5 grid gap-4 xl:grid-cols-3">
@@ -3984,7 +4080,7 @@ export default function Home() {
                                 <p className="mt-2"><b>운영</b> {option.expandableTo.operation}</p>
                               </CompactAccordion>
                             )}
-                            <CompactAccordion title="상세 근거 보기">
+                            <CompactAccordion title="근거 보기">
                               {option.strategicClaim && <p><b>전략적 주장</b> {option.strategicClaim}</p>}
                               <p className="mt-2">상세 rationale: {option.whyItFitsRfp || option.whyItFits}</p>
                               <p className="mt-2">개발 리스크: {option.risk}</p>
