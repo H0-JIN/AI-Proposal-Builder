@@ -482,6 +482,7 @@ export interface ConceptNameOption {
   shortMeaning: string;
   whyItFitsRfp: string;
   whyItFits?: string;
+  whyItFitsSelectedDirection?: string;
   strategicClaim?: string;
   expandableTo?: { space: string; content: string; media: string; operation: string };
   validation?: {

@@ -102,8 +102,8 @@ function normalizeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9가-힣]/gi, '');
 }
 
-function optionTextFingerprint(option: { conceptName?: string; oneLineSlogan?: string; shortMeaning?: string; strategicClaim?: string; whyItFitsRfp?: string; whyItFits?: string }) {
-  return [option.conceptName, option.oneLineSlogan, option.shortMeaning, option.strategicClaim, option.whyItFitsRfp || option.whyItFits]
+function optionTextFingerprint(option: { conceptName?: string; oneLineSlogan?: string; shortMeaning?: string; strategicClaim?: string; whyItFitsRfp?: string; whyItFits?: string; whyItFitsSelectedDirection?: string }) {
+  return [option.conceptName, option.oneLineSlogan, option.shortMeaning, option.strategicClaim, option.whyItFitsRfp || option.whyItFits || option.whyItFitsSelectedDirection]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
@@ -177,7 +177,7 @@ function repeatsGenericMainHook(option: ConceptNameOptionsResult['options'][numb
 function usesCurrentVocabulary(option: ConceptNameOptionsResult['options'][number], vocabulary: string[]) {
   if (!vocabulary.length) return true;
   // Lowercase both sides so English/Latin RFP tokens are not missed on a case mismatch.
-  const text = [option.conceptName, option.oneLineSlogan, option.shortMeaning, option.whyItFitsRfp].filter(Boolean).join(' ').toLowerCase();
+  const text = [option.conceptName, option.oneLineSlogan, option.shortMeaning, option.whyItFitsRfp || option.whyItFitsSelectedDirection].filter(Boolean).join(' ').toLowerCase();
   return vocabulary.some((word) => word.length >= 2 && text.includes(word.toLowerCase()));
 }
 
@@ -290,15 +290,15 @@ Brand vocabulary: ${body.brandProductIntelligence?.brandSpecificVocabulary?.join
 Words/tone to avoid: ${body.brandProductIntelligence?.wordsToAvoid?.join(' / ') || 'none'}
 Existing names for selected direction to avoid: ${(body.existingNamesForSelectedDirection ?? body.recentNameOptions)?.join(' / ') || 'none'}
 Names already generated for other directions to block: ${body.blockedOtherDirectionNames?.join(' / ') || 'none'}\n\n요구사항:\n- options는 반드시 정확히 3개. 모두 표지에 올릴 수 있는 강한 후보여야 한다.\n- namingStyle 필드를 반드시 다음 중 하나로 다양화: Direct claim, Short bilingual title, Brand/category-specific phrase, Spatial/experience frame, Symbolic but grounded, Strong one-line statement.\n- 3개는 선택된 방향의 axis, thesis, signature scene에서만 갈라지는 서로 다른 naming logic이어야 한다. 같은 구조로 반복하지 말라.
-- generic hook(현장/경험/체험/증명/가치/연결/흐름/여정/신뢰/균형)이 conceptName 또는 oneLineSlogan의 주어처럼 3회 이상 반복되면 약한 후보를 currentRfpVocabularySet 기반으로 재작성한다.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsRfp, strategicClaim, expandableTo(space/content/media/operation), validation, namingStyle, mainRisk, coverReadinessScore, specificityScore, memorabilityScore, coverTitleScore, rfpSpecificityScore, expandabilityScore, risk를 작성.\n- conceptName은 전략 라벨/슬라이드 제목/제품 카테고리/분석 heading이 아니라 제안서 첫 페이지 제목처럼 winning claim을 표현해야 하며 브랜드 경험 콘셉트, 전시 콘셉트, 공간 경험 프레임으로 확장 가능해야 한다. 임시 전략 방향명/컨설팅 목차명/단순 제품명/랜덤 영어 명사 조합이 아니다.
-- 각 option의 oneLineSlogan은 conceptName이 주장하는 승리 논리를 1문장으로 설명한다. whyItFitsRfp는 confirmed diagnosis의 coreWinningCondition, strategicTension, proofBurden, selected direction, signatureProofIdea 중 최소 2개와 연결한다.
+- generic hook(현장/경험/체험/증명/가치/연결/흐름/여정/신뢰/균형)이 conceptName 또는 oneLineSlogan의 주어처럼 3회 이상 반복되면 약한 후보를 currentRfpVocabularySet 기반으로 재작성한다.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsSelectedDirection, namingStyle, mainRisk만 출력한다. 점수, validation boolean 블록, expandableTo, 디버그/근거 필드는 출력하지 말라(서버가 코드로 처리한다).\n- conceptName은 전략 라벨/슬라이드 제목/제품 카테고리/분석 heading이 아니라 제안서 첫 페이지 제목처럼 winning claim을 표현해야 하며 브랜드 경험 콘셉트, 전시 콘셉트, 공간 경험 프레임으로 확장 가능해야 한다. 임시 전략 방향명/컨설팅 목차명/단순 제품명/랜덤 영어 명사 조합이 아니다.
+- 각 option의 oneLineSlogan은 conceptName이 주장하는 승리 논리를 1문장으로 설명한다. whyItFitsSelectedDirection은 선택한 전략 방향과 confirmed diagnosis의 coreWinningCondition, strategicTension, proofBurden, signatureProofIdea 중 최소 2개와 연결한다.
 - generic English word combinations, vague abstract nouns, consulting-style labels, literal RFP summaries, any-name-fits-any-exhibition 후보를 거부하고 재생성한다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- Generate names only for the selected strategic direction. The names must not be usable for the other two directions. If a name could fit another direction with no change, reject it. 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
 - Use the selected direction’s directionAxis and 대표 설득 장면 as the primary naming source.
 - 추가 후보 요청이면 Existing names for selected direction과 Names already generated for other directions를 모두 피하고, 같은 slogan structure / strategic claim / shortMeaning 반복을 거부하라.
 - 각 후보 생성 전 내부적으로 What must this proposal prove? What belief shift should evaluator make? Strongest claim? Cover first-page fit? Expandable to space/content/media/operation? 을 검증하고 실패하면 버려라.
 - Korean proposal users: 최소 2개 Korean-first 후보를 포함하고, 글로벌/브랜드/전시 맥락이면 최소 2개 English 또는 bilingual 후보를 포함하라. English 후보에는 koreanSubtitle 또는 oneLineSlogan으로 자연스러운 한국어 설명을 제공하라.
-- main visible copy(conceptName, oneLineSlogan, shortMeaning, whyItFitsRfp, mainRisk)에 raw English internal terms(proof/evidence/proof burden/evaluator clarity/validation/source/score/signature proof idea)를 쓰지 말고 한국어 사용자 언어로 번역한다.
-- validation의 모든 boolean은 true인 후보만 반환하라: namesAreSpecificToSelectedDirection, namesDoNotFitOtherDirections, noDuplicateConceptLogic, noNearDuplicateNames, noGenericEnglishCombination, connectedToDiagnosis, connectedToBrandProductIntelligence, coverReady, connectedToCoreWinningCondition, connectedToSelectedDirection, currentRfpSpecific, noPromptExampleCopy, noCrossRfpContamination, notGenericEnglishCombination, notInternalStrategyLabel, notSlideTitle, notTooLong, expandableToProposalSystem, specificToCurrentRfp, noRepeatedMainHook, noInternalProofLanguageInMainCopy, currentRfpVocabularyUsed, notGeneric, notCrossRfpContaminated.
+- main visible copy(conceptName, oneLineSlogan, shortMeaning, whyItFitsSelectedDirection, mainRisk)에 raw English internal terms(proof/evidence/proof burden/evaluator clarity/validation/source/score/signature proof idea)를 쓰지 말고 한국어 사용자 언어로 번역한다.
+- 컨셉명은 선택한 전략 방향에만 맞아야 하고 다른 방향에는 어색해야 하며, 후보끼리 근접 중복이 아니어야 한다. validation boolean 블록은 출력하지 말라(구분성·금지어·중복 검증과 점수는 서버가 코드로 수행한다).
 - 금지 예시명/이전 예시명을 그대로 출력하거나 변형하지 말라: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}.
 - 현재 RFP/진단/brandProductIntelligence에 없는 category word(예: Pocari/공장 방문 RFP의 hydrogen/energy/grid)를 쓰면 실패다. 수소/에너지 RFP에서만 현재 증거가 있을 때 허용한다.
 - brandProductIntelligence.wordsToAvoid와 무관 카테고리 어휘를 쓰면 실패다. Pocari와 수소 전시 양쪽에 그대로 맞는 이름, Moment/Memory/Proof/Evidence/Field/Flow/Grid 같은 범용어 중심 이름은 현재 RFP 강한 근거가 없으면 거부한다.
@@ -328,13 +328,37 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
     // Compute the vocabulary match on the RAW option (before userFacingCopy truncates/replaces the fields it reads).
     const prepared = deduped.map((option) => ({
       usesVocabulary: usesCurrentVocabulary(option, currentRfpVocabularySet),
-      option: { ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) },
+      option: { ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.whyItFitsSelectedDirection || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) },
     }));
     const safe = prepared.filter((entry) => passesNameFirewall(entry.option, relevanceContext, repeatedHooks));
     // Soft vocabulary preference: prefer vocab-matching names, but never let the vocab check alone drop the count to 0.
     const vocabMatched = safe.filter((entry) => entry.usesVocabulary);
     const ranked = (vocabMatched.length ? [...vocabMatched, ...safe.filter((entry) => !entry.usesVocabulary)] : safe).map((entry) => entry.option);
-    const options = ranked.slice(0, 3).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk, strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning, expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: option.whyItFitsRfp || option.shortMeaning, media: option.oneLineSlogan || option.shortMeaning, operation: option.mainRisk || option.risk }, validation: option.validation ?? truthyValidation(), coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore, specificityScore: option.specificityScore ?? option.rfpSpecificityScore }));
+    const options = ranked.slice(0, 3).map((option, index) => {
+      const whyItFits = option.whyItFitsRfp || option.whyItFits || option.whyItFitsSelectedDirection || option.shortMeaning;
+      const mainRisk = option.mainRisk || option.risk || '';
+      // Scores / validation / expandability are server-derived (no longer required from the model output).
+      return {
+        ...option,
+        id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`,
+        koreanSubtitle: option.koreanSubtitle ?? '',
+        oneLineSlogan: option.oneLineSlogan || option.shortMeaning,
+        whyItFitsRfp: whyItFits,
+        whyItFitsSelectedDirection: option.whyItFitsSelectedDirection || whyItFits,
+        namingStyle: option.namingStyle ?? styles[index % styles.length],
+        mainRisk,
+        strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning,
+        expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: whyItFits, media: option.oneLineSlogan || option.shortMeaning, operation: mainRisk },
+        validation: option.validation ?? truthyValidation(),
+        coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore ?? 4,
+        specificityScore: option.specificityScore ?? option.rfpSpecificityScore ?? 4,
+        coverTitleScore: option.coverTitleScore ?? 4,
+        memorabilityScore: option.memorabilityScore ?? 4,
+        rfpSpecificityScore: option.rfpSpecificityScore ?? 4,
+        expandabilityScore: option.expandabilityScore ?? 4,
+        risk: option.risk ?? mainRisk,
+      };
+    });
     const normalized = { ...result, selectedDirectionId: body.selectedDirection.conceptId, options };
     if (!options.length) {
       const reason = !deduped.length ? (blockedNameDrops ? 'blocked_name_zeroout' : 'no_model_options') : 'firewall_zeroout';

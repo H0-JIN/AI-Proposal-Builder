@@ -125,6 +125,36 @@ function canonicalizeDirectionAxis(axis?: string, fallbackIndex = 0): (typeof AL
   return DIRECTION_AXIS_CANONICAL_MAP[key] || ALLOWED_DIRECTION_AXES[Math.abs(fallbackIndex) % ALLOWED_DIRECTION_AXES.length];
 }
 
+// User-facing direction title = current-RFP context noun + axis intent, so the card shows a planner-readable
+// phrase (e.g. "브랜드 인식 전환", "수소 인식 전환") instead of the internal axis label ("카테고리 전환 설득").
+const AXIS_LABEL_TEMPLATES: Record<string, (ctx: string) => string> = {
+  category_shift: (c) => `${c} 인식 전환`,
+  audience_understanding: (c) => `${c} 경험 이해`,
+  representative_position: (c) => `${c} 대표성 각인`,
+  product_value_proof: (c) => `${c} 가치 체험`,
+  process_trust: (c) => `${c} 신뢰 체험`,
+  signature_scene: (c) => `${c} 대표 장면`,
+  'system/ecosystem_proof': (c) => `${c} 생태계 증명`,
+  spatial_journey: (c) => `${c} 공간 여정`,
+  brand_memory: (c) => `${c} 기억화`,
+  operational_confidence: (c) => `${c} 운영 신뢰`,
+  evaluator_clarity: (c) => `${c} 설득 명확화`,
+  emotional_affinity: (c) => `${c} 정서 공감`,
+  technology_reality_proof: (c) => `${c} 기술 현재화`,
+};
+
+function contextualDirectionLabel(canonicalAxis: string, contextNoun: string): string {
+  const ctx = (contextNoun || '브랜드').trim() || '브랜드';
+  const template = AXIS_LABEL_TEMPLATES[canonicalAxis];
+  return template ? template(ctx) : `${ctx} 전략 방향`;
+}
+
+// A short, clean subject noun from the current RFP to seed user-facing labels (no facts/figures).
+function directionContextNoun(analysis: AnalysisResult): string {
+  const seed = fallbackNameSeeds(analysis).find((token) => token.length >= 2 && token.length <= 8 && !isRfpFactDirectionText(token));
+  return seed || '브랜드';
+}
+
 function isRfpFactDirectionText(text = '') {
   const compacted = text.trim();
   if (!compacted) return true;
@@ -190,7 +220,7 @@ function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: St
 function repairBasicStrategicDirection(concept: ConceptCandidate, planItem: StrategicDirectionPlanItem): ConceptCandidate {
   const repaired = {
     ...concept,
-    strategicDirectionLabel: isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planItem.directionAxis || planItem.type) : planItem.label,
+    strategicDirectionLabel: isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : planItem.label,
     strategicDirectionType: planItem.type,
     directionAxis: planItem.directionAxis || planItem.type,
     whatThisDirectionEmphasizes: planItem.emphasis,
@@ -620,14 +650,6 @@ function buildStrategicDirectionDiscoveryBrief(analysis: AnalysisResult, narrati
   return { currentProjectCategory, coreRfpChallenge, hiddenNeed, evaluatorDecisionRisk, clientUniquePosition, categoryShift, audiencePerceptionGap, whatMustBeProven, strongestStrategicTension, possibleDirectionAxes: Array.from(new Set(axes)).slice(0, 8) };
 }
 
-function axisLabel(canonicalAxis: string, index: number, conceptType: RfpConceptType) {
-  // Fallback strategic label derived from the canonical axis only; never from raw RFP evidence text.
-  const fallbackByIndex = ['카테고리 전환 증명', '관람 인식 전환', '대표 장면 각인', '클라이언트 고유성', '평가 확신 설계'][index - 1] || 'RFP 맞춤 방향';
-  const clean = directionAxisLabel(canonicalAxis) || fallbackByIndex;
-  if (conceptType !== 'multi_entity_pavilion' && MULTI_ENTITY_LEAKAGE_PATTERN.test(clean)) return fallbackByIndex;
-  return clean;
-}
-
 function firstEvidence(analysis: AnalysisResult, narrative: ProposalNarrative, patterns: RegExp[], fallback: string) {
   const pool = [
     analysis.clientChallenge, analysis.projectOverview, analysis.targetInfo, analysis.contentCondition, analysis.operationCondition, analysis.spatialCondition,
@@ -660,10 +682,11 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
   const currentRfpOnlyMode = conceptType !== 'multi_entity_pavilion';
   const learning = buildProposalLearningBrief(currentRfpOnlyMode ? [] : patterns, currentRfpOnlyMode ? [] : avoidanceRules);
   const discoveryBrief = buildStrategicDirectionDiscoveryBrief(analysis, narrative, conceptType, hasMultipleEntities);
+  const contextNoun = directionContextNoun(analysis);
   const mk = (index: number, axis: string, rfpEvidence: string, patternLearning: string, lostAvoidance: string): StrategicDirectionPlanItem => {
     const canonicalAxis = canonicalizeDirectionAxis(axis, index - 1);
     return {
-      type: canonicalAxis, rfpConceptType: conceptType, secondaryRfpConceptTypes: secondary, label: axisLabel(canonicalAxis, index, conceptType),
+      type: canonicalAxis, rfpConceptType: conceptType, secondaryRfpConceptTypes: secondary, label: contextualDirectionLabel(canonicalAxis, contextNoun),
       emphasis: `${directionAxisLabel(canonicalAxis)} 관점으로 심사자와 관람객이 핵심 가치를 한 번에 이해하도록 대표 장면과 설득 흐름을 구성합니다.`,
       chooseWhen: `${directionAxisLabel(canonicalAxis)}이 이번 제안의 가장 중요한 설득 관점이라고 판단될 때 선택합니다.`,
       source: currentRfpOnlyMode ? `primaryRfpConceptType guardrail only / current RFP evidence dominates / proposal_patterns disabled for labels` : `primaryRfpConceptType guardrail only / current RFP evidence dominates / proposal learning modifier only`,
@@ -823,17 +846,14 @@ function enforceDistinctDirectionAxes(concepts: ConceptCandidate[], plan: Strate
 }
 
 // Guarantee the 3 returned directions carry distinct, user-facing strategic labels.
+// Duplicates are disambiguated by suffixing the concept's own label (never an internal axis label).
 function dedupeDirectionLabels(concepts: ConceptCandidate[]): ConceptCandidate[] {
   const seen = new Set<string>();
-  return concepts.map((concept) => {
-    const axisFallback = directionAxisLabel(concept.directionAxis) || '전략 방향';
-    let label = (concept.strategicDirectionLabel || '').trim() || axisFallback;
-    if (seen.has(label.toLowerCase())) {
-      let n = 2;
-      let next = `${axisFallback} ${n}`;
-      while (seen.has(next.toLowerCase())) { n += 1; next = `${axisFallback} ${n}`; }
-      label = next;
-    }
+  return concepts.map((concept, index) => {
+    const base = (concept.strategicDirectionLabel || '').trim() || `전략 방향 ${index + 1}`;
+    let label = base;
+    let n = 2;
+    while (seen.has(label.toLowerCase())) { label = `${base} ${n}`; n += 1; }
     seen.add(label.toLowerCase());
     return label === concept.strategicDirectionLabel ? concept : { ...concept, strategicDirectionLabel: label };
   });
@@ -852,7 +872,7 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
       return {
         ...concept,
         strategicDirectionType: planItem.type,
-        strategicDirectionLabel: isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planItem.directionAxis || planItem.type) : planItem.label,
+        strategicDirectionLabel: isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : planItem.label,
         whatThisDirectionEmphasizes: planItem.emphasis,
         whenToChooseThisDirection: planItem.chooseWhen,
         winningThesisUse: thesis as ConceptCandidate['winningThesisUse'],

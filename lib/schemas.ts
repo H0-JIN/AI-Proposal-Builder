@@ -731,71 +731,24 @@ export const conceptCandidatesJsonSchema = {
 
 
 
+// Minimal strict-valid option schema for OpenAI structured outputs:
+// every property is required and additionalProperties is false. Scores, the validation
+// boolean block, expandability, and evidence/debug fields are server-derived in code, NOT
+// required from the model — this keeps the response_format valid and the contract small.
 const conceptNameOptionSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    id: { type: 'string' },
     conceptName: { type: 'string' },
     languageMode: { type: 'string', enum: ['Korean', 'English', 'bilingual'] },
     koreanSubtitle: { type: 'string' },
     oneLineSlogan: { type: 'string' },
     shortMeaning: { type: 'string' },
-    whyItFitsRfp: { type: 'string' },
-    strategicClaim: { type: 'string' },
-    expandableTo: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        space: { type: 'string' },
-        content: { type: 'string' },
-        media: { type: 'string' },
-        operation: { type: 'string' },
-      },
-      required: ['space', 'content', 'media', 'operation'],
-    },
-    validation: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        coverReady: { type: 'boolean' },
-        connectedToCoreWinningCondition: { type: 'boolean' },
-        connectedToSelectedDirection: { type: 'boolean' },
-        currentRfpSpecific: { type: 'boolean' },
-        noPromptExampleCopy: { type: 'boolean' },
-        noCrossRfpContamination: { type: 'boolean' },
-        notGenericEnglishCombination: { type: 'boolean' },
-        notInternalStrategyLabel: { type: 'boolean' },
-        notSlideTitle: { type: 'boolean' },
-        notTooLong: { type: 'boolean' },
-        expandableToProposalSystem: { type: 'boolean' },
-        specificToCurrentRfp: { type: 'boolean' },
-        noRepeatedMainHook: { type: 'boolean' },
-        noInternalProofLanguageInMainCopy: { type: 'boolean' },
-        currentRfpVocabularyUsed: { type: 'boolean' },
-        notGeneric: { type: 'boolean' },
-        notCrossRfpContaminated: { type: 'boolean' },
-        namesAreSpecificToSelectedDirection: { type: 'boolean' },
-        namesDoNotFitOtherDirections: { type: 'boolean' },
-        noDuplicateConceptLogic: { type: 'boolean' },
-        noNearDuplicateNames: { type: 'boolean' },
-        noGenericEnglishCombination: { type: 'boolean' },
-        connectedToDiagnosis: { type: 'boolean' },
-        connectedToBrandProductIntelligence: { type: 'boolean' },
-      },
-      required: ['coverReady', 'connectedToCoreWinningCondition', 'connectedToSelectedDirection', 'currentRfpSpecific', 'noPromptExampleCopy', 'noCrossRfpContamination', 'notGenericEnglishCombination', 'notInternalStrategyLabel', 'notSlideTitle', 'notTooLong', 'expandableToProposalSystem', 'specificToCurrentRfp', 'noRepeatedMainHook', 'noInternalProofLanguageInMainCopy', 'currentRfpVocabularyUsed', 'notGeneric', 'notCrossRfpContaminated', 'namesAreSpecificToSelectedDirection', 'namesDoNotFitOtherDirections', 'noDuplicateConceptLogic', 'noNearDuplicateNames', 'noGenericEnglishCombination', 'connectedToDiagnosis', 'connectedToBrandProductIntelligence'],
-    },
-    coverReadinessScore: { type: 'number' },
-    specificityScore: { type: 'number' },
-    memorabilityScore: { type: 'number' },
-    coverTitleScore: { type: 'number' },
-    rfpSpecificityScore: { type: 'number' },
-    expandabilityScore: { type: 'number' },
-    risk: { type: 'string' },
+    whyItFitsSelectedDirection: { type: 'string' },
     namingStyle: { type: 'string', enum: ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] },
     mainRisk: { type: 'string' },
   },
-  required: ['conceptName', 'languageMode', 'koreanSubtitle', 'oneLineSlogan', 'shortMeaning', 'whyItFitsRfp', 'strategicClaim', 'expandableTo', 'validation', 'coverReadinessScore', 'specificityScore', 'memorabilityScore', 'coverTitleScore', 'rfpSpecificityScore', 'expandabilityScore', 'risk', 'namingStyle', 'mainRisk'],
+  required: ['conceptName', 'languageMode', 'koreanSubtitle', 'oneLineSlogan', 'shortMeaning', 'whyItFitsSelectedDirection', 'namingStyle', 'mainRisk'],
 } as const;
 
 export const conceptNameOptionsJsonSchema = {
