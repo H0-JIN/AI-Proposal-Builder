@@ -856,6 +856,7 @@ export interface ProposalState {
   selectedStrategicDirection?: ConceptCandidate;
   selectedConcept?: ConceptCandidate;
   conceptNameOptions?: ConceptNameOption[];
+  conceptNameOptionsByDirection?: Record<string, ConceptNameOption[]>;
   selectedFinalConceptNameOption?: ConceptNameOption;
   outline?: SlideOutline[];
   slides?: SlideContent[];
