@@ -80,6 +80,20 @@ const DETAIL_CONCEPT_CATEGORIES = new Set<ChunkCategory>(['productFeature', 'des
 const DETAIL_ENTITY_TERMS = /EO|optical|optic|optics|equipment|spec|lens|sensor|camera|product|제품|장비|광학|사양|스펙|조준경|시스템|이미지|reference|레퍼런스|참고/i;
 
 const BASIC_DIRECTION_PATTERN = /요구\s*충족|요건\s*충족|범위\s*포괄|범위\s*커버|scope\s*coverage|fulfill(?:ing)?\s*requirements|cover(?:ing)?\s*(?:all\s*)?scope|정보\s*전달|information\s*delivery|communicat(?:e|ing)\s*information|안정\s*운영|stable\s*operation|balanced?\s*planning|균형\s*구성|기획과\s*운영|콘텐츠\s*정리|organizing\s*content|basic\s*feasibility|visitor\s*understanding|브랜드\s*커뮤니케이션|통합\s*관리/i;
+const RFP_FACT_DIRECTION_PATTERN = /(?:20\d{2}년|\d{1,2}월|\d{1,2}일|\d{1,2}\s*~\s*\d{1,2}|KINTEX|킨텍스|COEX|코엑스|BEXCO|벡스코|\d[\d,]*(?:\.\d+)?\s*(?:㎡|m2|m²|평)|\d+\s*%|콘텐츠\s*\d+\s*%|콘텐츠\s*개발|운영\s*구성|전시\s*기간|B2B\s*대상|부스|booth|venue|schedule|deliverable|KPI|평가\s*기준|산출물)/i;
+
+function directionAxisLabel(axis?: string) {
+  const labels: Record<string, string> = {
+    technology_reality_proof: '기술 현실화 설득', representative_position: '대표 포지션 선언', audience_understanding: '관람 이해 전환', product_value_proof: '제품 가치 체감', 'system/ecosystem_proof': '생태계 작동 확인', ecosystem_proof: '생태계 작동 확인', category_shift: '카테고리 전환 설득', signature_scene: '시그니처 장면 각인', spatial_journey: '공간 여정 설계', brand_memory: '브랜드 기억 형성', process_trust: '과정 신뢰 형성', operational_confidence: '운영 확신 설계', evaluator_clarity: '평가 명확성 설계', emotional_affinity: '정서적 친밀감 형성',
+  };
+  return labels[axis || ''] || '전략 선택 방향';
+}
+
+function isRfpFactDirectionText(text = '') {
+  const compacted = text.trim();
+  if (!compacted) return true;
+  return RFP_FACT_DIRECTION_PATTERN.test(compacted) || /^.{0,8}(?:개발|운영|구성|기간|대상|부스|평가|산출).{0,8}$/.test(compacted);
+}
 
 function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: StrategicDirectionPlanItem) {
   const text = [
@@ -91,13 +105,16 @@ function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: St
     concept.signatureProofIdea?.whyThisProvesTheConcept,
     concept.mainStrength,
   ].filter(Boolean).join(' ');
-  const isOnlyBasicRequirement = BASIC_DIRECTION_PATTERN.test(text);
+  const factLikeLabel = isRfpFactDirectionText(concept.strategicDirectionLabel || '');
+  const isOnlyBasicRequirement = BASIC_DIRECTION_PATTERN.test(text) || factLikeLabel;
   const addressesCoreWinningCondition = Boolean(concept.winningThesisUse?.winningClaim || planItem.emphasis);
   const addressesStrategicTension = Boolean(concept.winningThesisUse?.audiencePerceptionGap || concept.winningThesisUse?.contextShift || concept.conceptLeap?.fromStatement || planItem.directionAxis);
   const addressesProofBurden = Boolean(concept.winningThesisUse?.whatMustBeProven || concept.signatureProofIdea?.whyThisProvesTheConcept || concept.requiredProofElementsAddressed?.length || planItem.rfpEvidence);
   const hasDistinctPointOfView = Boolean(concept.conceptLeap?.conceptLeap || concept.signatureProofIdea?.whyThisIsNotGeneric || planItem.directionAxis) && !isOnlyBasicRequirement;
   const couldFitAnyRfp = !concept.directionSource?.rfpEvidence && !(concept.rfpGrounding?.length) || /^(전략 방향|브랜드 경험 방향|정보 전달|안정 운영|요구 충족|균형 구성|통합 관리|콘텐츠 정리)$/i.test((concept.strategicDirectionLabel || '').trim());
-  const isStrategicBet = !isOnlyBasicRequirement && addressesCoreWinningCondition && addressesProofBurden && hasDistinctPointOfView && !couldFitAnyRfp;
+  const hasRepresentativePersuasionScene = Boolean(concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.signatureProofIdea?.whyThisProvesTheConcept);
+  const directionAxisIsValid = Boolean((concept.directionAxis || planItem.directionAxis) && (ALLOWED_DIRECTION_AXES as readonly string[]).includes((concept.directionAxis || planItem.directionAxis) as typeof ALLOWED_DIRECTION_AXES[number]));
+  const isStrategicBet = !isOnlyBasicRequirement && addressesCoreWinningCondition && addressesProofBurden && hasDistinctPointOfView && !couldFitAnyRfp && hasRepresentativePersuasionScene && directionAxisIsValid;
   return {
     isStrategicBet,
     isOnlyBasicRequirement,
@@ -106,6 +123,14 @@ function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: St
     addressesProofBurden,
     hasDistinctPointOfView,
     couldFitAnyRfp,
+    isStrategicChoice: isStrategicBet,
+    notRfpFactSummary: !factLikeLabel,
+    notScheduleVenueScaleFact: !factLikeLabel,
+    notRequirementList: !isOnlyBasicRequirement,
+    directionAxisIsValid,
+    hasRepresentativePersuasionScene,
+    hasDistinctWinningLogic: hasDistinctPointOfView,
+    canGenerateUniqueConceptNames: isStrategicBet,
     validationReason: isStrategicBet
       ? '현재 RFP의 winning condition과 proof burden을 해결하는 선택지로 검증됨.'
       : '기본 수행조건/범용 방향으로 감지되어 confirmed diagnosis 기반 전략적 베팅으로 수리 필요.',
@@ -115,7 +140,7 @@ function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: St
 function repairBasicStrategicDirection(concept: ConceptCandidate, planItem: StrategicDirectionPlanItem): ConceptCandidate {
   const repaired = {
     ...concept,
-    strategicDirectionLabel: planItem.label,
+    strategicDirectionLabel: isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planItem.directionAxis || planItem.type) : planItem.label,
     strategicDirectionType: planItem.type,
     directionAxis: planItem.directionAxis || planItem.type,
     whatThisDirectionEmphasizes: planItem.emphasis,
@@ -123,8 +148,8 @@ function repairBasicStrategicDirection(concept: ConceptCandidate, planItem: Stra
     winningThesisUse: { ...(concept.winningThesisUse ?? {}), winningClaim: planItem.emphasis, whatMustBeProven: concept.winningThesisUse?.whatMustBeProven || planItem.rfpEvidence } as ConceptCandidate['winningThesisUse'],
     conceptLeap: { ...(concept.conceptLeap ?? {}), conceptLeap: `${planItem.label} 관점에서 평가자가 믿어야 할 핵심 판단을 대표 장면과 증거 구조로 전환합니다.`, corePromise: planItem.emphasis } as ConceptCandidate['conceptLeap'],
     signatureProofIdea: { ...(concept.signatureProofIdea ?? {}), whyThisProvesTheConcept: concept.signatureProofIdea?.whyThisProvesTheConcept || `${planItem.rfpEvidence}를 근거로 선택 위험을 낮추는 대표 증명 장면을 제시합니다.`, whyThisIsNotGeneric: concept.signatureProofIdea?.whyThisIsNotGeneric || 'confirmed RFP-only diagnosis의 winning condition, tension, proof burden에서 도출한 방향이므로 범용 수행조건이 아닙니다.' } as ConceptCandidate['signatureProofIdea'],
-    proposalCoreConceptName: planItem.label,
-    conceptName: planItem.label,
+    proposalCoreConceptName: isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planItem.directionAxis || planItem.type) : planItem.label,
+    conceptName: isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planItem.directionAxis || planItem.type) : planItem.label,
     mainStrength: planItem.emphasis,
     mainRisk: concept.mainRisk || '전략적 주장이 선명한 만큼 후속 outline에서 실행 세부 증거를 충분히 배치해야 합니다.',
   };
@@ -659,7 +684,7 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
     strategicDirectionType: planItem.type,
     directionAxis: planItem.directionAxis || planItem.type,
     whyThisDirectionExists: concept.whyThisDirectionExists || planItem.emphasis,
-    strategicDirectionLabel: /^(통합 아이덴티티|통합\+역할 차별화|상징적 리더십|unified identity|unified \+ differentiated roles|symbolic leadership)$/i.test((concept.strategicDirectionLabel || '').trim()) || (MULTI_ENTITY_LEAKAGE_PATTERN.test(concept.strategicDirectionLabel || '') && planItem.rfpConceptType !== 'multi_entity_pavilion') ? planItem.label : (concept.strategicDirectionLabel || planItem.label),
+    strategicDirectionLabel: /^(통합 아이덴티티|통합\+역할 차별화|상징적 리더십|unified identity|unified \+ differentiated roles|symbolic leadership)$/i.test((concept.strategicDirectionLabel || '').trim()) || isRfpFactDirectionText(concept.strategicDirectionLabel || '') || (MULTI_ENTITY_LEAKAGE_PATTERN.test(concept.strategicDirectionLabel || '') && planItem.rfpConceptType !== 'multi_entity_pavilion') ? (isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planItem.directionAxis || planItem.type) : planItem.label) : (concept.strategicDirectionLabel || planItem.label),
     directionSource: { rfpEvidence: planItem.rfpEvidence, proposalPatternLearning: planItem.patternLearning, lostPatternAvoidance: planItem.lostAvoidance },
     failurePatternAvoided: concept.failurePatternAvoided || planItem.lostAvoidance,
     winningPatternUsed: concept.winningPatternUsed || planItem.patternLearning,
@@ -747,7 +772,7 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
       return {
         ...concept,
         strategicDirectionType: planItem.type,
-        strategicDirectionLabel: planItem.label,
+        strategicDirectionLabel: isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planItem.directionAxis || planItem.type) : planItem.label,
         whatThisDirectionEmphasizes: planItem.emphasis,
         whenToChooseThisDirection: planItem.chooseWhen,
         winningThesisUse: thesis as ConceptCandidate['winningThesisUse'],

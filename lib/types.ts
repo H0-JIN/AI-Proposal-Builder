@@ -567,6 +567,14 @@ export interface StrategicDirectionQualityValidation {
   addressesProofBurden: boolean;
   hasDistinctPointOfView: boolean;
   couldFitAnyRfp: boolean;
+  isStrategicChoice?: boolean;
+  notRfpFactSummary?: boolean;
+  notScheduleVenueScaleFact?: boolean;
+  notRequirementList?: boolean;
+  directionAxisIsValid?: boolean;
+  hasRepresentativePersuasionScene?: boolean;
+  hasDistinctWinningLogic?: boolean;
+  canGenerateUniqueConceptNames?: boolean;
   validationReason: string;
 }
 
