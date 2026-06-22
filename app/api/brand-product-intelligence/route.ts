@@ -21,7 +21,7 @@ function brandMaterialSummary(documents: UploadedDocument[] = []) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; rfpDiagnosis: RfpDiagnosis; uploadedDocuments?: UploadedDocument[]; additionalInfo?: unknown };
-    if (!body.input || !body.analysis || !body.rfpDiagnosis) return NextResponse.json({ error: 'RFP 분석과 확정된 승부처 진단이 필요합니다.' }, { status: 400 });
+    if (!body.input || !body.analysis || !body.rfpDiagnosis) return NextResponse.json({ error: 'RFP 분석과 확정된 제안 전략 진단이 필요합니다.' }, { status: 400 });
     const materials = brandMaterialSummary(body.uploadedDocuments);
     const result = await createStructuredJson<BrandProductIntelligence>({
       schemaName: 'brand_product_intelligence',

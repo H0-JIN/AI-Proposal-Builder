@@ -155,7 +155,7 @@ const numericInfoSchema = {
   required: ['pastPerformance', 'lessonLearned', 'currentIssue', 'targetKPI', 'referenceMetric', 'proposedMeasurement'],
 } as const;
 
-const proposalTypeEnum = ['basic', 'cheil', 'innocean', 'hyundai', 'mice_event_operation', 'conference_forum'] as const;
+const proposalTypeEnum = ['basic', 'cheil', 'innocean', 'hyundai', 'basic_proposal', 'brand_experience', 'experience_marketing', 'corporate_technology_showcase', 'exhibition_booth_content', 'multi_entity_pavilion', 'visitor_center_tour', 'popup_retail_experience', 'mice_event_operation', 'conference_forum'] as const;
 const proposalScopeTypeEnum = ['contentDevelopment', 'boothExhibition', 'experienceMarketing', 'brandActivation', 'operationOnly', 'designBuild', 'publicTender'] as const;
 
 const analysisSectionSchema = {

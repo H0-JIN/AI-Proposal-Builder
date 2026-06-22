@@ -180,7 +180,7 @@ function truthyValidation() {
 }
 
 function fallbackOptions(direction: ConceptCandidate, diagnosis?: RfpDiagnosis, analysis?: AnalysisResult, vocabulary: string[] = []): ConceptNameOptionsResult {
-  const coreWinningCondition = diagnosis?.coreWinningCondition || direction.winningThesisUse?.winningClaim || direction.conceptLeap?.corePromise || analysis?.projectOverview || '현재 RFP의 승부 조건을 방문자가 자연스럽게 이해하는 제안';
+  const coreWinningCondition = diagnosis?.coreWinningCondition || direction.winningThesisUse?.winningClaim || direction.conceptLeap?.corePromise || analysis?.projectOverview || '현재 RFP의 핵심 제안 명제를 방문자가 자연스럽게 이해하는 제안';
   const strategicTension = diagnosis?.strategicTension || direction.conceptLeap?.conceptLeap || direction.whatThisDirectionEmphasizes || coreWinningCondition;
   const proofBurden = userFacingCopy(diagnosis?.proofBurden || direction.signatureProofIdea?.whyThisProvesTheConcept || coreWinningCondition);
   const signatureProof = userFacingCopy(direction.signatureProofIdea?.signatureScene || direction.signatureProofIdea?.signatureContent || direction.signatureProofIdea?.whyThisProvesTheConcept || proofBurden);
