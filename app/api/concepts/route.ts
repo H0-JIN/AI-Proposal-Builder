@@ -95,6 +95,21 @@ function directionAxisLabel(axis?: string) {
   return labels[axis || ''] || '전략 선택 방향';
 }
 
+// Every abstract axis-translation phrase directionAxisLabel() can emit, plus weak generic labels.
+// A user-facing strategicDirectionLabel must never equal OR contain one of these.
+const AXIS_TRANSLATION_LABELS = [
+  '기술 현실화 설득', '대표 포지션 선언', '관람 이해 전환', '제품 가치 체감', '생태계 작동 확인', '카테고리 전환 설득',
+  '시그니처 장면 각인', '공간 여정 설계', '브랜드 기억 형성', '과정 신뢰 형성', '운영 확신 설계', '평가 명확성 설계',
+  '정서적 친밀감 형성', '전략 선택 방향', '카테고리 전환 증명', '관람 인식 전환', '대표 장면 각인', '클라이언트 고유성',
+  '평가 확신 설계', '전략 방향', '브랜드 경험 방향', 'RFP 맞춤 방향',
+];
+
+function isAxisTranslationLabel(label: string): boolean {
+  const value = (label || '').trim();
+  if (!value) return false;
+  return AXIS_TRANSLATION_LABELS.some((phrase) => value === phrase || value.includes(phrase));
+}
+
 // Discovery axis keys and legacy axis terms must collapse to a single canonical key from ALLOWED_DIRECTION_AXES.
 const DIRECTION_AXIS_CANONICAL_MAP: Record<string, (typeof ALLOWED_DIRECTION_AXES)[number]> = {
   category_shift: 'category_shift',
@@ -149,10 +164,88 @@ function contextualDirectionLabel(canonicalAxis: string, contextNoun: string): s
   return template ? template(ctx) : `${ctx} 전략 방향`;
 }
 
-// A short, clean subject noun from the current RFP to seed user-facing labels (no facts/figures).
+// Content-format / deliverable / process words must never become the subject of a strategy label.
+// "Hero" is a content format (a hero zone/scene), not a strategic direction.
+const CONTEXT_NOUN_BLOCKLIST = /^(hero|히어로|콘텐츠|콘텐트|content|영상|video|디자인|design|그래픽|graphic|미디어|media|패널|panel|사이니지|signage|키오스크|kiosk|부스|booth|배너|banner|리플렛|책자|카탈로그|catalog|모형|목업|mockup|기획|운영|operation|제작|구축|설치|시공)$/i;
+
+// A short, clean subject noun from the current RFP to seed user-facing labels (no facts/figures/content-formats).
 function directionContextNoun(analysis: AnalysisResult): string {
-  const seed = fallbackNameSeeds(analysis).find((token) => token.length >= 2 && token.length <= 8 && !isRfpFactDirectionText(token));
+  const seed = fallbackNameSeeds(analysis).find((token) => token.length >= 2 && token.length <= 8 && !isRfpFactDirectionText(token) && !CONTEXT_NOUN_BLOCKLIST.test(token));
   return seed || '브랜드';
+}
+
+// Axis intent fragments used to compose grounded, per-card direction copy (repair/fallback only).
+const AXIS_BET_INTENT: Record<string, string> = {
+  category_shift: '미래 이미지가 아니라 지금 작동하는 실체로 보여주는',
+  representative_position: '이 분야를 대표하는 주체임을 전시 첫 장면부터 각인시키는',
+  audience_understanding: '복잡한 내용을 하나의 흐름으로 압축해 관람객이 단계적으로 이해하게 만드는',
+  product_value_proof: '핵심 가치를 관람객이 직접 체감하도록 증명하는',
+  process_trust: '과정과 근거를 직접 확인시켜 신뢰를 만드는',
+  signature_scene: '하나의 대표 장면으로 기억되게 만드는',
+  'system/ecosystem_proof': '전체 시스템이 실제로 연결되어 작동함을 한눈에 보여주는',
+  spatial_journey: '공간 동선을 따라 자연스럽게 설득되도록 설계하는',
+  brand_memory: '방문 후에도 남는 대표 인상을 만드는',
+  operational_confidence: '현장 운영과 실행 가능성에 확신을 주는',
+  evaluator_clarity: '심사자가 핵심을 즉시 이해하도록 명확하게 보여주는',
+  emotional_affinity: '관람객의 정서적 공감을 끌어내는',
+  technology_reality_proof: '기술이 지금 현실에서 작동함을 증명하는',
+};
+const AXIS_CRITERION_INTENT: Record<string, string> = {
+  category_shift: '대상에 대한 인식을 근본적으로 바꾸는 것',
+  representative_position: '클라이언트의 대표성과 리더십을 가장 강하게 보여주는 것',
+  audience_understanding: '다양한 관람객이 복잡한 내용을 쉽게 이해하도록 만드는 것',
+  product_value_proof: '핵심 가치를 관람객이 직접 체감하게 하는 것',
+  process_trust: '과정과 근거로 신뢰를 얻는 것',
+  signature_scene: '전시장을 나간 뒤에도 하나의 대표 장면이 기억되게 만드는 것',
+  'system/ecosystem_proof': '전체 시스템이 작동함을 한눈에 보여주는 것',
+  spatial_journey: '공간 경험과 동선으로 설득하는 것',
+  brand_memory: '방문 후 브랜드 인상이 오래 남게 만드는 것',
+  operational_confidence: '현장 운영의 안정성과 실행 가능성을 입증하는 것',
+  evaluator_clarity: '심사자가 핵심을 빠르게 이해하게 만드는 것',
+  emotional_affinity: '관람객의 정서적 공감을 끌어내는 것',
+  technology_reality_proof: '기술의 현실성과 적용 가능성을 증명하는 것',
+};
+const AXIS_SCENE_INTENT: Record<string, (c: string) => string> = {
+  category_shift: (c) => `${c}을(를) 미래가 아닌 현재로 전환해 보여주는 대형 전환 연출`,
+  representative_position: (c) => `${c} 리더십을 선언하는 압도적 메인 히어로 장면`,
+  audience_understanding: (c) => `관람객 유형별로 다른 깊이의 정보를 선택해 보는 계층형 ${c} 맵`,
+  product_value_proof: (c) => `${c}의 가치를 직접 체험하는 인터랙티브 존`,
+  process_trust: (c) => `${c}의 과정을 생산-저장-운송-활용처럼 단계별로 확인하는 프로세스 라인`,
+  signature_scene: (c) => `전시 전체를 압축하는 단 하나의 ${c} 시그니처 장면`,
+  'system/ecosystem_proof': (c) => `${c}이(가) 하나의 도시 시스템처럼 연결되는 대형 미디어 월`,
+  spatial_journey: (c) => `도입-핵심-마무리로 이어지는 ${c} 공간 여정`,
+  brand_memory: (c) => `방문 후 한 문장으로 남는 ${c} 대표 이미지 월`,
+  operational_confidence: (c) => `운영 동선과 안전을 한눈에 보여주는 ${c} 통합 운영 맵`,
+  evaluator_clarity: (c) => `${c} 핵심 메시지를 한 화면에 정리한 요약 장면`,
+  emotional_affinity: (c) => `관람객의 감정을 끌어내는 ${c} 몰입형 연출`,
+  technology_reality_proof: (c) => `${c} 기술이 실제 작동하는 모습을 보여주는 라이브 데모`,
+};
+
+function directionSubjectPhrase(contextNoun: string, rfpEvidence: string): string {
+  const ctx = (contextNoun || '브랜드').trim() || '브랜드';
+  const evidence = compactText(rfpEvidence || '', 36).replace(/[.…]+$/, '').trim();
+  return evidence && evidence.length >= 4 && evidence.length <= 24 && !isRfpFactDirectionText(evidence) ? evidence : ctx;
+}
+
+// "어떻게 설득하는가": a concrete one-line strategic bet (not the axis-label template).
+function directionStrategicBet(canonicalAxis: string, contextNoun: string, rfpEvidence: string): string {
+  const subject = directionSubjectPhrase(contextNoun, rfpEvidence);
+  const intent = AXIS_BET_INTENT[canonicalAxis] || '핵심 가치를 분명하게 보여주는';
+  return compactText(`${subject} 중심으로 ${intent} 방향입니다.`, 170);
+}
+
+// "선택 기준": an actionable planner decision criterion.
+function directionSelectionCriterion(canonicalAxis: string, contextNoun: string): string {
+  const ctx = (contextNoun || '브랜드').trim() || '브랜드';
+  const intent = AXIS_CRITERION_INTENT[canonicalAxis] || `${ctx}의 핵심 가치를 분명히 보여주는 것`;
+  return compactText(`${intent}이 가장 중요할 때 선택합니다.`, 170);
+}
+
+// "대표 설득 장면": a concrete spatial/content/media scene.
+function directionRepresentativeScene(canonicalAxis: string, contextNoun: string): string {
+  const ctx = (contextNoun || '브랜드').trim() || '브랜드';
+  const builder = AXIS_SCENE_INTENT[canonicalAxis];
+  return compactText(builder ? builder(ctx) : `${ctx}의 핵심을 한눈에 보여주는 대표 장면`, 140);
 }
 
 function isRfpFactDirectionText(text = '') {
@@ -170,7 +263,7 @@ function isValidDirectionLabel(label: string, conceptType: RfpConceptType): bool
   INTERNAL_AXIS_PATTERN.lastIndex = 0;
   if (INTERNAL_AXIS_PATTERN.test(value)) return false;
   if (conceptType !== 'multi_entity_pavilion' && MULTI_ENTITY_LEAKAGE_PATTERN.test(value)) return false;
-  if (/^(전략 방향|전략 선택 방향|브랜드 경험 방향|RFP 맞춤 방향)$/.test(value)) return false;
+  if (isAxisTranslationLabel(value)) return false;
   const words = value.split(/[\s/·|]+/).filter(Boolean);
   return words.length >= 1 && words.length <= 8;
 }
@@ -494,6 +587,8 @@ interface StrategicDirectionPlanItem {
   lostPatternAvoided: string;
   discoveryBrief?: StrategicDirectionDiscoveryBrief;
   directionAxis?: string;
+  representativeScene?: string;
+  contextNoun?: string;
 }
 
 interface StrategicDirectionDiscoveryBrief {
@@ -687,8 +782,8 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
     const canonicalAxis = canonicalizeDirectionAxis(axis, index - 1);
     return {
       type: canonicalAxis, rfpConceptType: conceptType, secondaryRfpConceptTypes: secondary, label: contextualDirectionLabel(canonicalAxis, contextNoun),
-      emphasis: `${directionAxisLabel(canonicalAxis)} 관점으로 심사자와 관람객이 핵심 가치를 한 번에 이해하도록 대표 장면과 설득 흐름을 구성합니다.`,
-      chooseWhen: `${directionAxisLabel(canonicalAxis)}이 이번 제안의 가장 중요한 설득 관점이라고 판단될 때 선택합니다.`,
+      emphasis: directionStrategicBet(canonicalAxis, contextNoun, rfpEvidence),
+      chooseWhen: directionSelectionCriterion(canonicalAxis, contextNoun),
       source: currentRfpOnlyMode ? `primaryRfpConceptType guardrail only / current RFP evidence dominates / proposal_patterns disabled for labels` : `primaryRfpConceptType guardrail only / current RFP evidence dominates / proposal learning modifier only`,
       rfpEvidence, patternLearning, lostAvoidance,
       rfpTypeLensUsed: conceptType,
@@ -697,6 +792,8 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
       lostPatternAvoided: lostAvoidance,
       discoveryBrief,
       directionAxis: canonicalAxis,
+      representativeScene: directionRepresentativeScene(canonicalAxis, contextNoun),
+      contextNoun,
     };
   };
 
@@ -859,6 +956,66 @@ function dedupeDirectionLabels(concepts: ConceptCandidate[]): ConceptCandidate[]
   });
 }
 
+const TEMPLATE_BET_PATTERN = /관점으로 심사자와 관람객이 핵심 가치를 한 번에|관점으로 심사자와 관람객이/;
+const TEMPLATE_CRITERION_PATTERN = /가장 중요한 설득 관점이라고 판단될 때/;
+const GENERIC_SCENE_PATTERN = /한눈에 판단되는 대표 증명 장면|한눈에 판단되는 장면/;
+const CONCRETE_SCENE_HINT = /(미디어\s*월|미디어월|존|맵|장면|동선|데모|시뮬레이션|라인|연출|타임라인|인터랙티브|히어로|월)/;
+const HERO_GENERIC_LABEL = /\bhero\b|히어로/i;
+
+// Card-copy validator (planner-facing): repair ONLY the weak field, never fall back to a generic template.
+function validateAndRepairDirectionCards(concepts: ConceptCandidate[], plan: StrategicDirectionPlanItem[]): ConceptCandidate[] {
+  const seenLabel = new Set<string>();
+  const seenBet = new Set<string>();
+  const seenCriterion = new Set<string>();
+  const seenScene = new Set<string>();
+  return concepts.map((concept, index) => {
+    const planItem = plan[index] ?? plan[0] ?? ({} as StrategicDirectionPlanItem);
+    const axis = concept.directionAxis || planItem.directionAxis || planItem.type || 'category_shift';
+    const ctx = planItem.contextNoun || '브랜드';
+    const rfpEvidence = planItem.rfpEvidence || '';
+
+    let label = (concept.strategicDirectionLabel || '').trim();
+    const labelWords = label.split(/[\s/·|]+/).filter(Boolean).length;
+    const labelIsShort = Boolean(label) && labelWords <= 6;
+    const labelIsNotHeroGeneric = !HERO_GENERIC_LABEL.test(label);
+    INTERNAL_AXIS_PATTERN.lastIndex = 0;
+    const labelIsContextual = !isAxisTranslationLabel(label) && !INTERNAL_AXIS_PATTERN.test(label);
+    if (!label || !labelIsShort || !labelIsNotHeroGeneric || !labelIsContextual || seenLabel.has(label.toLowerCase())) {
+      let next = contextualDirectionLabel(axis, ctx);
+      let n = 2;
+      while (seenLabel.has(next.toLowerCase())) { next = `${contextualDirectionLabel(axis, ctx)} ${n}`; n += 1; }
+      label = next;
+    }
+    seenLabel.add(label.toLowerCase());
+
+    let bet = (concept.oneLineStrategicBet || concept.whatThisDirectionEmphasizes || '').trim();
+    const howToPersuadeIsSpecific = Boolean(bet) && bet.length >= 12 && !TEMPLATE_BET_PATTERN.test(bet);
+    if (!howToPersuadeIsSpecific || seenBet.has(bet)) bet = directionStrategicBet(axis, ctx, rfpEvidence);
+    seenBet.add(bet);
+
+    let criterion = (concept.whenToChooseThisDirection || '').trim();
+    const selectionCriterionIsActionable = Boolean(criterion) && criterion.length >= 10 && !TEMPLATE_CRITERION_PATTERN.test(criterion);
+    if (!selectionCriterionIsActionable || seenCriterion.has(criterion)) criterion = directionSelectionCriterion(axis, ctx);
+    seenCriterion.add(criterion);
+
+    const proof = concept.signatureProofIdea ?? { signatureScene: '', signatureContent: '', signatureSpatialMove: '', signatureMediaOrInteraction: '', whyThisProvesTheConcept: '', whyThisIsNotGeneric: '' };
+    let scene = (proof.signatureScene || '').trim();
+    const representativeSceneIsConcrete = Boolean(scene) && !GENERIC_SCENE_PATTERN.test(scene) && CONCRETE_SCENE_HINT.test(scene);
+    if (!representativeSceneIsConcrete || seenScene.has(scene)) scene = planItem.representativeScene || directionRepresentativeScene(axis, ctx);
+    seenScene.add(scene);
+
+    if (label === concept.strategicDirectionLabel && bet === concept.oneLineStrategicBet && criterion === concept.whenToChooseThisDirection && scene === proof.signatureScene) return concept;
+    return {
+      ...concept,
+      strategicDirectionLabel: label,
+      oneLineStrategicBet: bet,
+      whatThisDirectionEmphasizes: bet,
+      whenToChooseThisDirection: criterion,
+      signatureProofIdea: { ...proof, signatureScene: scene },
+    };
+  });
+}
+
 function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { primaryType: RfpConceptType; matrixType: MatrixType; plan: StrategicDirectionPlanItem[]; brandExperienceMatrix: BrandExperienceMatrixItem[]; entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix']; sanitizerApplied?: boolean; sanitizerReason?: string; rawMatrixType?: MatrixType; rawPrimaryRfpConceptType?: RfpConceptType; multiEntityEvidenceCount?: number; singleBrandVisitorRoomEvidenceCount?: number }): ConceptCandidatesResult {
   const activeMatrixSummary = summarizeActiveMatrix(params.matrixType, { entityCount: params.matrixType === 'entityDifferentiationMatrix' ? params.entityMatrix.length : 0, brandExperienceMatrix: params.brandExperienceMatrix });
   const sourceConcepts = Array.from({ length: DEFAULT_CONCEPT_COUNT }, (_, index) => result.concepts[index] ?? fallbackCandidate(index + 1, '', { projectOverview: params.plan[index]?.rfpEvidence || params.plan[0]?.rfpEvidence || '', clientChallenge: params.plan[index]?.emphasis || params.plan[0]?.emphasis || '' } as AnalysisResult, { proposalThesis: params.plan[index]?.emphasis || params.plan[0]?.emphasis || '', strategicOpportunity: params.plan[index]?.chooseWhen || params.plan[0]?.chooseWhen || '', coreProblem: '', whyThisConcept: '', unifyingFrame: '', differentiationPrinciple: '' } as ProposalNarrative));
@@ -887,6 +1044,7 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
     blockedTerms = BLOCKED_MULTI_ENTITY_TERMS.filter((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(joined));
   }
   concepts = dedupeDirectionLabels(concepts);
+  concepts = validateAndRepairDirectionCards(concepts, params.plan);
   const contaminationCheckPassed = blockedTerms.length === 0;
   return {
     ...result,
@@ -960,7 +1118,7 @@ function deriveDirectionKeywords(planItem: StrategicDirectionPlanItem, index: nu
 function buildFallbackSignatureProofIdea(analysis: AnalysisResult, direction: StrategicDirectionPlanItem, keywordBase: [string, string, string]) {
   const proofTarget = compactText(analysis.requiredScope?.[0] || analysis.requiredItems?.[0] || analysis.evaluationCriteria?.[0] || '핵심 요구', 90);
   return {
-    signatureScene: `${proofTarget}이 한눈에 판단되는 대표 증명 장면`,
+    signatureScene: direction.representativeScene || directionRepresentativeScene(direction.directionAxis || direction.type, direction.contextNoun || keywordBase[0]) || `${proofTarget}이 한눈에 판단되는 대표 증명 장면`,
     signatureContent: `${keywordBase[0]}·${keywordBase[1]}·${keywordBase[2]}를 순서대로 확인하는 핵심 메시지와 증거`,
     signatureSpatialMove: '도입부에서 주장, 중심부에서 증거, 마무리에서 선택 이유가 보이는 압축 동선',
     signatureMediaOrInteraction: '평가자가 하나의 선택 근거를 직접 확인하는 짧은 비교·검증 접점',
@@ -1307,6 +1465,8 @@ export async function POST(request: Request) {
       '각 후보는 rfpConceptType, secondaryRfpConceptTypes, strategicDirectionType, strategicDirectionLabel, directionSource, whatThisDirectionEmphasizes, oneLineStrategicBet, whenToChooseThisDirection, failurePatternAvoided, winningPatternUsed를 반드시 포함한다. strategicDirectionLabel은 discovery brief의 direction axis와 현재 RFP evidence에서 새로 만든 2~8단어의 짧은 방향명이어야 하며 type별 고정 preset, 과거 RFP 언어, 말줄임표를 금지한다.',
       'oneLineStrategicBet은 사용자에게 보이는 문장이므로 proof/evidence/proof burden 같은 내부 영어를 쓰지 말고 “이 방향은 ___을 통해 ___을 설득하는 전략입니다.” 형식의 자연스러운 한국어 1문장으로 쓴다. whenToChooseThisDirection은 “클라이언트가 ___을 가장 중요하게 볼 때 선택합니다.”에 가까운 실무 선택 기준으로 쓴다. signatureProofIdea의 대표 장면/콘텐츠는 카드에서 대표 체험 장면으로 읽히도록 구체 구 하나로 요약 가능해야 한다.',
       'strategicDirectionLabel은 카드에 보이는 짧은 한국어 방향명이다. 현장의 감각/현장의 신뢰/경험의 증명/가치의 흐름/브랜드 경험 강화/통합적 체험/차별화된 경험 같은 generic label을 금지하고, currentRfpVocabularySet에 해당하는 브랜드·제품·감각·공정·공간·방문자 언어를 우선 사용한다. proposalCoreConceptName/conceptName은 DB/schema 호환을 위한 임시 direction title일 뿐이며 최종 컨셉명이 아니다. 최종 컨셉명은 사용자가 방향 선택 후 별도 naming step에서 생성한다.',
+      'strategicDirectionLabel 품질 규칙: 2~6단어의 구체적이고 제안서에 바로 쓸 수 있는 전략 방향명으로 쓴다. 금지 — “Hero/히어로 + 추상명사”(예: Hero 인식 전환, Hero 경험 이해, Hero 가치 체감), axis 직역(예: 카테고리 전환 설득, 관람 이해 전환, 제품 가치 체감), internal directionAxis 라벨, RFP 산출물명/콘텐츠 포맷명/프로젝트명. Hero는 콘텐츠 포맷이지 전략이 아니므로 라벨에 쓰지 말고, 시그니처 장면 방향이면 “메인 장면 각인/대표 장면 선언/압도적 첫인상”처럼 전략적으로 표현한다. 라벨은 현재 RFP의 주제·브랜드·카테고리 언어로 만든다.',
+      '카드 본문은 3개가 서로 다른 전략 논리를 가져야 한다. (a) oneLineStrategicBet(어떻게 설득하는가)은 “___ 중심으로 ___ 보여주는/만드는 방향입니다.” 형태의 구체적 한 문장 베팅으로, 축 직역 템플릿(“…관점으로 심사자와 관람객이 핵심 가치를 한 번에…”)을 쓰지 않는다. (b) whenToChooseThisDirection(선택 기준)은 “___이 가장 중요할 때 선택합니다.” 형태의 실무 결정 기준으로, “가장 중요한 설득 관점이라고 판단될 때” 같은 공허한 문구를 금지한다. (c) signatureProofIdea.signatureScene(대표 설득 장면)은 미디어 월/존/맵/동선/시뮬레이션/데모처럼 공간·콘텐츠·미디어가 드러나는 구체 장면으로 쓰고, “…한눈에 판단되는 대표 증명 장면” 같은 추상 문구를 금지한다. 세 카드의 베팅·선택 기준·대표 장면·리스크가 모두 달라야 한다.',
       '추천은 가장 적합한 방향을 설명하되 다른 후보를 나쁘다/부적합하다/틀렸다로 말하지 않는다. 다른 방향의 쓰임과 선택 간 trade-off를 중립적으로 설명한다.',
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
       '출력은 hiddenNeeds, strategicApproach, entityDifferentiationMatrix, conceptDevelopmentLogic, concepts, recommendation을 포함한다.',
