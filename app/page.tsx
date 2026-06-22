@@ -3452,7 +3452,7 @@ export default function Home() {
       const namingResponse = await fetch('/api/concept-names', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, cache: 'no-store', body: JSON.stringify(namingPayload) });
       setFinalNamingDebug((current) => ({ ...current, responseStatus: namingResponse.status }));
       const result = await parseJsonResponse<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }> (namingResponse, '/api/concept-names');
-      if (!namingResponse.ok) throw new Error(result.error || result.details || '컨셉명 생성 중 오류가 발생했습니다.');
+      if (!namingResponse.ok) throw new Error(result.details ? `${result.error || '컨셉명 생성 실패'} (${result.details})` : (result.error || '컨셉명 생성 중 오류가 발생했습니다.'));
       const blockedOptions = [...currentDirectionOptions, ...otherDirectionOptions];
       const nameOptions = uniqueConceptNameOptions(result.nameOptions ?? result.options ?? [], blockedOptions);
       if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
@@ -4056,7 +4056,14 @@ export default function Home() {
                     {finalNamingError && <button type="button" onClick={() => runConceptNames()} className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">다시 시도</button>}
                   </div>
                 </div>
-                {finalNamingError && <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{finalNamingError}</p>}
+                {finalNamingError && (
+                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+                    <p>{finalNamingError}</p>
+                    {(finalNamingDebug.responseStatus || finalNamingDebug.responseErrorMessage) && (
+                      <p className="mt-1 text-xs font-bold text-red-500">{finalNamingDebug.responseStatus ? `status ${finalNamingDebug.responseStatus}` : '네트워크 오류'}{finalNamingDebug.responseErrorMessage ? ` · 원인: ${shortText(finalNamingDebug.responseErrorMessage, 180)}` : ''}</p>
+                    )}
+                  </div>
+                )}
                 <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'} · responseStatus: {finalNamingDebug.responseStatus || 'none'} · responseErrorMessage: {finalNamingDebug.responseErrorMessage || 'none'} · selectedDirectionKey: {finalNamingDebug.selectedDirectionKey || selectedDirectionKey || 'none'} · missingFields: {finalNamingDebug.missingFields?.join(', ') || 'none'}</p></details>
                 {directionConceptNameOptions.length ? (
                   <>
