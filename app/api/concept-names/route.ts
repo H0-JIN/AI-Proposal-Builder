@@ -197,8 +197,9 @@ function passesNameFirewall(option: ConceptNameOptionsResult['options'][number],
   if (hasInternalMainCopy(option)) return false;
   if (repeatedHooks && repeatsGenericMainHook(option, repeatedHooks)) return false;
   if (!usesCurrentVocabulary(option, vocabulary)) return false;
-  const validation = option.validation;
-  return !validation || Object.values(validation).every(Boolean);
+  // Concrete safety checks only. We intentionally do NOT require every validation boolean to be true:
+  // models rarely set all 24 flags, and doing so caused valid names to be discarded (final naming failure).
+  return true;
 }
 
 function truthyValidation() {
@@ -311,9 +312,9 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
       seenNameSet.add(nameKey);
       if (fingerprint) seenFingerprintSet.add(fingerprint);
       return true;
-    }).slice(0, 3).map((option) => ({ ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) })).filter((option) => passesNameFirewall(option, relevanceContext, currentRfpVocabularySet, repeatedHooks)).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk, strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning, expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: option.whyItFitsRfp || option.shortMeaning, media: option.oneLineSlogan || option.shortMeaning, operation: option.mainRisk || option.risk }, validation: option.validation ?? truthyValidation(), coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore, specificityScore: option.specificityScore ?? option.rfpSpecificityScore }));
+    }).map((option) => ({ ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) })).filter((option) => passesNameFirewall(option, relevanceContext, currentRfpVocabularySet, repeatedHooks)).slice(0, 3).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk, strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning, expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: option.whyItFitsRfp || option.shortMeaning, media: option.oneLineSlogan || option.shortMeaning, operation: option.mainRisk || option.risk }, validation: option.validation ?? truthyValidation(), coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore, specificityScore: option.specificityScore ?? option.rfpSpecificityScore }));
     const normalized = { ...result, selectedDirectionId: body.selectedDirection.conceptId, options };
-    if (options.length < 3) {
+    if (!options.length) {
       return json(errorResponse('선택한 전략 방향과 충분히 구분되는 컨셉명이 생성되지 않았습니다. 다시 생성해 주세요.', `validated_options=${options.length}`), { status: 422 });
     }
     return json(successResponse(normalized));
