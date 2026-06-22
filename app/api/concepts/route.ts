@@ -195,8 +195,8 @@ function repairBasicStrategicDirection(concept: ConceptCandidate, planItem: Stra
     directionAxis: planItem.directionAxis || planItem.type,
     whatThisDirectionEmphasizes: planItem.emphasis,
     whenToChooseThisDirection: planItem.chooseWhen,
-    winningThesisUse: { ...(concept.winningThesisUse ?? {}), winningClaim: planItem.emphasis, whatMustBeProven: concept.winningThesisUse?.whatMustBeProven || planItem.rfpEvidence } as ConceptCandidate['winningThesisUse'],
-    conceptLeap: { ...(concept.conceptLeap ?? {}), conceptLeap: `${planItem.label} 관점에서 평가자가 믿어야 할 핵심 판단을 대표 장면과 증거 구조로 전환합니다.`, corePromise: planItem.emphasis } as ConceptCandidate['conceptLeap'],
+    winningThesisUse: { ...(concept.winningThesisUse ?? {}), winningClaim: concept.winningThesisUse?.winningClaim || compactText(`${planItem.label}: ${planItem.rfpEvidence}`, 150), whatMustBeProven: concept.winningThesisUse?.whatMustBeProven || planItem.rfpEvidence } as ConceptCandidate['winningThesisUse'],
+    conceptLeap: { ...(concept.conceptLeap ?? {}), conceptLeap: concept.conceptLeap?.conceptLeap || `${planItem.label} 관점에서 ${compactText(planItem.rfpEvidence, 70)}을(를) 평가자가 믿을 수 있는 대표 장면과 증거로 전환합니다.`, corePromise: concept.conceptLeap?.corePromise || planItem.emphasis } as ConceptCandidate['conceptLeap'],
     signatureProofIdea: { ...(concept.signatureProofIdea ?? {}), whyThisProvesTheConcept: concept.signatureProofIdea?.whyThisProvesTheConcept || `${planItem.rfpEvidence}를 근거로 선택 위험을 낮추는 대표 증명 장면을 제시합니다.`, whyThisIsNotGeneric: concept.signatureProofIdea?.whyThisIsNotGeneric || 'confirmed RFP-only diagnosis의 winning condition, tension, proof burden에서 도출한 방향이므로 범용 수행조건이 아닙니다.' } as ConceptCandidate['signatureProofIdea'],
     proposalCoreConceptName: isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planItem.directionAxis || planItem.type) : planItem.label,
     conceptName: isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planItem.directionAxis || planItem.type) : planItem.label,
@@ -682,7 +682,17 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
   const proofEvidence = firstEvidence(analysis, narrative, [/운영|일정|예산|공정|프로세스|산출|범위|실행|안전|리스크|proof|operation|deliverable|schedule/i], '실행 가능성과 증명 요구');
   const positive = learning.positivePrinciples;
   const avoid = learning.lostAvoidance;
-  const evidenceByIndex = [strongestClaimEvidence, audienceEvidence, proofEvidence, discoveryBrief.clientUniquePosition, discoveryBrief.evaluatorDecisionRisk];
+  const rawEvidenceByIndex = [strongestClaimEvidence, audienceEvidence, proofEvidence, discoveryBrief.clientUniquePosition, discoveryBrief.evaluatorDecisionRisk];
+  // Ensure each direction gets distinct evidence; firstEvidence can otherwise collapse to the same first pool item.
+  const evidenceAlternatives = [discoveryBrief.whatMustBeProven, discoveryBrief.categoryShift, discoveryBrief.audiencePerceptionGap, discoveryBrief.hiddenNeed, discoveryBrief.strongestStrategicTension, discoveryBrief.coreRfpChallenge];
+  const usedEvidence = new Set<string>();
+  const evidenceByIndex = rawEvidenceByIndex.map((evidence) => {
+    const primary = (evidence || '').trim();
+    if (primary && !usedEvidence.has(primary)) { usedEvidence.add(primary); return evidence; }
+    const alt = evidenceAlternatives.map((item) => (item || '').trim()).find((item) => item && !usedEvidence.has(item));
+    if (alt) { usedEvidence.add(alt); return alt; }
+    return evidence;
+  });
   const directions = discoveryBrief.possibleDirectionAxes.slice(0, 5).map((axis, index) => mk(index + 1, axis, evidenceByIndex[index] || strongestClaimEvidence, positive[index] || positive[0], avoid[index] || avoid[0]));
 
   return directions.map((item, idx) => ({ ...item, label: directions.some((other, j) => j !== idx && other.label === item.label) ? `${item.label} ${idx + 1}` : item.label }));
@@ -838,7 +848,7 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
   if (params.primaryType !== 'multi_entity_pavilion' && blockedTerms.length) {
     concepts = concepts.map((concept, index) => {
       const planItem = params.plan[index] ?? params.plan[0];
-      const thesis = { ...(concept.winningThesisUse ?? {}), winningClaim: planItem.emphasis };
+      const thesis = { ...(concept.winningThesisUse ?? {}), winningClaim: concept.winningThesisUse?.winningClaim || compactText(`${planItem.label}: ${planItem.rfpEvidence}`, 150) };
       return {
         ...concept,
         strategicDirectionType: planItem.type,
@@ -847,7 +857,7 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
         whenToChooseThisDirection: planItem.chooseWhen,
         winningThesisUse: thesis as ConceptCandidate['winningThesisUse'],
         conceptLeap: buildFallbackConceptLeap(thesis, planItem) as ConceptCandidate['conceptLeap'],
-        signatureProofIdea: buildFallbackSignatureProofIdea({ requiredScope: [planItem.rfpEvidence] } as AnalysisResult, planItem, ['가치', '체험', '증명']) as ConceptCandidate['signatureProofIdea'],
+        signatureProofIdea: buildFallbackSignatureProofIdea({ requiredScope: [planItem.rfpEvidence] } as AnalysisResult, planItem, deriveDirectionKeywords(planItem, index)) as ConceptCandidate['signatureProofIdea'],
         mainStrength: planItem.emphasis,
         mainRisk: '현재 RFP 근거만으로 방향을 세우므로 세부 연출은 후속 구조 단계에서 보완해야 합니다.',
         entityDifferentiationUse: { unifyingFrame: planItem.label, distinctEntityRoles: '현재 RFP의 핵심 가치와 체험 접점을 구분', visitorRecognitionLogic: '방문객이 가치와 증거를 순서대로 이해', proofByEntity: planItem.rfpEvidence, riskCheck: '현재 RFP 밖의 다중 주체 표현을 사용하지 않음' },
@@ -891,19 +901,20 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
   };
 }
 
-function buildFallbackWinningThesis(analysis: AnalysisResult, narrative: ProposalNarrative) {
+function buildFallbackWinningThesis(analysis: AnalysisResult, narrative: ProposalNarrative, direction?: StrategicDirectionPlanItem) {
   const challenge = compactText(analysis.clientChallenge || narrative.coreProblem || '평가자가 기존 정보 나열만으로는 선택 이유를 확신하기 어려움', 150);
-  const thesis = compactText(narrative.proposalThesis || '현재 요구를 실행 가능한 증거와 기억되는 장면으로 증명', 150);
+  // Seed the claim/proof from the direction so C1/C2/C3 do not receive a byte-identical winning thesis.
+  const thesis = compactText(direction?.emphasis || narrative.proposalThesis || '현재 요구를 실행 가능한 증거와 기억되는 장면으로 증명', 150);
   return {
     contextShift: compactText(narrative.strategicOpportunity || challenge, 150),
     previousBaseline: compactText(analysis.projectOverview || '기존 이해는 요구사항과 산출물 확인에 머물러 있음', 150),
     newReality: compactText(challenge, 150),
     clientUniquePosition: compactText(narrative.differentiationPrinciple || 'RFP 요구를 통합하고 실행 접점으로 전환할 수 있는 주체', 150),
-    audiencePerceptionGap: compactText(analysis.targetInfo || '대상이 왜 지금 이 제안을 믿어야 하는지 아직 선명하지 않음', 150),
+    audiencePerceptionGap: compactText(direction?.label ? `${direction.label} 관점에서 대상이 아직 확신하지 못하는 부분` : (analysis.targetInfo || '대상이 왜 지금 이 제안을 믿어야 하는지 아직 선명하지 않음'), 150),
     winningClaim: thesis,
     whyNow: compactText(analysis.evaluationCriteria?.[0] || '평가 시점에 전략과 실행 증거를 동시에 보여줘야 함', 150),
     whyThisClient: compactText(narrative.unifyingFrame || narrative.differentiationPrinciple || '현재 과제의 요구와 증거를 가장 직접적으로 연결할 수 있음', 150),
-    whatMustBeProven: compactText(analysis.requiredDeliverables?.[0] || analysis.requiredScope?.[0] || '공간·콘텐츠·운영 접점에서 핵심 주장이 실제로 작동함', 150),
+    whatMustBeProven: compactText(direction?.rfpEvidence || analysis.requiredDeliverables?.[0] || analysis.requiredScope?.[0] || '공간·콘텐츠·운영 접점에서 핵심 주장이 실제로 작동함', 150),
   };
 }
 
@@ -916,6 +927,14 @@ function buildFallbackConceptLeap(thesis: ReturnType<typeof buildFallbackWinning
     emotionalTakeaway: '막연한 이해가 아니라 지금 선택할 수 있다는 확신',
     evaluatorTakeaway: compactText(`${direction.emphasis}이 평가 기준과 실행 증거로 연결됨`, 140),
   };
+}
+
+// Per-direction keyword triad so repaired/blocked-term concepts don't share a byte-identical signature scene.
+function deriveDirectionKeywords(planItem: StrategicDirectionPlanItem, index: number): [string, string, string] {
+  const presets: [string, string, string][] = [['근거', '판단', '확장'], ['대상', '가치', '증명'], ['기준', '접점', '운영']];
+  const base = presets[Math.abs(index) % presets.length];
+  const axisWord = (directionAxisLabel(planItem.directionAxis || planItem.type).split(/\s+/)[0] || '').trim();
+  return [axisWord || base[0], base[1], base[2]];
 }
 
 function buildFallbackSignatureProofIdea(analysis: AnalysisResult, direction: StrategicDirectionPlanItem, keywordBase: [string, string, string]) {
@@ -943,7 +962,7 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
   const seed = fallbackNameSeeds(analysis)[index - 1] || fallbackNameSeeds(analysis)[0] || '판단';
   const repairedName = name || `${seed} ${['프레임', '필드', '아레나'][(index - 1) % 3]}`;
   const keywordBase = preset.keywords;
-  const winningThesisUse = buildFallbackWinningThesis(analysis, narrative);
+  const winningThesisUse = buildFallbackWinningThesis(analysis, narrative, direction);
   const conceptLeap = buildFallbackConceptLeap(winningThesisUse, direction);
   const signatureProofIdea = buildFallbackSignatureProofIdea(analysis, direction, keywordBase);
   const definition = compactText(preset.definition, 180);

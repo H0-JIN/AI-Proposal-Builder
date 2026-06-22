@@ -176,8 +176,9 @@ function repeatsGenericMainHook(option: ConceptNameOptionsResult['options'][numb
 
 function usesCurrentVocabulary(option: ConceptNameOptionsResult['options'][number], vocabulary: string[]) {
   if (!vocabulary.length) return true;
-  const text = [option.conceptName, option.oneLineSlogan, option.shortMeaning, option.whyItFitsRfp].filter(Boolean).join(' ');
-  return vocabulary.some((word) => word.length >= 2 && text.includes(word));
+  // Lowercase both sides so English/Latin RFP tokens are not missed on a case mismatch.
+  const text = [option.conceptName, option.oneLineSlogan, option.shortMeaning, option.whyItFitsRfp].filter(Boolean).join(' ').toLowerCase();
+  return vocabulary.some((word) => word.length >= 2 && text.includes(word.toLowerCase()));
 }
 
 function hasUnsupportedCategoryTerms(name: string, context: string) {
@@ -189,17 +190,25 @@ function hasUnsupportedCategoryTerms(name: string, context: string) {
   return unsupportedGroups.some((group) => group.terms.some((term) => name.toLowerCase().includes(term.toLowerCase())) && !group.evidence.test(lowerContext));
 }
 
-function passesNameFirewall(option: ConceptNameOptionsResult['options'][number], context: string, vocabulary: string[] = [], repeatedHooks?: Map<string, number>) {
+function passesNameFirewall(option: ConceptNameOptionsResult['options'][number], context: string, repeatedHooks?: Map<string, number>) {
   const name = option.conceptName || '';
   if (!name.trim()) return false;
   if (resemblesBlockedExample(name)) return false;
   if (hasUnsupportedCategoryTerms(name, context)) return false;
   if (hasInternalMainCopy(option)) return false;
   if (repeatedHooks && repeatsGenericMainHook(option, repeatedHooks)) return false;
-  if (!usesCurrentVocabulary(option, vocabulary)) return false;
-  // Concrete safety checks only. We intentionally do NOT require every validation boolean to be true:
-  // models rarely set all 24 flags, and doing so caused valid names to be discarded (final naming failure).
+  // Concrete safety checks only. We intentionally do NOT require every validation boolean to be true,
+  // and the RFP-vocabulary check is now a soft ranking preference (applied in the pipeline) rather than a
+  // hard gate, so an abstract/English cover name the prompt itself requests can never zero out the response.
   return true;
+}
+
+// Map an upstream generation error to a stable machine-readable reason code for the client.
+function classifyServerError(message: string) {
+  if (/timeout|timed out|ETIMEDOUT|ECONNRESET|aborted|abort/i.test(message)) return 'model_timeout';
+  if (/비어 있습니다|empty/i.test(message)) return 'empty_response';
+  if (/JSON|Unexpected token|parse/i.test(message)) return 'invalid_json';
+  return 'model_error';
 }
 
 function truthyValidation() {
@@ -305,21 +314,35 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
     const blockedNameSet = new Set([...(body.recentNameOptions ?? []), ...(body.existingNamesForSelectedDirection ?? []), ...(body.blockedOtherDirectionNames ?? [])].map(normalizeName).filter(Boolean));
     const seenNameSet = new Set<string>();
     const seenFingerprintSet = new Set<string>();
-    const options = (result.options ?? []).filter((option) => {
+    let blockedNameDrops = 0;
+    const deduped = (result.options ?? []).filter((option) => {
       const nameKey = normalizeName(option.conceptName || '');
       const fingerprint = optionTextFingerprint(option);
-      if (!nameKey || blockedNameSet.has(nameKey) || seenNameSet.has(nameKey) || (fingerprint && seenFingerprintSet.has(fingerprint))) return false;
+      if (!nameKey) return false;
+      if (blockedNameSet.has(nameKey)) { blockedNameDrops += 1; return false; }
+      if (seenNameSet.has(nameKey) || (fingerprint && seenFingerprintSet.has(fingerprint))) return false;
       seenNameSet.add(nameKey);
       if (fingerprint) seenFingerprintSet.add(fingerprint);
       return true;
-    }).map((option) => ({ ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) })).filter((option) => passesNameFirewall(option, relevanceContext, currentRfpVocabularySet, repeatedHooks)).slice(0, 3).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk, strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning, expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: option.whyItFitsRfp || option.shortMeaning, media: option.oneLineSlogan || option.shortMeaning, operation: option.mainRisk || option.risk }, validation: option.validation ?? truthyValidation(), coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore, specificityScore: option.specificityScore ?? option.rfpSpecificityScore }));
+    });
+    // Compute the vocabulary match on the RAW option (before userFacingCopy truncates/replaces the fields it reads).
+    const prepared = deduped.map((option) => ({
+      usesVocabulary: usesCurrentVocabulary(option, currentRfpVocabularySet),
+      option: { ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) },
+    }));
+    const safe = prepared.filter((entry) => passesNameFirewall(entry.option, relevanceContext, repeatedHooks));
+    // Soft vocabulary preference: prefer vocab-matching names, but never let the vocab check alone drop the count to 0.
+    const vocabMatched = safe.filter((entry) => entry.usesVocabulary);
+    const ranked = (vocabMatched.length ? [...vocabMatched, ...safe.filter((entry) => !entry.usesVocabulary)] : safe).map((entry) => entry.option);
+    const options = ranked.slice(0, 3).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk, strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning, expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: option.whyItFitsRfp || option.shortMeaning, media: option.oneLineSlogan || option.shortMeaning, operation: option.mainRisk || option.risk }, validation: option.validation ?? truthyValidation(), coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore, specificityScore: option.specificityScore ?? option.rfpSpecificityScore }));
     const normalized = { ...result, selectedDirectionId: body.selectedDirection.conceptId, options };
     if (!options.length) {
-      return json(errorResponse('선택한 전략 방향과 충분히 구분되는 컨셉명이 생성되지 않았습니다. 다시 생성해 주세요.', `validated_options=${options.length}`), { status: 422 });
+      const reason = !deduped.length ? (blockedNameDrops ? 'blocked_name_zeroout' : 'no_model_options') : 'firewall_zeroout';
+      return json(errorResponse('선택한 전략 방향과 충분히 구분되는 컨셉명이 생성되지 않았습니다. 다시 생성해 주세요.', `reason=${reason}; returned=${(result.options ?? []).length}; deduped=${deduped.length}; safe=${safe.length}; blockedNameDrops=${blockedNameDrops}`), { status: 422 });
     }
     return json(successResponse(normalized));
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
-    return json(errorResponse('선택한 전략 방향에 맞는 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.', message), { status: 502 });
+    return json(errorResponse('선택한 전략 방향에 맞는 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.', `reason=${classifyServerError(message)}; ${message}`), { status: 502 });
   }
 }
