@@ -1722,6 +1722,13 @@ function getStrategicDirectionKey(concept?: ConceptCandidate) {
 
 
 const INVALID_DIRECTION_LABEL_PATTERN = /(KINTEX|2025|12월|2,?520㎡|Hero\s*콘텐츠\s*40%|콘텐츠\s*60%|B2B\s*대상|전시\s*목표|콘텐츠\s*개발|운영\s*구성|실체\s*Proof\s*장면|Proof\s*장면|\d{4}|\d+%|\d+㎡|킨텍스)/i;
+const INTERNAL_DIRECTION_AXIS_PATTERN = /\b(?:category_shift|audience_perception_change|representative_position|technology_reality_proof|product_value_proof|process_trust|ecosystem_proof|system\/ecosystem_proof|spatial_journey|brand_memory|operational_confidence|evaluator_clarity|emotional_affinity|signature_scene|audience_understanding|directionAxis|proof|evidence)\b/gi;
+const AXIS_USER_LABELS: Record<string, string> = { category_shift: '카테고리 관점 전환', audience_perception_change: '관람객 인식 전환', representative_position: '대표 포지션 각인', technology_reality_proof: '기술 현실감 설득', product_value_proof: '제품 가치 체감', process_trust: '과정 신뢰 형성', ecosystem_proof: '생태계 설득', 'system/ecosystem_proof': '생태계 설득', spatial_journey: '공간 여정 설계', brand_memory: '브랜드 기억 형성', operational_confidence: '운영 확신 설계', evaluator_clarity: '심사 이해도 강화', emotional_affinity: '정서적 친밀감 형성', signature_scene: '대표 장면 각인', audience_understanding: '관람 이해 전환', proof: '설득 포인트', evidence: '근거' };
+function userFacingDirectionCopy(value = '', fallback = '') {
+  const clean = (value || fallback).replace(INTERNAL_DIRECTION_AXIS_PATTERN, (term) => AXIS_USER_LABELS[term] || '전략 관점').replace(/\s*:\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  return clean || fallback;
+}
+
 const REQUIREMENT_SUMMARY_PATTERN = /(일정|장소|부스|규모|평가|배점|납품|제출|착수|완료|대상|운영\s*구성|콘텐츠\s*개발)/;
 
 type NormalizedStrategicDirection = Pick<ConceptCandidate, 'conceptId' | 'strategicDirectionLabel' | 'directionAxis' | 'oneLineStrategicBet' | 'conceptLeap' | 'signatureProofIdea' | 'mainRisk'> & {
@@ -1742,7 +1749,7 @@ function isValidStrategicDirectionLabel(label?: string) {
   return true;
 }
 
-function normalizeStrategicDirectionForNaming(concept?: ConceptCandidate): NormalizedStrategicDirection | undefined {
+function normalizeSelectedDirectionForNaming(concept?: ConceptCandidate): NormalizedStrategicDirection | undefined {
   if (!concept) return undefined;
   const aliasSource = concept as ConceptCandidate & { representativePersuasionScene?: string; signatureExperienceIdea?: string | ConceptCandidate['signatureProofIdea']; winningThesis?: ConceptCandidate['winningThesisUse']; id?: string };
   const signatureProofIdea = concept.signatureProofIdea || (typeof aliasSource.signatureExperienceIdea === 'object' ? aliasSource.signatureExperienceIdea : undefined) || {
@@ -1766,13 +1773,13 @@ function normalizeStrategicDirectionForNaming(concept?: ConceptCandidate): Norma
     conceptId: concept.conceptId || aliasSource.id || getStrategicDirectionId(concept),
     strategicDirectionLabel: isValidStrategicDirectionLabel(concept.strategicDirectionLabel) ? concept.strategicDirectionLabel : getStrategicDirectionLabel({ ...concept, strategicDirectionLabel: concept.directionAxis || concept.strategicDirectionType || '전략 방향' }),
     directionAxis: concept.directionAxis || concept.strategicDirectionType || concept.whatThisDirectionEmphasizes || concept.strategicDirectionLabel,
-    oneLineStrategicBet: getStrategicBet(concept),
+    oneLineStrategicBet: userFacingDirectionCopy(getStrategicBet(concept)),
     winningThesis: concept.winningThesisUse || aliasSource.winningThesis,
     conceptLeap: concept.conceptLeap,
     signatureProofIdea: { ...signatureProofIdea, signatureScene: signatureProofIdea.signatureScene || representativePersuasionScene },
-    representativePersuasionScene,
+    representativePersuasionScene: userFacingDirectionCopy(representativePersuasionScene),
     mainRisk: concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution || '이 방향의 대표 장면이 약하면 차별성이 낮아질 수 있습니다.',
-    whenToChooseThisDirection: concept.whenToChooseThisDirection,
+    whenToChooseThisDirection: userFacingDirectionCopy(concept.whenToChooseThisDirection || '', '이 전략 관점이 심사자의 선택 이유를 가장 선명하게 만들 때 선택합니다.'),
     whyThisDirectionExists: concept.whyThisDirectionExists,
     rfpConceptType: concept.rfpConceptType,
     secondaryRfpConceptTypes: concept.secondaryRfpConceptTypes,
@@ -1780,7 +1787,7 @@ function normalizeStrategicDirectionForNaming(concept?: ConceptCandidate): Norma
 }
 
 function validateStrategicDirectionForDisplay(concept: ConceptCandidate) {
-  const normalized = normalizeStrategicDirectionForNaming(concept);
+  const normalized = normalizeSelectedDirectionForNaming(concept);
   const missingFields = [
     ['strategicDirectionLabel', normalized?.strategicDirectionLabel],
     ['directionAxis', normalized?.directionAxis],
@@ -1828,7 +1835,7 @@ function shortText(value: string | undefined, max = 120) {
 }
 
 function getStrategicBet(concept: ConceptCandidate) {
-  return shortText(concept.oneLineStrategicBet || concept.oneLineSummary || concept.whatThisDirectionEmphasizes || concept.coreMessage || getConceptTagline(concept), 150) || '이 방향은 현재 RFP의 핵심 증거를 통해 평가자의 선택 이유를 설득하는 전략입니다.';
+  return userFacingDirectionCopy(shortText(concept.oneLineStrategicBet || concept.oneLineSummary || concept.whatThisDirectionEmphasizes || concept.coreMessage || getConceptTagline(concept), 150), '이 방향은 현재 RFP의 핵심 근거를 통해 평가자의 선택 이유를 설득하는 전략입니다.');
 }
 
 function getSignatureProofSummary(concept: ConceptCandidate) {
@@ -2007,7 +2014,7 @@ export default function Home() {
   const finalNamingLoading = loading === '컨셉명 후보 생성 중';
   const selectedDirectionKey = getStrategicDirectionKey(selectedStrategicDirection);
   const directionConceptNameOptions = selectedDirectionKey ? (state.conceptNameOptionsByDirection?.[selectedDirectionKey] ?? []) : [];
-  const visibleStrategicDirections = useMemo(() => (state.conceptCandidates ?? []).filter((concept) => validateStrategicDirectionForDisplay(concept).canGenerateConceptNames), [state.conceptCandidates]);
+  const visibleStrategicDirections = useMemo(() => (state.conceptCandidates ?? []).slice(0, 3), [state.conceptCandidates]);
   const finalNameOptionsCount = directionConceptNameOptions.length;
   const finalConceptNameSelected = Boolean(state.selectedConcept?.finalConceptName?.trim());
   const canGenerateProposalStructure = Boolean(selectedStrategicDirectionExists && finalConceptNameSelected && state.analysis && hasUploadedDocumentOrRfp);
@@ -3427,7 +3434,7 @@ export default function Home() {
       const selectedDirection = selectedStrategicDirection;
       const directionKey = getStrategicDirectionKey(selectedDirection);
       const directionValidation = validateStrategicDirectionForDisplay(selectedDirection);
-      const selectedDirectionForNaming = normalizeStrategicDirectionForNaming(selectedDirection);
+      const selectedDirectionForNaming = normalizeSelectedDirectionForNaming(selectedDirection);
       setFinalNamingDebug({ selectedDirectionKey: directionKey, missingFields: directionValidation.missingFields });
       if (!selectedDirectionForNaming || !directionValidation.canGenerateConceptNames) throw new Error(`missing_fields=${directionValidation.missingFields.join(',') || 'invalid_direction'}`);
       const currentDirectionOptions = state.conceptNameOptionsByDirection?.[directionKey] ?? [];
@@ -3998,8 +4005,8 @@ export default function Home() {
                     <h3 className="mt-2 text-2xl font-black leading-tight text-slate-950">{getStrategicDirectionLabel(concept)}</h3>
                     <div className="mt-4 grid gap-3 text-sm font-bold leading-6 text-slate-700">
                       <p><b className="text-slate-950">어떻게 설득하는가</b> {getStrategicBet(concept)}</p>
-                      <p><b className="text-indigo-700">선택 기준</b> {concept.whenToChooseThisDirection || '클라이언트가 이 방향의 증명 방식과 리스크를 가장 중요하게 볼 때 선택합니다.'}</p>
-                      <p><b className="text-blue-700">대표 설득 장면</b> {getSignatureProofSummary(concept)}</p>
+                      <p><b className="text-indigo-700">선택 기준</b> {userFacingDirectionCopy(concept.whenToChooseThisDirection || '', '이 전략 관점이 심사자의 선택 이유를 가장 선명하게 만들 때 선택합니다.')}</p>
+                      <p><b className="text-blue-700">대표 설득 장면</b> {userFacingDirectionCopy(getSignatureProofSummary(concept))}</p>
                       <p><b className="text-rose-700">주요 리스크</b> {shortText(concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution, 130) || '-'}</p>
                     </div>
                     <div className="mt-4 flex-1 space-y-2">
