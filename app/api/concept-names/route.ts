@@ -54,6 +54,13 @@ const BLOCKED_EXAMPLE_CONCEPT_NAMES = [
   'Pulse',
   'Vanguard',
   'Sphere',
+  '수소가 닿는 밤',
+  '기술을 만나는 길',
+  '수소의 순간',
+  'Moment Room',
+  'Visible Moment',
+  'Memory Moment',
+  'Moment to Memory',
 ];
 
 function normalizeName(value: string) {
@@ -188,65 +195,9 @@ function truthyValidation() {
   };
 }
 
-function fallbackOptions(direction: ConceptCandidate, diagnosis?: RfpDiagnosis, analysis?: AnalysisResult, vocabulary: string[] = []): ConceptNameOptionsResult {
-  const coreWinningCondition = diagnosis?.coreWinningCondition || direction.winningThesisUse?.winningClaim || direction.conceptLeap?.corePromise || analysis?.projectOverview || '현재 RFP의 핵심 제안 명제를 방문자가 자연스럽게 이해하는 제안';
-  const strategicTension = diagnosis?.strategicTension || direction.conceptLeap?.conceptLeap || direction.whatThisDirectionEmphasizes || coreWinningCondition;
-  const proofBurden = userFacingCopy(diagnosis?.proofBurden || direction.signatureProofIdea?.whyThisProvesTheConcept || coreWinningCondition);
-  const signatureProof = userFacingCopy(direction.signatureProofIdea?.signatureScene || direction.signatureProofIdea?.signatureContent || direction.signatureProofIdea?.whyThisProvesTheConcept || proofBurden);
-  const projectHint = [analysis?.projectOverview, direction.rfpConceptType].filter(Boolean).join(' / ');
-  const isGlobal = /global|exhibition|expo|pavilion|brand|tour|center|전시|브랜드|해외|글로벌|박람회/i.test(projectHint);
-  const contextNoun = vocabulary.find((word) => !GENERIC_MAIN_HOOKS.includes(word as (typeof GENERIC_MAIN_HOOKS)[number])) || (/hydrogen|수소/i.test(projectHint + coreWinningCondition + strategicTension) ? '수소' : /pocari|포카리|음료|drink|beverage/i.test(projectHint) ? '기억' : /brand|브랜드/i.test(projectHint) ? '브랜드' : /pavilion|expo|전시|박람회/i.test(projectHint) ? '공간' : '장면');
-  const secondaryNoun = vocabulary.find((word) => word !== contextNoun) || '기억';
-  const englishAnchor = contextNoun === '수소' ? 'H2' : contextNoun === '기억' ? 'Memory' : contextNoun === '브랜드' ? 'Brand' : 'Moment';
-  const rawNames = [
-    `${contextNoun}가 남는 방`,
-    `${secondaryNoun}을 만나는 길`,
-    `${contextNoun}의 감각`,
-    `${secondaryNoun}으로 기억되는 순간`,
-    isGlobal ? `${englishAnchor} Room` : `${contextNoun}의 리듬`,
-    isGlobal ? `Visible ${englishAnchor}` : `${secondaryNoun}의 장면`,
-    `${englishAnchor} Moment`,
-    `${contextNoun} to Memory`,
-  ].filter((name) => !resemblesBlockedExample(name)).slice(0, 3);
-  const styles = ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] as const;
-  return {
-    selectedDirectionId: direction.conceptId,
-    recommendedOptionIndex: 0,
-    generationNote: 'LLM naming call failed, so fallback options were generated from confirmedDiagnosis, selectedStrategicDirection, and current RFP analysis only. Weak generic fallback names are intentionally blocked.',
-    options: rawNames.map((conceptName, index) => ({
-      id: `${direction.conceptId || 'direction'}-fallback-${index + 1}`,
-      conceptName,
-      languageMode: /[A-Za-z]/.test(conceptName) && /[가-힣]/.test(conceptName) ? 'bilingual' : /[A-Za-z]/.test(conceptName) ? 'English' : 'Korean',
-      koreanSubtitle: /[A-Za-z]/.test(conceptName) ? compact(coreWinningCondition, 48) : '',
-      oneLineSlogan: compact(`이 제안은 ${coreWinningCondition}`, 100),
-      shortMeaning: compact(strategicTension, 90),
-      whyItFitsRfp: compact(`RFP가 요구한 핵심 조건을 ${signatureProof} 중심의 방문자 언어로 바꾼 이름입니다.`, 180),
-      strategicClaim: compact(coreWinningCondition, 120),
-      expandableTo: {
-        space: compact(`${proofBurden}을 관람 동선과 핵심 장면으로 체감시키는 공간 프레임`, 90),
-        content: compact(`${strategicTension}을 이해 가능한 이야기와 확인 요소로 전환`, 90),
-        media: compact(`${signatureProof}를 즉시 이해되는 인터랙션/영상 장면으로 구현`, 90),
-        operation: compact(`운영 단계에서 ${coreWinningCondition}의 신뢰를 반복 확인`, 90),
-      },
-      validation: truthyValidation(),
-      coverReadinessScore: Math.max(7, 9 - (index % 3)),
-      specificityScore: Math.max(7, 9 - (index % 3)),
-      coverTitleScore: Math.max(7, 9 - (index % 3)),
-      memorabilityScore: Math.max(7, 8 - (index % 2)),
-      rfpSpecificityScore: Math.max(7, 9 - (index % 3)),
-      expandabilityScore: Math.max(7, 8 - (index % 2)),
-      risk: 'Fallback 후보이므로 최종 선택 전 표현의 고유성과 어감을 확인해야 합니다.',
-      namingStyle: styles[index % styles.length],
-      mainRisk: '자동 fallback 이름이라 RFP 원문 고유어를 더 반영하면 강해질 수 있습니다.',
-    })),
-  };
-}
-
 export async function POST(request: Request) {
-  let parsedBody: { selectedDirection?: ConceptCandidate } | null = null;
   try {
     const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; analysisSummary?: string; selectedDirection: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; activeMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; primaryRfpConceptType?: string; languageMode?: string; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[] };
-    parsedBody = body;
     if (!body.input || !body.analysis || !body.selectedDirection) return json(errorResponse('프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.'), { status: 400 });
 
     const sanitizedContext = sanitizeConceptContextByRfpType({
@@ -326,15 +277,12 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
       return true;
     }).slice(0, 3).map((option) => ({ ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) })).filter((option) => passesNameFirewall(option, relevanceContext, currentRfpVocabularySet, repeatedHooks)).map((option, index) => ({ ...option, id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`, koreanSubtitle: option.koreanSubtitle ?? '', oneLineSlogan: option.oneLineSlogan || option.shortMeaning, whyItFitsRfp: option.whyItFitsRfp || option.whyItFits || option.shortMeaning, namingStyle: option.namingStyle ?? styles[index % styles.length], mainRisk: option.mainRisk || option.risk, strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning, expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: option.whyItFitsRfp || option.shortMeaning, media: option.oneLineSlogan || option.shortMeaning, operation: option.mainRisk || option.risk }, validation: option.validation ?? truthyValidation(), coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore, specificityScore: option.specificityScore ?? option.rfpSpecificityScore }));
     const normalized = { ...result, selectedDirectionId: body.selectedDirection.conceptId, options };
-    if (options.length < 3) return json({ ...successResponse(fallbackOptions(body.selectedDirection, body.rfpDiagnosis, body.analysis, currentRfpVocabularySet)), warning: 'LLM 후보가 검증 기준을 충분히 통과하지 못해 fallback 후보를 반환했습니다.' });
+    if (options.length < 3) {
+      return json(errorResponse('선택한 전략 방향과 충분히 구분되는 컨셉명이 생성되지 않았습니다. 다시 생성해 주세요.', `validated_options=${options.length}`), { status: 422 });
+    }
     return json(successResponse(normalized));
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
-    const fallbackDirection = { conceptId: 'fallback-direction', rfpConceptType: 'single_brand_experience', strategicDirectionLabel: '브랜드 경험 방향' } as ConceptCandidate;
-    try {
-      return json({ ...successResponse(fallbackOptions(parsedBody?.selectedDirection ?? fallbackDirection, undefined, undefined)), warning: message, fallbackError: errorResponse('LLM/API 호출 실패로 fallback 컨셉명을 반환했습니다.', message) });
-    } catch {
-      return json({ ...successResponse(fallbackOptions(fallbackDirection, undefined, undefined)), warning: message, fallbackError: errorResponse('LLM/API 호출 실패로 fallback 컨셉명을 반환했습니다.', message) });
-    }
+    return json(errorResponse('선택한 전략 방향에 맞는 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.', message), { status: 502 });
   }
 }
