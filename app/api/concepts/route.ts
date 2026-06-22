@@ -110,6 +110,20 @@ function isAxisTranslationLabel(label: string): boolean {
   return AXIS_TRANSLATION_LABELS.some((phrase) => value === phrase || value.includes(phrase));
 }
 
+// The generic "[subject] + 인식 전환 / 경험 이해 / 가치 체험 / 설득 / 이해 / 체감" template smell.
+// Matched ANYWHERE (not just end-of-string) so a trailing word can't smuggle it past, e.g. "견학룸 인식 전환 경험".
+const WEAK_DIRECTION_LABEL_PATTERN = /인식\s*전환|경험\s*이해|가치\s*체험|가치\s*체감|(?:^|\s)(?:이해|체감|설득)(?=\s|$)/;
+
+// A user-facing label is generic if it is an axis translation, follows the weak subject+axis template,
+// or uses a venue/content-format word as its subject (the first token).
+function isGenericDirectionLabel(label: string): boolean {
+  const value = (label || '').trim();
+  if (!value) return true;
+  if (isAxisTranslationLabel(value) || WEAK_DIRECTION_LABEL_PATTERN.test(value)) return true;
+  const firstToken = value.split(/[\s/·|]+/).filter(Boolean)[0] || '';
+  return CONTEXT_NOUN_BLOCKLIST.test(firstToken);
+}
+
 // Discovery axis keys and legacy axis terms must collapse to a single canonical key from ALLOWED_DIRECTION_AXES.
 const DIRECTION_AXIS_CANONICAL_MAP: Record<string, (typeof ALLOWED_DIRECTION_AXES)[number]> = {
   category_shift: 'category_shift',
@@ -142,20 +156,22 @@ function canonicalizeDirectionAxis(axis?: string, fallbackIndex = 0): (typeof AL
 
 // User-facing direction title = current-RFP context noun + axis intent, so the card shows a planner-readable
 // phrase (e.g. "브랜드 인식 전환", "수소 인식 전환") instead of the internal axis label ("카테고리 전환 설득").
+// Strong, structurally varied strategic nominalizations. NEVER the weak "[subject] + 인식 전환/경험 이해/가치 체험"
+// triad — those are blocked by isWeakDirectionLabel. The model's own label is always preferred over these fallbacks.
 const AXIS_LABEL_TEMPLATES: Record<string, (ctx: string) => string> = {
-  category_shift: (c) => `${c} 인식 전환`,
-  audience_understanding: (c) => `${c} 경험 이해`,
+  category_shift: (c) => `${c} 실체화`,
+  audience_understanding: (c) => `한눈에 보는 ${c}`,
   representative_position: (c) => `${c} 대표성 각인`,
-  product_value_proof: (c) => `${c} 가치 체험`,
-  process_trust: (c) => `${c} 신뢰 체험`,
+  product_value_proof: (c) => `${c} 가치 증명`,
+  process_trust: (c) => `${c} 신뢰 체험화`,
   signature_scene: (c) => `${c} 대표 장면`,
-  'system/ecosystem_proof': (c) => `${c} 생태계 증명`,
-  spatial_journey: (c) => `${c} 공간 여정`,
+  'system/ecosystem_proof': (c) => `통합 ${c} 생태계`,
+  spatial_journey: (c) => `${c}의 여정`,
   brand_memory: (c) => `${c} 기억화`,
   operational_confidence: (c) => `${c} 운영 신뢰`,
-  evaluator_clarity: (c) => `${c} 설득 명확화`,
+  evaluator_clarity: (c) => `${c} 핵심 압축`,
   emotional_affinity: (c) => `${c} 정서 공감`,
-  technology_reality_proof: (c) => `${c} 기술 현재화`,
+  technology_reality_proof: (c) => `${c} 현재화`,
 };
 
 function contextualDirectionLabel(canonicalAxis: string, contextNoun: string): string {
@@ -166,7 +182,7 @@ function contextualDirectionLabel(canonicalAxis: string, contextNoun: string): s
 
 // Content-format / deliverable / process words must never become the subject of a strategy label.
 // "Hero" is a content format (a hero zone/scene), not a strategic direction.
-const CONTEXT_NOUN_BLOCKLIST = /^(hero|히어로|콘텐츠|콘텐트|content|영상|video|디자인|design|그래픽|graphic|미디어|media|패널|panel|사이니지|signage|키오스크|kiosk|부스|booth|배너|banner|리플렛|책자|카탈로그|catalog|모형|목업|mockup|기획|운영|operation|제작|구축|설치|시공)$/i;
+const CONTEXT_NOUN_BLOCKLIST = /^(hero|히어로|콘텐츠|콘텐트|content|영상|video|디자인|design|그래픽|graphic|미디어|media|패널|panel|사이니지|signage|키오스크|kiosk|부스|booth|배너|banner|리플렛|책자|카탈로그|catalog|모형|목업|mockup|기획|운영|operation|제작|구축|설치|시공|견학룸|견학|홍보관|체험관|전시관|쇼룸|showroom|파빌리온|pavilion|전시|exhibition|공간|space|룸|room|존|zone|관|hall)$/i;
 
 // A short, clean subject noun from the current RFP to seed user-facing labels (no facts/figures/content-formats).
 function directionContextNoun(analysis: AnalysisResult): string {
@@ -190,20 +206,20 @@ const AXIS_BET_INTENT: Record<string, string> = {
   emotional_affinity: '관람객의 정서적 공감을 끌어내는',
   technology_reality_proof: '기술이 지금 현실에서 작동함을 증명하는',
 };
-const AXIS_CRITERION_INTENT: Record<string, string> = {
-  category_shift: '대상에 대한 인식을 근본적으로 바꾸는 것',
-  representative_position: '클라이언트의 대표성과 리더십을 가장 강하게 보여주는 것',
-  audience_understanding: '다양한 관람객이 복잡한 내용을 쉽게 이해하도록 만드는 것',
-  product_value_proof: '핵심 가치를 관람객이 직접 체감하게 하는 것',
-  process_trust: '과정과 근거로 신뢰를 얻는 것',
-  signature_scene: '전시장을 나간 뒤에도 하나의 대표 장면이 기억되게 만드는 것',
-  'system/ecosystem_proof': '전체 시스템이 작동함을 한눈에 보여주는 것',
-  spatial_journey: '공간 경험과 동선으로 설득하는 것',
-  brand_memory: '방문 후 브랜드 인상이 오래 남게 만드는 것',
-  operational_confidence: '현장 운영의 안정성과 실행 가능성을 입증하는 것',
-  evaluator_clarity: '심사자가 핵심을 빠르게 이해하게 만드는 것',
-  emotional_affinity: '관람객의 정서적 공감을 끌어내는 것',
-  technology_reality_proof: '기술의 현실성과 적용 가능성을 증명하는 것',
+const AXIS_CRITERION_INTENT: Record<string, (c: string) => string> = {
+  category_shift: (c) => `${c}에 대한 인식을 근본적으로 바꾸는 것`,
+  representative_position: (c) => `${c}의 대표성과 리더십을 가장 강하게 보여주는 것`,
+  audience_understanding: (c) => `다양한 관람객이 ${c}를 한 번에 이해하도록 만드는 것`,
+  product_value_proof: (c) => `${c}의 가치를 관람객이 직접 체감하게 하는 것`,
+  process_trust: (c) => `${c}의 과정과 근거로 신뢰를 얻는 것`,
+  signature_scene: (c) => `${c}이 하나의 대표 장면으로 기억되게 만드는 것`,
+  'system/ecosystem_proof': (c) => `${c} 전체가 하나의 시스템으로 작동함을 보여주는 것`,
+  spatial_journey: (c) => `${c} 공간 경험과 동선으로 설득하는 것`,
+  brand_memory: (c) => `방문 후 ${c} 인상이 오래 남게 만드는 것`,
+  operational_confidence: (c) => `${c} 현장 운영의 안정성과 실행 가능성을 입증하는 것`,
+  evaluator_clarity: (c) => `심사자가 ${c}의 핵심을 빠르게 파악하게 만드는 것`,
+  emotional_affinity: (c) => `${c}에 대한 관람객의 정서적 공감을 끌어내는 것`,
+  technology_reality_proof: (c) => `${c} 기술의 현실성과 적용 가능성을 증명하는 것`,
 };
 const AXIS_SCENE_INTENT: Record<string, (c: string) => string> = {
   category_shift: (c) => `${c}을(를) 미래가 아닌 현재로 전환해 보여주는 대형 전환 연출`,
@@ -213,7 +229,7 @@ const AXIS_SCENE_INTENT: Record<string, (c: string) => string> = {
   process_trust: (c) => `${c}의 과정을 생산-저장-운송-활용처럼 단계별로 확인하는 프로세스 라인`,
   signature_scene: (c) => `전시 전체를 압축하는 단 하나의 ${c} 시그니처 장면`,
   'system/ecosystem_proof': (c) => `${c}이(가) 하나의 도시 시스템처럼 연결되는 대형 미디어 월`,
-  spatial_journey: (c) => `도입-핵심-마무리로 이어지는 ${c} 공간 여정`,
+  spatial_journey: (c) => `도입-핵심-마무리 동선으로 이어지는 ${c} 공간 여정 연출`,
   brand_memory: (c) => `방문 후 한 문장으로 남는 ${c} 대표 이미지 월`,
   operational_confidence: (c) => `운영 동선과 안전을 한눈에 보여주는 ${c} 통합 운영 맵`,
   evaluator_clarity: (c) => `${c} 핵심 메시지를 한 화면에 정리한 요약 장면`,
@@ -237,7 +253,8 @@ function directionStrategicBet(canonicalAxis: string, contextNoun: string, rfpEv
 // "선택 기준": an actionable planner decision criterion.
 function directionSelectionCriterion(canonicalAxis: string, contextNoun: string): string {
   const ctx = (contextNoun || '브랜드').trim() || '브랜드';
-  const intent = AXIS_CRITERION_INTENT[canonicalAxis] || `${ctx}의 핵심 가치를 분명히 보여주는 것`;
+  const builder = AXIS_CRITERION_INTENT[canonicalAxis];
+  const intent = builder ? builder(ctx) : `${ctx}의 핵심 가치를 분명히 보여주는 것`;
   return compactText(`${intent}이 가장 중요할 때 선택합니다.`, 170);
 }
 
@@ -263,7 +280,7 @@ function isValidDirectionLabel(label: string, conceptType: RfpConceptType): bool
   INTERNAL_AXIS_PATTERN.lastIndex = 0;
   if (INTERNAL_AXIS_PATTERN.test(value)) return false;
   if (conceptType !== 'multi_entity_pavilion' && MULTI_ENTITY_LEAKAGE_PATTERN.test(value)) return false;
-  if (isAxisTranslationLabel(value)) return false;
+  if (isGenericDirectionLabel(value)) return false;
   const words = value.split(/[\s/·|]+/).filter(Boolean);
   return words.length >= 1 && words.length <= 8;
 }
@@ -957,17 +974,19 @@ function dedupeDirectionLabels(concepts: ConceptCandidate[]): ConceptCandidate[]
 }
 
 const TEMPLATE_BET_PATTERN = /관점으로 심사자와 관람객이 핵심 가치를 한 번에|관점으로 심사자와 관람객이/;
-const TEMPLATE_CRITERION_PATTERN = /가장 중요한 설득 관점이라고 판단될 때/;
+const TEMPLATE_CRITERION_PATTERN = /가장 중요한 설득 관점이라고 판단될 때|^(?:인식\s*전환|경험\s*이해|가치\s*체험|관점)\S*\s*(?:이|가)?\s*(?:가장\s*)?중요할 때/;
 const GENERIC_SCENE_PATTERN = /한눈에 판단되는 대표 증명 장면|한눈에 판단되는 장면/;
-const CONCRETE_SCENE_HINT = /(미디어\s*월|미디어월|존|맵|장면|동선|데모|시뮬레이션|라인|연출|타임라인|인터랙티브|히어로|월)/;
+const CONCRETE_SCENE_HINT = /(미디어\s*월|미디어월|존|맵|장면|동선|데모|시뮬레이션|라인|연출|타임라인|인터랙티브|히어로|월|여정)/;
 const HERO_GENERIC_LABEL = /\bhero\b|히어로/i;
 
 // Card-copy validator (planner-facing): repair ONLY the weak field, never fall back to a generic template.
 function validateAndRepairDirectionCards(concepts: ConceptCandidate[], plan: StrategicDirectionPlanItem[]): ConceptCandidate[] {
   const seenLabel = new Set<string>();
+  const seenLabelTail = new Set<string>();
   const seenBet = new Set<string>();
   const seenCriterion = new Set<string>();
   const seenScene = new Set<string>();
+  const labelTailOf = (value: string) => (value.split(/[\s/·|]+/).filter(Boolean).pop() || '').toLowerCase();
   return concepts.map((concept, index) => {
     const planItem = plan[index] ?? plan[0] ?? ({} as StrategicDirectionPlanItem);
     const axis = concept.directionAxis || planItem.directionAxis || planItem.type || 'category_shift';
@@ -979,14 +998,17 @@ function validateAndRepairDirectionCards(concepts: ConceptCandidate[], plan: Str
     const labelIsShort = Boolean(label) && labelWords <= 6;
     const labelIsNotHeroGeneric = !HERO_GENERIC_LABEL.test(label);
     INTERNAL_AXIS_PATTERN.lastIndex = 0;
-    const labelIsContextual = !isAxisTranslationLabel(label) && !INTERNAL_AXIS_PATTERN.test(label);
-    if (!label || !labelIsShort || !labelIsNotHeroGeneric || !labelIsContextual || seenLabel.has(label.toLowerCase())) {
+    const labelIsContextual = !isGenericDirectionLabel(label) && !INTERNAL_AXIS_PATTERN.test(label);
+    // Reject when blank/long/hero/generic, an exact duplicate, OR shares the same trailing token as another card
+    // (so the 3 labels never read as one mechanical pattern).
+    if (!label || !labelIsShort || !labelIsNotHeroGeneric || !labelIsContextual || seenLabel.has(label.toLowerCase()) || seenLabelTail.has(labelTailOf(label))) {
       let next = contextualDirectionLabel(axis, ctx);
       let n = 2;
       while (seenLabel.has(next.toLowerCase())) { next = `${contextualDirectionLabel(axis, ctx)} ${n}`; n += 1; }
       label = next;
     }
     seenLabel.add(label.toLowerCase());
+    seenLabelTail.add(labelTailOf(label));
 
     let bet = (concept.oneLineStrategicBet || concept.whatThisDirectionEmphasizes || '').trim();
     const howToPersuadeIsSpecific = Boolean(bet) && bet.length >= 12 && !TEMPLATE_BET_PATTERN.test(bet);
@@ -1466,6 +1488,8 @@ export async function POST(request: Request) {
       'oneLineStrategicBet은 사용자에게 보이는 문장이므로 proof/evidence/proof burden 같은 내부 영어를 쓰지 말고 “이 방향은 ___을 통해 ___을 설득하는 전략입니다.” 형식의 자연스러운 한국어 1문장으로 쓴다. whenToChooseThisDirection은 “클라이언트가 ___을 가장 중요하게 볼 때 선택합니다.”에 가까운 실무 선택 기준으로 쓴다. signatureProofIdea의 대표 장면/콘텐츠는 카드에서 대표 체험 장면으로 읽히도록 구체 구 하나로 요약 가능해야 한다.',
       'strategicDirectionLabel은 카드에 보이는 짧은 한국어 방향명이다. 현장의 감각/현장의 신뢰/경험의 증명/가치의 흐름/브랜드 경험 강화/통합적 체험/차별화된 경험 같은 generic label을 금지하고, currentRfpVocabularySet에 해당하는 브랜드·제품·감각·공정·공간·방문자 언어를 우선 사용한다. proposalCoreConceptName/conceptName은 DB/schema 호환을 위한 임시 direction title일 뿐이며 최종 컨셉명이 아니다. 최종 컨셉명은 사용자가 방향 선택 후 별도 naming step에서 생성한다.',
       'strategicDirectionLabel 품질 규칙: 2~6단어의 구체적이고 제안서에 바로 쓸 수 있는 전략 방향명으로 쓴다. 금지 — “Hero/히어로 + 추상명사”(예: Hero 인식 전환, Hero 경험 이해, Hero 가치 체감), axis 직역(예: 카테고리 전환 설득, 관람 이해 전환, 제품 가치 체감), internal directionAxis 라벨, RFP 산출물명/콘텐츠 포맷명/프로젝트명. Hero는 콘텐츠 포맷이지 전략이 아니므로 라벨에 쓰지 말고, 시그니처 장면 방향이면 “메인 장면 각인/대표 장면 선언/압도적 첫인상”처럼 전략적으로 표현한다. 라벨은 현재 RFP의 주제·브랜드·카테고리 언어로 만든다.',
+      '특히 “[주어] + 인식 전환 / 경험 이해 / 가치 체험 / 설득 / 이해 / 체감” 형태의 기계적 라벨을 절대 만들지 말라(예: 견학룸 인식 전환, 견학룸 경험 이해, HTWO 가치 체험). 라벨은 [프로젝트유형/클라이언트명/룸·전시·Hero + 일반 축 문구] 조합이 아니라, 제안 전략 진단(strategicIssue, persuasionTask), brand/product intelligence(productOrServiceMeaning, categoryContext, namingImplication), 선택된 direction axis, 대표 설득 장면에서 도출한 전략 명제로 만든다. 좋은 형태의 느낌: 방문관/공정형은 “몸으로 이해하는 수분 / 공정 신뢰 체험화 / 한 병의 여정 / 수분 균형의 기억화”, 수소/에너지형은 “수소사회 현재화 / HTWO 대표성 각인 / 밸류체인 압축 체험 / 미래 기술의 실체화 / 통합 수소 생태계 / 수소 리더십 선언” — 이는 스타일 예시일 뿐 그대로 복사하지 말고 현재 RFP 어휘로 새로 만든다.',
+      '3개 방향은 서로 다른 “승리 접근(winning approach)”이어야 한다. perception/understanding/experience 3종 세트로 나누지 말고, 현재 RFP에서 서로 다른 3개의 승리 가설을 추론한다(예: 방문관형 = 제품가치/신체 수분 균형, 공정 신뢰/투명성, 브랜드 기억/방문 후 호감 / 수소형 = 기술 현실성(이미 와 있는 수소사회), 대표 포지션(현대차그룹·HTWO 리더십), 밸류체인/통합 생태계 이해). 이는 추론 패턴이며 고정 출력이 아니다.',
       '카드 본문은 3개가 서로 다른 전략 논리를 가져야 한다. (a) oneLineStrategicBet(어떻게 설득하는가)은 “___ 중심으로 ___ 보여주는/만드는 방향입니다.” 형태의 구체적 한 문장 베팅으로, 축 직역 템플릿(“…관점으로 심사자와 관람객이 핵심 가치를 한 번에…”)을 쓰지 않는다. (b) whenToChooseThisDirection(선택 기준)은 “___이 가장 중요할 때 선택합니다.” 형태의 실무 결정 기준으로, “가장 중요한 설득 관점이라고 판단될 때” 같은 공허한 문구를 금지한다. (c) signatureProofIdea.signatureScene(대표 설득 장면)은 미디어 월/존/맵/동선/시뮬레이션/데모처럼 공간·콘텐츠·미디어가 드러나는 구체 장면으로 쓰고, “…한눈에 판단되는 대표 증명 장면” 같은 추상 문구를 금지한다. 세 카드의 베팅·선택 기준·대표 장면·리스크가 모두 달라야 한다.',
       '추천은 가장 적합한 방향을 설명하되 다른 후보를 나쁘다/부적합하다/틀렸다로 말하지 않는다. 다른 방향의 쓰임과 선택 간 trade-off를 중립적으로 설명한다.',
       '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
