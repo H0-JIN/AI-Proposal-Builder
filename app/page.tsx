@@ -3250,6 +3250,24 @@ export default function Home() {
     }
   };
 
+  // Deferred initial-analysis steps. Run AFTER /api/analyze succeeds and the analysis is already in state, so a
+  // timeout here never discards the completed RFP analysis — the user can regenerate just these from the analysis view.
+  const runInitialDiagnosisAndBrand = async (input: ProjectInput, analysis: AnalysisResult) => {
+    try {
+      setLoading('제안 전략 진단 생성 중...');
+      const diagnosis = (await postJson<{ result: RfpDiagnosis }>('/api/diagnosis', { input, analysis })).result;
+      setState((current) => ({ ...current, rfpDiagnosis: diagnosis }));
+      setLoading('브랜드/제품 이해 생성 중...');
+      const brandProductIntelligence = (await postJson<{ result: BrandProductIntelligence }>('/api/brand-product-intelligence', { input, analysis, rfpDiagnosis: diagnosis, uploadedDocuments: state.uploadedDocuments, additionalInfo: supplementalInfo })).result;
+      setState((current) => ({ ...current, brandProductIntelligence }));
+    } catch (err) {
+      const rawMessage = err instanceof Error ? err.message : '제안 전략 진단/브랜드 이해 생성 중 오류가 발생했습니다.';
+      setError(isTimeoutMessage(rawMessage)
+        ? 'RFP 분석은 완료되었습니다. 제안 전략 진단·브랜드 이해 생성 시간이 초과되어, 아래에서 해당 단계만 다시 생성할 수 있습니다.'
+        : `RFP 분석은 완료되었습니다. 다음 단계 생성 중 오류가 발생했습니다: ${rawMessage}`);
+    }
+  };
+
   const runAnalyze = async () => {
     setError('');
     if (hasPartialVisionAnalysisInput) {
@@ -3262,13 +3280,14 @@ export default function Home() {
     try {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: analysisInput, documentChunks });
-      const { result: analysis, evidence, diagnosis, brandProductIntelligence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, brandProductIntelligence, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: undefined, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(analysisInput, analysis);
+      await runInitialDiagnosisAndBrand(analysisInput, analysis);
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.';
-      setError(isTimeoutMessage(rawMessage) ? 'RFP 분석 시간이 초과되었습니다. 파일을 유지한 상태에서 다시 분석을 시도해 주세요.' : rawMessage);
+      setError(isTimeoutMessage(rawMessage) ? 'RFP 분석 시간이 초과되었습니다. 분석 단계를 줄여 다시 시도합니다.' : rawMessage);
     } finally {
       setLoading('');
     }
@@ -3282,13 +3301,14 @@ export default function Home() {
     try {
       const analysisBasis = getCurrentAnalysisBasis();
       const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
-      const { result: analysis, evidence, diagnosis, brandProductIntelligence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: diagnosis, brandProductIntelligence, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
+      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: undefined, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
       setStep('analysis');
       void persistAnalysisSafely(mergedInput, analysis);
+      await runInitialDiagnosisAndBrand(mergedInput, analysis);
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.';
-      setError(isTimeoutMessage(rawMessage) ? 'RFP 분석 시간이 초과되었습니다. 파일을 유지한 상태에서 다시 분석을 시도해 주세요.' : rawMessage);
+      setError(isTimeoutMessage(rawMessage) ? 'RFP 분석 시간이 초과되었습니다. 분석 단계를 줄여 다시 시도합니다.' : rawMessage);
     } finally {
       setLoading('');
     }
@@ -3404,8 +3424,8 @@ export default function Home() {
       setConceptRetryVisible(true);
       setStep('analysis');
       const rawMessage = err instanceof Error ? err.message : '콘셉트 후보 생성 중 오류가 발생했습니다.';
-      const friendlyMessage = /FUNCTION_INVOCATION_TIMEOUT|timeout|timed out|non-JSON response/i.test(rawMessage)
-        ? '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.'
+      const friendlyMessage = isTimeoutMessage(rawMessage)
+        ? '전략 방향 생성 시간이 초과되었습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.'
         : rawMessage;
       setError(friendlyMessage);
     } finally {
