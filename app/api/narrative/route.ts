@@ -8,6 +8,9 @@ import { buildFallbackProposalNarrative, ensureProposalNarrative } from '@/lib/p
 import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
 import { proposalTypeLabels } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   let body: {
       input: ProjectInput;
@@ -76,6 +79,8 @@ ${summarizeDifferentiationStrategy(differentiationStrategy)}
 
 사용자 추가 메모:
 ${body.input.briefText || '없음'}`,
+      timeoutMs: 18_000,
+      maxRetries: 1,
     });
 
     return NextResponse.json(ensureProposalNarrative(generated, { input: body.input, analysis: body.analysis, uploadedDocuments: body.uploadedDocuments }));

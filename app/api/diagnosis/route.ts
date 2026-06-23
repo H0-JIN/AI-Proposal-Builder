@@ -4,6 +4,7 @@ import type { AnalysisResult, ProjectInput, RfpDiagnosis } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 function compact(value: unknown, max = 9000) {
   const text = JSON.stringify(value, null, 2);
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
       ].join('\n'),
       user: `diagnosisContext = current RFP only\n${compact(diagnosisContext)}`,
       timeoutMs: 12_000,
+      maxRetries: 1,
     });
 
     return NextResponse.json({ result });

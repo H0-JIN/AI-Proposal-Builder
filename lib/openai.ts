@@ -14,15 +14,23 @@ export async function createStructuredJson<T>({
   system,
   user,
   timeoutMs,
+  maxRetries,
 }: {
   schemaName: string;
   schema: Record<string, unknown>;
   system: string;
   user: string;
   timeoutMs?: number;
+  // Per-request retry cap. Omit to keep the SDK default; pass 0 to disable, 1 for a single safe retry on
+  // transient/timeout errors. Kept explicit (and small) so timeouts never balloon past the route's maxDuration.
+  maxRetries?: number;
 }): Promise<T> {
   const client = getOpenAIClient();
   const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+
+  const requestOptions: { timeout?: number; maxRetries?: number } = {};
+  if (timeoutMs) requestOptions.timeout = timeoutMs;
+  if (maxRetries !== undefined) requestOptions.maxRetries = maxRetries;
 
   const completion = await client.chat.completions.create({
     model,
@@ -39,7 +47,7 @@ export async function createStructuredJson<T>({
       },
     },
     temperature: 0.4,
-  }, timeoutMs ? { timeout: timeoutMs } : undefined);
+  }, Object.keys(requestOptions).length ? requestOptions : undefined);
 
   const content = completion.choices[0]?.message?.content;
   if (!content) {

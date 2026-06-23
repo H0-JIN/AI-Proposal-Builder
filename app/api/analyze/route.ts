@@ -8,7 +8,10 @@ import { buildEvidenceItems, flattenCategoryEvidenceGroups, formatCategoryEviden
 import { refineAnalysisConfirmationNeeds } from '@/lib/confirmationNeeds';
 import { buildProposalStructureGuard } from '@/lib/proposalStructureGuard';
 
-
+export const dynamic = 'force-dynamic';
+// This route runs 3 sequential model calls (analysis → RFP diagnosis → brand/product intelligence); give the
+// function enough room so the platform does not kill it before they finish. Each call is individually bounded below.
+export const maxDuration = 60;
 
 function compact(value: unknown, max = 9000) {
   const text = JSON.stringify(value, null, 2);
@@ -39,6 +42,7 @@ async function generateRfpOnlyDiagnosis(input: ProjectInput, analysis: AnalysisR
     ].join('\n'),
     user: `diagnosisContext = current RFP only\n${compact(diagnosisContext)}`,
     timeoutMs: 12_000,
+    maxRetries: 0,
   });
 }
 
@@ -58,6 +62,7 @@ async function generateBrandProductIntelligence(input: ProjectInput, analysis: A
     ].join('\n'),
     user: `Current RFP text:\n${input.briefText}\n\nCurrent RFP analysis:\n${compact(analysis, 6500)}\n\nConfirmed RFP-only diagnosis:\n${compact(diagnosis, 2200)}\n\nCurrent uploaded/RFP evidence:\n${compact(evidence, 4000)}\n\n외부 웹 조사는 연결되어 있지 않다. RFP와 업로드 자료 기준으로만 작성하고 부족한 추론은 “AI 보완”으로 표시하라.`,
     timeoutMs: 12_000,
+    maxRetries: 0,
   });
 }
 
@@ -151,6 +156,8 @@ ${retrievalContext || '검색된 chunk 없음 - 사용자 추가 메모만 사�
 
 사용자 추가 메모:
 ${input.briefText}`,
+      timeoutMs: 28_000,
+      maxRetries: 0,
     });
 
     const refinedResult = refineAnalysisConfirmationNeeds(result, documentChunks);
@@ -182,6 +189,7 @@ ${input.briefText}`,
     return NextResponse.json({ result: guardedResult, evidence, diagnosis, brandProductIntelligence });
   } catch (error) {
     const message = error instanceof Error ? error.message : '분석 중 오류가 발생했습니다.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    const isTimeout = /timeout|timed out|aborted|ETIMEDOUT|ECONNRESET|FUNCTION_INVOCATION_TIMEOUT|시간 초과/i.test(message);
+    return NextResponse.json({ error: message, reason: isTimeout ? 'analysis_timeout' : 'analysis_error' }, { status: isTimeout ? 504 : 500 });
   }
 }

@@ -17,6 +17,7 @@ const ALLOWED_DIRECTION_AXES = ['representative_position', 'audience_understandi
 const CONCEPT_GENERATION_TIMEOUT_MS = Number(process.env.CONCEPT_GENERATION_TIMEOUT_MS ?? 18_000);
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const NO_STORE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -1800,6 +1801,7 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
         system: systemPrompt,
         user: userPrompt,
         timeoutMs: CONCEPT_GENERATION_TIMEOUT_MS,
+        maxRetries: 1,
       });
 
       let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({

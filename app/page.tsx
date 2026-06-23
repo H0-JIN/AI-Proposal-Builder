@@ -375,6 +375,13 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return data as T;
 }
 
+// Detect a timeout-class failure (route timeout reason code, platform 504/FUNCTION_INVOCATION_TIMEOUT, or a
+// non-JSON gateway body) so the UI can show a clear "keep your work and retry" message instead of a generic error.
+const TIMEOUT_MESSAGE_PATTERN = /analysis_timeout|model_timeout|empty_response|FUNCTION_INVOCATION_TIMEOUT|timeout|timed out|aborted|non-JSON response|\b504\b|시간 초과/i;
+function isTimeoutMessage(message?: string) {
+  return TIMEOUT_MESSAGE_PATTERN.test(message || '');
+}
+
 function buildVisionErrorMessage(data: VisionPdfResponse, fallback: string) {
   return [data.message || fallback, data.error, data.details]
     .filter(Boolean)
@@ -3260,7 +3267,8 @@ export default function Home() {
       setStep('analysis');
       void persistAnalysisSafely(analysisInput, analysis);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
+      const rawMessage = err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.';
+      setError(isTimeoutMessage(rawMessage) ? 'RFP 분석 시간이 초과되었습니다. 파일을 유지한 상태에서 다시 분석을 시도해 주세요.' : rawMessage);
     } finally {
       setLoading('');
     }
@@ -3279,7 +3287,8 @@ export default function Home() {
       setStep('analysis');
       void persistAnalysisSafely(mergedInput, analysis);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.');
+      const rawMessage = err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.';
+      setError(isTimeoutMessage(rawMessage) ? 'RFP 분석 시간이 초과되었습니다. 파일을 유지한 상태에서 다시 분석을 시도해 주세요.' : rawMessage);
     } finally {
       setLoading('');
     }
@@ -3465,9 +3474,11 @@ export default function Home() {
       });
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.';
-      const message = /구분되는 컨셉명이 생성되지 않았습니다/.test(rawMessage)
-        ? '선택한 전략 방향과 충분히 구분되는 컨셉명이 생성되지 않았습니다. 다시 생성해 주세요.'
-        : '선택한 전략 방향에 맞는 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.';
+      const message = isTimeoutMessage(rawMessage)
+        ? '컨셉명 생성 시간이 초과되었습니다. 선택한 전략 방향은 유지되며, 컨셉명만 다시 생성할 수 있습니다.'
+        : /구분되는 컨셉명이 생성되지 않았습니다/.test(rawMessage)
+          ? '선택한 전략 방향과 충분히 구분되는 컨셉명이 생성되지 않았습니다. 다시 생성해 주세요.'
+          : '선택한 전략 방향에 맞는 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.';
       setFinalNamingError(message);
       setFinalNamingDebug((current) => ({ ...current, responseErrorMessage: rawMessage }));
       setError(message);
