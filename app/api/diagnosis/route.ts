@@ -34,8 +34,10 @@ export async function POST(request: Request) {
         'requiredProofElements는 3~7개, rfpEvidenceAnchors는 현재 RFP 분석에서 나온 짧은 근거만 작성한다.',
       ].join('\n'),
       user: `diagnosisContext = current RFP only\n${compact(diagnosisContext)}`,
-      timeoutMs: 12_000,
-      maxRetries: 1,
+      // Single solid attempt (a large RFP diagnosis routinely needs >12s); fits comfortably under maxDuration 60.
+      // This is what makes the partial-analysis "전략 진단 계속 생성" continuation reliably succeed.
+      timeoutMs: 35_000,
+      maxRetries: 0,
     });
 
     return NextResponse.json({ result });
