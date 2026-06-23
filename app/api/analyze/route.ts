@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { analysisJsonSchema, brandProductIntelligenceJsonSchema, rfpDiagnosisJsonSchema } from '@/lib/schemas';
+import { analysisJsonSchema, analysisLiteJsonSchema, brandProductIntelligenceJsonSchema, rfpDiagnosisJsonSchema } from '@/lib/schemas';
 import type { AnalysisResult, BrandProductIntelligence, MatrixType, ProjectInput, RetrievalEvidenceItem, RfpConceptType, RfpDiagnosis } from '@/lib/types';
 import type { DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
@@ -87,11 +87,64 @@ function inferAnalysisRfpGate(analysis: AnalysisResult): { primaryRfpConceptType
   return { primaryRfpConceptType: 'unknown', matrixType: 'none', selectedDirectionLensSet: [], classificationConfidence: 'low', classificationReason: 'no strong RFP concept type signals detected', multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount };
 }
 
+// ---- Lite analysis (fast fallback) ----------------------------------------------------------------------------
+type AnalysisLiteResult = Pick<AnalysisResult,
+  'projectOverview' | 'clientChallenge' | 'inferredProposalType' | 'proposalTypeReasoning' | 'requiredDeliverables' |
+  'requiredItems' | 'requiredScope' | 'scopeOfWork' | 'evaluationCriteria' | 'constraints' | 'schedule' | 'targetInfo' |
+  'spatialCondition' | 'contentCondition' | 'operationCondition' | 'productInfo' | 'kpiObjectives' | 'confirmNeeded' | 'missingInfo'>;
+
+const emptyAnalysisSection = () => ({ rfpFact: [], aiProposal: [], confirmNeeded: [] });
+
+// Map the lite result onto a full AnalysisResult, filling the skipped heavy sections with empty defaults so all
+// downstream consumers (gating, /api/concepts, etc.) keep working on a degraded-but-valid analysis.
+function liteToFullAnalysis(lite: AnalysisLiteResult): AnalysisResult {
+  return {
+    ...lite,
+    taskSections: [],
+    proposalScopeTypes: [],
+    proposalStructureGuard: '',
+    referenceOnly: [],
+    existingAssets: [],
+    productFeatures: [],
+    numericInfo: { pastPerformance: [], lessonLearned: [], currentIssue: [], targetKPI: [], referenceMetric: [], proposedMeasurement: [] },
+    doNotTreatAsScope: [],
+    kpiScheduleConstraints: [],
+    rfpRequirements: emptyAnalysisSection(),
+    clientTask: emptyAnalysisSection(),
+    targetSpaceContentOperation: emptyAnalysisSection(),
+    kpiTimelineConstraints: emptyAnalysisSection(),
+  };
+}
+
+const ANALYSIS_LITE_SYSTEM = [
+  '너는 한국어 제안 전략 플래너다. 이 단계는 시간 제약이 있는 "핵심 RFP 분석(lite)"이며 콘셉트/장표 문안을 만들지 않는다.',
+  'RFP/브리프에서 핵심만 빠르게 추출한다: projectOverview, clientChallenge, requiredDeliverables, requiredItems, requiredScope, scopeOfWork, evaluationCriteria, constraints, schedule, targetInfo, spatialCondition, contentCondition, operationCondition, productInfo, kpiObjectives, confirmNeeded, missingInfo.',
+  'inferredProposalType은 requiredDeliverables/scopeOfWork/project category 기준으로 분류한다(basic_proposal, brand_experience, experience_marketing, corporate_technology_showcase, exhibition_booth_content, multi_entity_pavilion, visitor_center_tour, popup_retail_experience, mice_event_operation, conference_forum 중).',
+  '참고/기존/예시 맥락 항목은 requiredDeliverables/requiredScope에 넣지 말고 생략하거나 confirmNeeded로만 보조 정리한다. 명시되지 않은 수치/KPI를 만들지 않는다.',
+  '각 배열은 핵심 5~10개로 간결하게. 명시 정보가 없으면 빈 배열/빈 문자열을 사용한다. 모든 문장은 짧고 구체적인 한국어로 작성한다.',
+].join('\n');
+
+function buildAnalysisLiteUser(input: ProjectInput, retrievalContext: string): string {
+  return `제안서 유형: ${proposalTypeLabels[input.proposalType]}\n프로젝트명: ${input.projectName}\n클라이언트명: ${input.clientName}\n\n검색된 근거(요약):\n${(retrievalContext || '검색된 chunk 없음 - 사용자 추가 메모만 사용').slice(0, 3500)}\n\n사용자 추가 메모:\n${(input.briefText || '').slice(0, 4000)}`;
+}
+
+function generateLiteAnalysis(input: ProjectInput, retrievalContext: string) {
+  return createStructuredJson<AnalysisLiteResult>({
+    schemaName: 'proposal_analysis_lite',
+    schema: analysisLiteJsonSchema,
+    system: ANALYSIS_LITE_SYSTEM,
+    user: buildAnalysisLiteUser(input, retrievalContext),
+    timeoutMs: 40_000,
+    maxRetries: 0,
+  });
+}
+
 export async function POST(request: Request) {
   try {
-    const payload = (await request.json()) as ProjectInput | { input: ProjectInput; documentChunks?: DocumentChunk[] };
+    const payload = (await request.json()) as ProjectInput | { input: ProjectInput; documentChunks?: DocumentChunk[]; analysisMode?: 'full' | 'lite' };
     const input = 'input' in payload ? payload.input : payload;
     const documentChunks = 'input' in payload ? payload.documentChunks ?? [] : [];
+    const analysisMode: 'full' | 'lite' = 'input' in payload && payload.analysisMode === 'lite' ? 'lite' : 'full';
     const categoryEvidenceGroups = retrieveCategoryEvidenceGroups({
       projectId: input.projectName,
       stage: 'analysis',
@@ -118,7 +171,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '프로젝트명, 클라이언트명, 업로드 자료 또는 추가 메모를 모두 입력하세요.' }, { status: 400 });
     }
 
-    const result = await createStructuredJson<AnalysisResult>({
+    const result: AnalysisResult = analysisMode === 'lite'
+      ? liteToFullAnalysis(await generateLiteAnalysis(input, retrievalContext))
+      : await createStructuredJson<AnalysisResult>({
       schemaName: 'proposal_analysis',
       schema: analysisJsonSchema,
       system: [
@@ -189,7 +244,13 @@ ${input.briefText}`,
     // Bundling all three model calls in one invocation overran the function limit. They are deferred to their own
     // routes (/api/diagnosis, /api/brand-product-intelligence) which the client calls right after this analysis
     // succeeds, so each AI call is a separate bounded invocation and a downstream failure cannot lose the analysis.
-    return NextResponse.json({ result: guardedResult, evidence });
+    return NextResponse.json({
+      result: guardedResult,
+      evidence,
+      analysisMode,
+      partial: analysisMode === 'lite',
+      skippedOptionalSections: analysisMode === 'lite' ? ['taskSections', 'numericInfo', 'productFeatures', 'rfpRequirements', 'clientTask', 'targetSpaceContentOperation', 'kpiTimelineConstraints'] : [],
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : '분석 중 오류가 발생했습니다.';
     const isTimeout = /timeout|timed out|aborted|ETIMEDOUT|ECONNRESET|FUNCTION_INVOCATION_TIMEOUT|시간 초과/i.test(message);

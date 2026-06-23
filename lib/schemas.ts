@@ -242,6 +242,40 @@ export const analysisJsonSchema = {
   ],
 } as const;
 
+// Lite RFP analysis schema (flat string/string[] fields only — NO taskSections, numericInfo, productFeatures, or
+// the 4 nested analysis-section objects). Used as a fast fallback when the full analysis exceeds the time budget;
+// the route maps it into a full AnalysisResult with empty defaults for the skipped heavy sections.
+export const analysisLiteJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    projectOverview: { type: 'string' },
+    clientChallenge: { type: 'string' },
+    inferredProposalType: { type: 'string', enum: proposalTypeEnum },
+    proposalTypeReasoning: { type: 'string' },
+    requiredDeliverables: stringArray,
+    requiredItems: stringArray,
+    requiredScope: stringArray,
+    scopeOfWork: stringArray,
+    evaluationCriteria: stringArray,
+    constraints: stringArray,
+    schedule: stringArray,
+    targetInfo: { type: 'string' },
+    spatialCondition: { type: 'string' },
+    contentCondition: { type: 'string' },
+    operationCondition: { type: 'string' },
+    productInfo: stringArray,
+    kpiObjectives: stringArray,
+    confirmNeeded: stringArray,
+    missingInfo: stringArray,
+  },
+  required: [
+    'projectOverview', 'clientChallenge', 'inferredProposalType', 'proposalTypeReasoning', 'requiredDeliverables',
+    'requiredItems', 'requiredScope', 'scopeOfWork', 'evaluationCriteria', 'constraints', 'schedule', 'targetInfo',
+    'spatialCondition', 'contentCondition', 'operationCondition', 'productInfo', 'kpiObjectives', 'confirmNeeded', 'missingInfo',
+  ],
+} as const;
+
 
 const conceptDevelopmentLogicSchema = {
   type: 'object',
