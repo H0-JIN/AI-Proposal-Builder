@@ -4,6 +4,7 @@ import type { AnalysisResult, BrandProductIntelligence, ProjectInput, RfpDiagnos
 import { createStructuredJson } from '@/lib/openai';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 function compact(value: unknown, max = 9000) {
   const text = JSON.stringify(value, null, 2);
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
       ].join('\n'),
       user: `Current RFP text: ${body.input.briefText}\nCurrent RFP analysis: ${compact(body.analysis, 6000)}\nConfirmed RFP-only Diagnosis: ${compact(body.rfpDiagnosis, 2200)}\nUser additional information: ${compact(body.additionalInfo ?? {}, 1200)}\nUploaded brand/product/reference materials: ${materials.length ? compact(materials, 6000) : '없음 - RFP 기준으로만 AI 보완 표시'}`,
       timeoutMs: 12_000,
+      maxRetries: 1,
     });
     return NextResponse.json({ result });
   } catch (error) {
