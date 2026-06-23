@@ -4051,7 +4051,7 @@ export default function Home() {
               )}
             </div>
             {!state.rfpDiagnosis && (
-              <p className="mt-3 text-sm font-semibold leading-6 text-indigo-800">핵심 분석은 완료되었습니다. 전략 방향 생성을 위해 제안 전략 진단을 이어서 생성해 주세요.</p>
+              <p className="mt-3 text-sm font-semibold leading-6 text-indigo-800">핵심 분석은 완료되었습니다. 전략 방향 생성을 위해 제안 전략 진단을 먼저 완료해야 합니다.</p>
             )}
             {state.rfpDiagnosis && !state.brandProductIntelligence && (
               <p className="mt-3 text-sm font-semibold leading-6 text-sky-800">브랜드/제품 이해는 선택 분석 항목입니다. 현재 전략 진단을 기준으로 전략 방향을 생성할 수 있습니다.</p>

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { conceptCandidatesJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProjectInput, ProposalNarrative, RfpConceptType, MatrixType, BrandExperienceMatrixItem, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProjectInput, ProposalNarrative, ProposalType, RfpConceptType, MatrixType, BrandExperienceMatrixItem, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
 import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -807,6 +807,38 @@ function primaryRfpConceptType(types: RfpConceptType[]): RfpConceptType {
   return priority.find((type) => types.includes(type)) ?? 'unknown';
 }
 
+// Map the USER-SELECTED proposalType (ProposalType, the 14-value enum) to its strategic-direction RfpConceptType
+// family. This is the guardrail: the user's explicit choice — not text inference — decides which axis family is used.
+// A type with no strong family (e.g. basic_proposal) maps to undefined, so evidence classification is used instead.
+const PROPOSAL_TYPE_TO_RFP_CONCEPT_TYPE: Partial<Record<ProposalType, RfpConceptType>> = {
+  multi_entity_pavilion: 'multi_entity_pavilion',
+  corporate_technology_showcase: 'technology_showcase',
+  hyundai: 'technology_showcase',
+  exhibition_booth_content: 'exhibition_booth',
+  visitor_center_tour: 'visitor_center_or_tour',
+  popup_retail_experience: 'pop_up_or_campaign',
+  mice_event_operation: 'operation_heavy_event',
+  conference_forum: 'operation_heavy_event',
+  brand_experience: 'single_brand_experience',
+  cheil: 'single_brand_experience',
+  experience_marketing: 'content_media_experience',
+  innocean: 'content_media_experience',
+};
+
+// Resolve the operative RfpConceptType, preferring the user-selected proposalType as a STRONG guardrail over text
+// inference (inference stays only as secondary context, never overriding the user's choice). Spec exception: never
+// FORCE multi_entity_pavilion logic unless the RFP evidence actually shows multiple equal-weight entities — otherwise
+// fall back to the evidence-derived type so a single-entity RFP is not pushed into pavilion logic.
+function resolveGuardrailConceptType(userSelectedProposalType: ProposalType | undefined, evidenceTypes: RfpConceptType[], hasMultipleEntities: boolean): RfpConceptType {
+  const evidencePrimary = primaryRfpConceptType(evidenceTypes);
+  const mapped = userSelectedProposalType ? PROPOSAL_TYPE_TO_RFP_CONCEPT_TYPE[userSelectedProposalType] : undefined;
+  if (!mapped) return evidencePrimary;
+  if (mapped === 'multi_entity_pavilion' && !hasMultipleEntities && !evidenceTypes.includes('multi_entity_pavilion')) {
+    return evidencePrimary;
+  }
+  return mapped;
+}
+
 function buildStrategicDirectionDiscoveryBrief(analysis: AnalysisResult, narrative: ProposalNarrative, conceptType: RfpConceptType, hasMultipleEntities: boolean): StrategicDirectionDiscoveryBrief {
   const evidenceText = rfpEvidenceText(analysis, narrative);
   const categoryHints = [
@@ -919,9 +951,10 @@ function buildProposalLearningBrief(patterns: OutlineProposalPattern[], avoidanc
   };
 }
 
-function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: ProposalNarrative, hasMultipleEntities: boolean, patterns: OutlineProposalPattern[] = [], avoidanceRules: string[] = [], subjects?: DirectionSubjects): StrategicDirectionPlanItem[] {
+function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: ProposalNarrative, hasMultipleEntities: boolean, patterns: OutlineProposalPattern[] = [], avoidanceRules: string[] = [], subjects?: DirectionSubjects, overrideConceptType?: RfpConceptType): StrategicDirectionPlanItem[] {
   const conceptTypes = classifyRfpConceptTypes(analysis, narrative, hasMultipleEntities);
-  const conceptType = primaryRfpConceptType(conceptTypes);
+  // Honor the user-selected proposalType guardrail (passed by the caller) over internal text classification.
+  const conceptType = overrideConceptType ?? primaryRfpConceptType(conceptTypes);
   const secondary = conceptTypes.filter((type) => type !== conceptType);
   const currentRfpOnlyMode = conceptType !== 'multi_entity_pavilion';
   const learning = buildProposalLearningBrief(currentRfpOnlyMode ? [] : patterns, currentRfpOnlyMode ? [] : avoidanceRules);
@@ -1327,9 +1360,9 @@ function buildFallbackSignatureProofIdea(analysis: AnalysisResult, direction: St
   };
 }
 
-function fallbackCandidate(index: number, name: string, analysis: AnalysisResult, narrative: ProposalNarrative): ConceptCandidate {
+function fallbackCandidate(index: number, name: string, analysis: AnalysisResult, narrative: ProposalNarrative, overrideConceptType?: RfpConceptType): ConceptCandidate {
   const conceptId = `C${index}`;
-  const direction = buildStrategicDirectionPlan(analysis, narrative, Boolean(narrative.entityDifferentiationMatrix?.length && narrative.entityDifferentiationMatrix.length > 1))[(index - 1) % 3];
+  const direction = buildStrategicDirectionPlan(analysis, narrative, Boolean(narrative.entityDifferentiationMatrix?.length && narrative.entityDifferentiationMatrix.length > 1), [], [], undefined, overrideConceptType)[(index - 1) % 3];
   const fallbackPresets = [
     { keywords: ['근거', '판단', '확장'] as [string, string, string], slogan: 'RFP 근거가 바로 제안 구조로 이어지게 합니다.', definition: `RFP의 핵심 요구를 판단 기준과 실행 접점으로 변환해 평가자가 선택 이유를 확인하게 하는 콘셉트입니다.`, experienceMechanism: 'RFP 근거를 도입-판단-확장 순서로 배열해 제안의 논리를 따라가게 함', recognitionLogic: '요구 조건과 실행 근거가 같은 기준으로 연결됨을 기억함', nameWhy: '현재 RFP의 구체 근거를 제안 판단 장치로 바꾸는 이름입니다.' },
     { keywords: ['대상', '가치', '증명'] as [string, string, string], slogan: '방문 대상의 기대를 분명한 가치 증명으로 바꿉니다.', definition: `RFP에 등장한 대상의 기대와 가치 포인트를 공간·콘텐츠·운영 증거로 재조합하는 콘셉트입니다.`, experienceMechanism: '대상 기대를 먼저 인식하고 마지막에 가치 증명으로 연결하는 흐름', recognitionLogic: '핵심 요소의 차이와 전체 제안 명제를 동시에 기억함', nameWhy: 'RFP에 있는 대상·가치·평가 근거를 제목의 출처로 삼습니다.' },
@@ -1474,7 +1507,7 @@ function fallbackCandidate(index: number, name: string, analysis: AnalysisResult
   };
 }
 
-function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: ProposalNarrative, reason: string, metadata?: ConceptGenerationMetadata): ConceptCandidatesResult {
+function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: ProposalNarrative, reason: string, metadata?: ConceptGenerationMetadata, overrideConceptType?: RfpConceptType): ConceptCandidatesResult {
   const hiddenNeeds = {
     surfaceRequest: compactText(analysis.projectOverview, 180),
     hiddenNeed: compactText(proposalNarrative.strategicOpportunity || analysis.clientChallenge, 180),
@@ -1517,13 +1550,13 @@ function buildFallbackConcepts(analysis: AnalysisResult, proposalNarrative: Prop
       conceptDevelopmentCriteria: ['RFP 부합', '간결성', '실행 가능성'],
     },
     concepts: [
-      fallbackCandidate(1, '', analysis, proposalNarrative),
-      fallbackCandidate(2, '', analysis, proposalNarrative),
-      fallbackCandidate(3, '', analysis, proposalNarrative),
+      fallbackCandidate(1, '', analysis, proposalNarrative, overrideConceptType),
+      fallbackCandidate(2, '', analysis, proposalNarrative, overrideConceptType),
+      fallbackCandidate(3, '', analysis, proposalNarrative, overrideConceptType),
     ],
     recommendation: {
       recommendedConceptId: 'C1',
-      recommendedDirectionLabel: buildStrategicDirectionPlan(analysis, proposalNarrative, Boolean(proposalNarrative.entityDifferentiationMatrix?.length && proposalNarrative.entityDifferentiationMatrix.length > 1))[0]?.label || '전략 방향',
+      recommendedDirectionLabel: buildStrategicDirectionPlan(analysis, proposalNarrative, Boolean(proposalNarrative.entityDifferentiationMatrix?.length && proposalNarrative.entityDifferentiationMatrix.length > 1), [], [], undefined, overrideConceptType)[0]?.label || '전략 방향',
       recommendationReason: '현재 RFP에서는 요구 근거를 빠르게 묶고 평가자가 선택 이유를 이해하기 쉬운 방향을 우선 추천합니다.',
       otherDirectionsUsefulness: '다른 방향은 통합감, 개별 구분, 임팩트, 참여, 운영 신뢰 등 우선순위가 달라질 때 유용한 선택지입니다.',
       tradeOffSummary: '추천 방향은 명확성이 강하지만, 다른 방향들은 각각 차별 구분·참여 전환·상징 임팩트 같은 별도 강점을 제공합니다.',
@@ -1608,6 +1641,19 @@ export async function POST(request: Request) {
     if (!body.brandProductIntelligence) {
       return conceptsJson({ error: '브랜드/제품 이해 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
     }
+    // Diagnosis must be COMPLETE ENOUGH (not just present) before final direction cards are generated, so shallow
+    // diagnoses cannot drive weak directions. Lenient: a real /api/diagnosis result (strict schema) always passes.
+    const diag = body.rfpDiagnosis;
+    const diagnosisCompleteEnough = Boolean(
+      (diag.coreWinningCondition?.trim() || diag.strategicIssue?.trim() || diag.coreProposalThesis?.trim())
+      && diag.hiddenNeed?.trim()
+      && diag.strategicTension?.trim()
+      && (diag.persuasionTask?.trim() || diag.proofBurden?.trim())
+      && ((diag.requiredProofElements?.length ?? 0) > 0 || (diag.requiredPersuasionElements?.length ?? 0) > 0),
+    );
+    if (!diagnosisCompleteEnough) {
+      return conceptsJson({ error: '제안 전략 진단이 충분하지 않습니다. 전략 진단을 먼저 완료해 주세요.', reason: 'diagnosis_incomplete' }, { status: 400 });
+    }
 
     const metadata: ConceptGenerationMetadata = {
       conceptPromptVersion: body.conceptPromptVersion,
@@ -1626,7 +1672,9 @@ export async function POST(request: Request) {
     }
 
     const inputQuality = assessInputQuality(body.input, body.analysis);
-    const effectiveProposalType = body.analysis.inferredProposalType ?? body.input.proposalType;
+    // User-selected proposalType is the PRIMARY guardrail; inferredProposalType is only secondary context.
+    const userSelectedProposalType = body.input.proposalType;
+    const effectiveProposalType = userSelectedProposalType ?? body.analysis.inferredProposalType;
     const isEventOperationType = effectiveProposalType === 'mice_event_operation' || effectiveProposalType === 'conference_forum';
     const maxCandidates = Math.min(DEFAULT_CONCEPT_COUNT, Math.max(DEFAULT_CONCEPT_COUNT, body.options?.maxCandidates ?? DEFAULT_CONCEPT_COUNT));
     const maxProposalPatterns = 0; // proposalPatternContext = outline stage only; strategy generation must not retrieve proposal_patterns.
@@ -1639,12 +1687,16 @@ export async function POST(request: Request) {
     const hasMultipleEntities = differentiationStrategy.hasMultipleEntities;
     const classificationEvidence = classifyRfpEvidence(rfpEvidenceText(body.analysis, proposalNarrative), hasMultipleEntities);
     const rfpConceptTypes = classifyRfpConceptTypes(body.analysis, proposalNarrative, hasMultipleEntities);
-    const selectedRfpConceptType = primaryRfpConceptType(rfpConceptTypes);
+    // Operative type = user-selected guardrail (not text inference), so the axis family, matrix, prompt, repair, and
+    // fallback all respect the user's choice. Evidence classification is only used as the multi-entity safeguard.
+    const selectedRfpConceptType = resolveGuardrailConceptType(userSelectedProposalType, rfpConceptTypes, hasMultipleEntities);
+    const inferredRfpConceptType = primaryRfpConceptType(rfpConceptTypes);
+    const selectedProposalTypeMatchesInference = selectedRfpConceptType === inferredRfpConceptType;
     // strategyContext = current RFP + confirmed diagnosis only. proposal_patterns are intentionally not retrieved or passed.
     const proposalPatternGuidance = { patterns: [] as OutlineProposalPattern[], avoidanceRules: [] as string[], summary: { wonStructureCount: 0, lostExternalStructureCount: 0, unknownStructureCount: 0, lostMixedCautionCount: 0, lostQualityAvoidanceRuleCount: 0, lostUsableStructureCount: 0 } as ProposalPatternRetrievalSummary };
     const proposalLearningBrief = buildProposalLearningBrief([], []);
     const directionSubjects = buildDirectionSubjects(body.analysis, body.brandProductIntelligence, body.input, body.rfpDiagnosis);
-    const strategicDirectionPlan = buildStrategicDirectionPlan(body.analysis, proposalNarrative, hasMultipleEntities, [], [], directionSubjects);
+    const strategicDirectionPlan = buildStrategicDirectionPlan(body.analysis, proposalNarrative, hasMultipleEntities, [], [], directionSubjects, selectedRfpConceptType);
     const rawMatrixType = body.analysis.matrixType;
     const preliminaryMatrixType = matrixTypeForRfp(selectedRfpConceptType);
     const preliminaryBrandExperienceMatrix = preliminaryMatrixType === 'brandExperienceMatrix' ? buildBrandExperienceMatrix(body.analysis, proposalNarrative) : [];
@@ -1654,7 +1706,7 @@ export async function POST(request: Request) {
     const activeMatrix = getActiveMatrix(sanitizedContext);
     const directionLensSet = selectedDirectionLensSet(strategicDirectionPlan);
     const activeMatrixSummary = summarizeActiveMatrix(selectedMatrixType, { entityCount: selectedMatrixType === 'entityDifferentiationMatrix' ? differentiationStrategy.entityDifferentiationMatrix.length : 0, brandExperienceMatrix });
-    console.info('[concepts:gating]', { primaryRfpConceptType: selectedRfpConceptType, matrixType: selectedMatrixType, activeMatrixType: sanitizedContext.activeMatrixType, selectedDirectionLensSet: directionLensSet, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, activeMatrixSummary });
+    console.info('[concepts:gating]', { userSelectedProposalType, effectiveProposalType, inferredRfpConceptType, selectedProposalTypeMatchesInference, primaryRfpConceptType: selectedRfpConceptType, matrixType: selectedMatrixType, activeMatrixType: sanitizedContext.activeMatrixType, selectedDirectionLensSet: directionLensSet, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, activeMatrixSummary });
     const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, hasMultipleEntities);
 
     const systemPrompt = [
@@ -1663,6 +1715,7 @@ export async function POST(request: Request) {
       `정확히 ${maxCandidates}개의 전략 방향 후보를 생성한다. 최소 3개의 usable concept를 반환하고, 내부 네이밍 후보 5개는 절대 노출하지 말라.`,
       '3개 후보는 winner-loser 비교가 아니라 서로 다른 전략 방향 옵션이어야 한다.',
       'primaryRfpConceptType은 invalid logic 차단, evidence selection, contamination 방지, matrix/context 선택용 guardrail이다. strategicDirectionLabel을 type preset으로 처방하지 말라. current RFP evidence, hidden need, evaluator risk, client position, category shift, perception gap, required proof, signature opportunity에서 direction axis를 발견한다. proposal_patterns는 이 단계에서 완전히 비활성화되어야 하며 direction source, modifier, caution으로도 사용하지 않는다.',
+      `사용자가 선택한 제안서 유형(${proposalTypeLabels[effectiveProposalType]})이 전략 방향의 1차 guardrail이다. 자동 추론은 보조 맥락일 뿐 사용자 선택 유형을 덮어쓰지 않는다. 모든 방향은 이 유형의 전략 축 family 안에서 생성하고 유형에 맞지 않는 논리로 수렴시키지 말라: 다중 주체형은 한 참여 주체로 collapse 금지(주체 간 관계·역할·공동 메시지·통합 역량을 다룬다), 기술·에너지·미래산업형은 전 카드가 클라이언트/브랜드명 중심이 되는 것 금지(카테고리 이슈·기술 현실성·현재 대 미래 긴장·이해 격차를 다룬다), 방문관·견학·쇼룸형은 시설/외관/리모델링 명사가 전략 주어가 되는 것 금지(제품·브랜드 가치·공정 신뢰·방문 후 변화를 다룬다), MICE·운영형은 운영 확신·프로그램·참가자 동선 중심, 팝업·리테일형은 방문 동기·참여 행동·공유 기억 중심으로 둔다. 단 다중 주체/파빌리온 논리는 RFP에 동등 비중 복수 주체가 실제로 존재할 때만 사용하고, 그 외 유형에 강제하지 않는다. 라벨/논리는 항상 현재 RFP 진단·근거에서 도출하며 예시 라벨을 복사하지 않는다.`,
       '각 후보는 rfpConceptType, secondaryRfpConceptTypes, strategicDirectionType, strategicDirectionLabel, directionSource, whatThisDirectionEmphasizes, oneLineStrategicBet, whenToChooseThisDirection, failurePatternAvoided, winningPatternUsed를 반드시 포함한다. strategicDirectionLabel은 discovery brief의 direction axis와 현재 RFP evidence에서 새로 만든 2~8단어의 짧은 방향명이어야 하며 type별 고정 preset, 과거 RFP 언어, 말줄임표를 금지한다.',
       'oneLineStrategicBet은 사용자에게 보이는 문장이므로 proof/evidence/proof burden 같은 내부 영어를 쓰지 말고 “이 방향은 ___을 통해 ___을 설득하는 전략입니다.” 형식의 자연스러운 한국어 1문장으로 쓴다. whenToChooseThisDirection은 “클라이언트가 ___을 가장 중요하게 볼 때 선택합니다.”에 가까운 실무 선택 기준으로 쓴다. signatureProofIdea의 대표 장면/콘텐츠는 카드에서 대표 체험 장면으로 읽히도록 구체 구 하나로 요약 가능해야 한다.',
       'strategicDirectionLabel은 카드에 보이는 짧은 한국어 방향명이다. 현장의 감각/현장의 신뢰/경험의 증명/가치의 흐름/브랜드 경험 강화/통합적 체험/차별화된 경험 같은 generic label을 금지하고, currentRfpVocabularySet에 해당하는 브랜드·제품·감각·공정·공간·방문자 언어를 우선 사용한다. proposalCoreConceptName/conceptName은 DB/schema 호환을 위한 임시 direction title일 뿐이며 최종 컨셉명이 아니다. 최종 컨셉명은 사용자가 방향 선택 후 별도 naming step에서 생성한다.',
@@ -1829,7 +1882,7 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       return conceptsJson(attachGenerationMetadata(result, metadata));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'generation timeout';
-      const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata);
+      const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata, selectedRfpConceptType);
       const fallbackSeed = withNeutralDirectionRecommendation(enforceResultMatrixGate(fallbackBase, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount, subjects: directionSubjects }));
       fallbackSeed.rfpDiagnosis = body.rfpDiagnosis;
       fallbackSeed.brandProductIntelligence = body.brandProductIntelligence;
