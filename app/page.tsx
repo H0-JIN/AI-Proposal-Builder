@@ -3268,6 +3268,40 @@ export default function Home() {
     }
   };
 
+  // One analysis attempt: core RFP analysis (full or lite) committed to state first, then the deferred (fail-open)
+  // diagnosis + brand steps. Only the /api/analyze call can throw out of here (the deferred steps swallow their own errors).
+  const performAnalysis = async (input: ProjectInput, mode: 'full' | 'lite') => {
+    const analysisBasis = getCurrentAnalysisBasis();
+    const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input, documentChunks, analysisMode: mode });
+    const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
+    setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: undefined, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+    setStep('analysis');
+    void persistAnalysisSafely(input, analysis);
+    await runInitialDiagnosisAndBrand(input, analysis);
+  };
+
+  // Fail-open analysis: try full; if it TIMES OUT, fall back ONCE to lite (core-only) so the user still reaches the
+  // next step. A non-timeout error is surfaced as-is. The uploaded file / extracted text is never reset here.
+  const runAnalyzeWithFallback = async (input: ProjectInput) => {
+    try {
+      setLoading('RFP/브리프 분석 중...');
+      await performAnalysis(input, 'full');
+    } catch (fullErr) {
+      const fullMessage = fullErr instanceof Error ? fullErr.message : '분석 중 오류가 발생했습니다.';
+      if (!isTimeoutMessage(fullMessage)) { setError(fullMessage); return; }
+      try {
+        setLoading('전체 분석이 길어 핵심 분석만 빠르게 진행 중...');
+        await performAnalysis(input, 'lite');
+        setError('전체 분석 시간이 초과되어 핵심 분석만 먼저 완료했습니다. 전략 방향은 별도로 생성할 수 있습니다.');
+      } catch (liteErr) {
+        const liteMessage = liteErr instanceof Error ? liteErr.message : '핵심 분석 중 오류가 발생했습니다.';
+        setError(isTimeoutMessage(liteMessage)
+          ? '핵심 RFP 분석도 시간 초과되었습니다. 파일 크기 또는 텍스트 추출량을 줄인 뒤 다시 시도해 주세요.'
+          : liteMessage);
+      }
+    }
+  };
+
   const runAnalyze = async () => {
     setError('');
     if (hasPartialVisionAnalysisInput) {
@@ -3276,18 +3310,8 @@ export default function Home() {
         message: '현재 앞 3페이지 기준 빠른 분석 결과로 진행합니다. 전체 페이지 분석이 완료되면 더 정밀한 결과를 생성할 수 있습니다.',
       });
     }
-    setLoading('RFP/브리프 분석 중...');
     try {
-      const analysisBasis = getCurrentAnalysisBasis();
-      const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: analysisInput, documentChunks });
-      const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: undefined, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
-      setStep('analysis');
-      void persistAnalysisSafely(analysisInput, analysis);
-      await runInitialDiagnosisAndBrand(analysisInput, analysis);
-    } catch (err) {
-      const rawMessage = err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.';
-      setError(isTimeoutMessage(rawMessage) ? 'RFP 분석 시간이 초과되었습니다. 분석 단계를 줄여 다시 시도합니다.' : rawMessage);
+      await runAnalyzeWithFallback(analysisInput);
     } finally {
       setLoading('');
     }
@@ -3295,20 +3319,9 @@ export default function Home() {
 
   const rerunAnalyzeWithSupplementalInfo = async () => {
     const mergedInput = mergeInputWithSupplementalInfo(analysisInput, supplementalInfo);
-
     setError('');
-    setLoading('추가 정보를 반영해 RFP/브리프 재분석 중...');
     try {
-      const analysisBasis = getCurrentAnalysisBasis();
-      const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input: mergedInput, documentChunks });
-      const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-      setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: undefined, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
-      setStep('analysis');
-      void persistAnalysisSafely(mergedInput, analysis);
-      await runInitialDiagnosisAndBrand(mergedInput, analysis);
-    } catch (err) {
-      const rawMessage = err instanceof Error ? err.message : '추가 정보 반영 중 오류가 발생했습니다.';
-      setError(isTimeoutMessage(rawMessage) ? 'RFP 분석 시간이 초과되었습니다. 분석 단계를 줄여 다시 시도합니다.' : rawMessage);
+      await runAnalyzeWithFallback(mergedInput);
     } finally {
       setLoading('');
     }
