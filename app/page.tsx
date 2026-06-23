@@ -3509,9 +3509,7 @@ export default function Home() {
       const rawMessage = err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.';
       const message = isTimeoutMessage(rawMessage)
         ? '컨셉명 생성 시간이 초과되었습니다. 선택한 전략 방향은 유지되며, 컨셉명만 다시 생성할 수 있습니다.'
-        : /구분되는 컨셉명이 생성되지 않았습니다/.test(rawMessage)
-          ? '선택한 전략 방향과 충분히 구분되는 컨셉명이 생성되지 않았습니다. 다시 생성해 주세요.'
-          : '선택한 전략 방향에 맞는 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.';
+        : '선택한 전략 방향에 맞는 충분히 구체적인 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.';
       setFinalNamingError(message);
       setFinalNamingDebug((current) => ({ ...current, responseErrorMessage: rawMessage }));
       setError(message);
