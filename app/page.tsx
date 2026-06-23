@@ -1726,27 +1726,6 @@ function buildFallbackBrandProductIntelligence(): BrandProductIntelligence {
   return { clientOrBrandRole: '', productOrServiceMeaning: '', categoryContext: '', audiencePerceptionGap: '', brandSpecificVocabulary: [], wordsToAvoid: [], toneGuidance: '', strategyImplication: '', namingImplication: '' };
 }
 
-// Lightweight diagnosis derived from the current RFP summary only — used as a last-resort fallback so the user can
-// still generate strategic directions from a partial analysis when full diagnosis generation keeps failing. The real
-// /api/diagnosis result is always preferred; this only fills the minimum the direction generator needs.
-function buildFallbackDiagnosis(analysis: AnalysisResult): RfpDiagnosis {
-  const deliverables = (analysis.requiredDeliverables?.length ? analysis.requiredDeliverables : analysis.requiredItems) ?? [];
-  return {
-    decisionMakerConcern: analysis.clientChallenge || analysis.projectOverview || '',
-    coreProposalThesis: analysis.projectOverview || '',
-    coreWinningCondition: analysis.clientChallenge || analysis.projectOverview || '',
-    hiddenNeed: analysis.clientChallenge || '',
-    evaluatorDecisionRisk: (analysis.evaluationCriteria ?? []).slice(0, 3).join(' / '),
-    clientUniquePosition: analysis.projectOverview || '',
-    strategicIssue: analysis.clientChallenge || '',
-    strategicTension: analysis.clientChallenge || '',
-    proofBurden: deliverables.slice(0, 3).join(' / '),
-    genericProposalFailureReason: '',
-    requiredProofElements: deliverables.slice(0, 5),
-    rfpEvidenceAnchors: ((analysis.requiredItems?.length ? analysis.requiredItems : deliverables) ?? []).slice(0, 5),
-  };
-}
-
 function safeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '_').trim() || 'proposal';
 }
@@ -3328,11 +3307,10 @@ export default function Home() {
       }
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : '전략 진단 생성 중 오류가 발생했습니다.';
-      // Diagnosis is optional for proceeding — on ANY failure point the user to the RFP-summary direction path so
-      // they are never stuck. Append the raw cause only for non-timeout errors (useful for debugging).
+      // Diagnosis is REQUIRED for directions — do NOT fall back to shallow direction generation. Ask the user to retry.
       setError(isTimeoutMessage(rawMessage)
-        ? '전략 진단 생성이 지연되었습니다. RFP 요약을 기반으로 전략 방향을 먼저 생성할 수 있습니다.'
-        : `전략 진단 생성이 지연되었습니다. RFP 요약을 기반으로 전략 방향을 먼저 생성할 수 있습니다. (${rawMessage})`);
+        ? '전략 진단 생성이 지연되었습니다. 다시 시도해 주세요.'
+        : `전략 진단 생성이 지연되었습니다. 다시 시도해 주세요. (${rawMessage})`);
     } finally {
       setLoading('');
     }
@@ -3448,10 +3426,13 @@ export default function Home() {
 
   const runConcepts = async (options: { retryLight?: boolean } = {}) => {
     if (!state.analysis) return;
-    // Minimum to generate strategic directions = RFP summary + diagnosis. Brand/product intelligence is optional, and
-    // diagnosis falls back to a lightweight RFP-summary-derived object so a partial analysis never hard-blocks the user.
-    // Real values are always preferred; fallbacks only fill in what generation skipped.
-    const effectiveDiagnosis = state.rfpDiagnosis ?? buildFallbackDiagnosis(state.analysis);
+    // Strategic directions REQUIRE a real proposal strategy diagnosis. Never generate from a synthetic fallback —
+    // that degrades directions to shallow template labels. The continuation CTA generates the diagnosis first.
+    // Brand/product intelligence stays OPTIONAL (empty fallback object so it alone never blocks generation).
+    if (!state.rfpDiagnosis) {
+      setError('전략 방향 생성을 위해 제안 전략 진단을 먼저 생성해 주세요.');
+      return;
+    }
     const effectiveBrand = state.brandProductIntelligence ?? buildFallbackBrandProductIntelligence();
     const generationAttempt = conceptGenerationAttemptRef.current + 1;
     conceptGenerationAttemptRef.current = generationAttempt;
@@ -3484,7 +3465,7 @@ export default function Home() {
         input: analysisInput,
         analysis: state.analysis,
         proposalNarrative,
-        rfpDiagnosis: effectiveDiagnosis,
+        rfpDiagnosis: state.rfpDiagnosis,
         brandProductIntelligence: effectiveBrand,
         conceptPromptVersion,
         regenerationId,
@@ -4066,14 +4047,14 @@ export default function Home() {
               {state.rfpDiagnosis ? (
                 <PrimaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.analysis}>전략 방향 생성</PrimaryButton>
               ) : (
-                <>
-                  <PrimaryButton onClick={continueStrategyDiagnosis} disabled={Boolean(loading) || !state.analysis}>전략 진단 계속 생성</PrimaryButton>
-                  <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.analysis}>RFP 요약 기반 전략 방향 생성</SecondaryButton>
-                </>
+                <PrimaryButton onClick={continueStrategyDiagnosis} disabled={Boolean(loading) || !state.analysis}>전략 진단 계속 생성</PrimaryButton>
               )}
             </div>
+            {!state.rfpDiagnosis && (
+              <p className="mt-3 text-sm font-semibold leading-6 text-indigo-800">핵심 분석은 완료되었습니다. 전략 방향 생성을 위해 제안 전략 진단을 이어서 생성해 주세요.</p>
+            )}
             {state.rfpDiagnosis && !state.brandProductIntelligence && (
-              <p className="mt-3 text-sm font-semibold leading-6 text-sky-800">브랜드/제품 이해는 선택 분석 항목입니다. 현재 RFP 요약과 전략 진단만으로도 전략 방향을 생성할 수 있습니다.</p>
+              <p className="mt-3 text-sm font-semibold leading-6 text-sky-800">브랜드/제품 이해는 선택 분석 항목입니다. 현재 전략 진단을 기준으로 전략 방향을 생성할 수 있습니다.</p>
             )}
           </SectionCard>
         )}
