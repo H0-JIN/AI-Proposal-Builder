@@ -1688,22 +1688,35 @@ function buildAnalysisBriefText(input: ProjectInput, documents: UploadedDocument
   return documentBlocks.join('\n\n').trim();
 }
 
+// Every project-specific generated field, set to undefined. Spread this into ANY new-RFP / new-analysis reset so a
+// previous RFP's analysis, diagnosis, brand intelligence, strategic directions, concept names, and — critically —
+// the per-direction name cache and selected final name can never bleed into the next RFP. Does NOT touch
+// input / supplementalInfo / uploadedDocuments / dbUploadedDocuments (those are stable inputs handled separately).
+const CLEARED_PROJECT_GENERATED_STATE = {
+  analysis: undefined,
+  analysisBasis: undefined,
+  retrievalEvidence: undefined,
+  rfpDiagnosis: undefined,
+  brandProductIntelligence: undefined,
+  conceptDevelopmentLogic: undefined,
+  conceptCandidates: undefined,
+  conceptRecommendation: undefined,
+  conceptGenerationResult: undefined,
+  proposalNarrative: undefined,
+  selectedStrategicDirection: undefined,
+  selectedConcept: undefined,
+  conceptNameOptions: undefined,
+  conceptNameOptionsByDirection: undefined,
+  selectedFinalConceptNameOption: undefined,
+  outline: undefined,
+  slides: undefined,
+} satisfies Partial<ProposalState>;
+
 function appendUploadedDocument(document: UploadedDocument) {
   return (current: ProposalState): ProposalState => ({
     ...current,
     uploadedDocuments: [...(current.uploadedDocuments ?? []), document],
-    analysis: undefined,
-    analysisBasis: undefined,
-    conceptDevelopmentLogic: undefined,
-    conceptCandidates: undefined,
-    conceptRecommendation: undefined,
-    conceptGenerationResult: undefined,
-    proposalNarrative: undefined,
-    selectedStrategicDirection: undefined,
-    selectedConcept: undefined,
-    conceptNameOptions: undefined,
-    outline: undefined,
-    slides: undefined,
+    ...CLEARED_PROJECT_GENERATED_STATE,
   });
 }
 
@@ -2037,7 +2050,7 @@ export default function Home() {
   const shouldShowShortBriefGuidance = analysisInput.briefText.trim().length > 0 && analysisInput.briefText.trim().length < 220;
 
   const updateInput = <K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) => {
-    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, analysis: undefined, analysisBasis: undefined, rfpDiagnosis: undefined, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, input: { ...current.input, [key]: value }, ...CLEARED_PROJECT_GENERATED_STATE }));
   };
 
   const updateSupplementalInfo = <K extends keyof SupplementalInfo>(key: K, value: SupplementalInfo[K]) => {
@@ -3274,7 +3287,7 @@ export default function Home() {
     const analysisBasis = getCurrentAnalysisBasis();
     const analysisResponse = await postJson<AnalysisApiResponse>('/api/analyze', { input, documentChunks, analysisMode: mode });
     const { result: analysis, evidence } = parseAnalysisApiResponse(analysisResponse);
-    setState((current) => ({ ...current, analysis, retrievalEvidence: evidence, analysisBasis, rfpDiagnosis: undefined, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, proposalNarrative: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+    setState((current) => ({ ...current, ...CLEARED_PROJECT_GENERATED_STATE, analysis, retrievalEvidence: evidence, analysisBasis }));
     setStep('analysis');
     void persistAnalysisSafely(input, analysis);
     await runInitialDiagnosisAndBrand(input, analysis);
@@ -3283,6 +3296,10 @@ export default function Home() {
   // Fail-open analysis: try full; if it TIMES OUT, fall back ONCE to lite (core-only) so the user still reaches the
   // next step. A non-timeout error is surfaced as-is. The uploaded file / extracted text is never reset here.
   const runAnalyzeWithFallback = async (input: ProjectInput) => {
+    // Clear ALL previous project-specific generated state up front so old strategy cards / concept names never stay
+    // visible while a new analysis is pending, and are never silently reused if the new analysis fails (cross-RFP
+    // isolation, fail-closed). performAnalysis re-commits fresh analysis on success.
+    setState((current) => ({ ...current, ...CLEARED_PROJECT_GENERATED_STATE }));
     try {
       setLoading('RFP/브리프 분석 중...');
       await performAnalysis(input, 'full');
@@ -3400,6 +3417,7 @@ export default function Home() {
       selectedStrategicDirection: undefined,
       selectedConcept: undefined,
       conceptNameOptions: undefined,
+      conceptNameOptionsByDirection: undefined,
       selectedFinalConceptNameOption: undefined,
       outline: undefined,
       slides: undefined,
