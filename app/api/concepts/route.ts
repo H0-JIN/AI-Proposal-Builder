@@ -911,8 +911,15 @@ function buildStrategicDirectionDiscoveryBrief(analysis: AnalysisResult, narrati
       default: return whatMustBeProven;
     }
   };
+  // Multi-entity pavilion guard: do NOT grant representative/leadership status to a single participant unless the RFP
+  // explicitly names a lead organizer / host / main sponsor / representative entity (generic role patterns, no names).
+  // Without that evidence, drop the single-entity representative_position axis for a pavilion-level audience-understanding
+  // axis so the three directions stay at pavilion / relationship / integrated-capability level.
+  const hasExplicitLeadEntity = /주관|주최|주최사|대표사|간사사|간사\b|호스트|host\b|organi[sz]er|lead\s*organi[sz]er|main\s*sponsor|title\s*sponsor|타이틀\s*스폰서|대표\s*기관|대표\s*기업|주관\s*기관|주최\s*기관|representative\s*(?:entity|company|organi[sz]ation)|primary\s*owner/i.test(evidenceText);
+  const pavilionWithoutExplicitLead = conceptType === 'multi_entity_pavilion' && hasMultipleEntities && !hasExplicitLeadEntity;
   const contextSet = isVisitorRoomFactory ? ['product_value_proof', 'process_trust', 'brand_memory']
     : isTechShowcase ? ['technology_reality_proof', 'representative_position', 'system/ecosystem_proof']
+    : pavilionWithoutExplicitLead ? ['system/ecosystem_proof', 'audience_understanding', 'signature_scene']
     : (contextAxisSets[conceptType] ?? []);
   const leadAxes = contextSet.map((axisKey) => `${axisKey}: ${axisEvidence(axisKey)}`);
 
@@ -1715,6 +1722,7 @@ export async function POST(request: Request) {
       `정확히 ${maxCandidates}개의 전략 방향 후보를 생성한다. 최소 3개의 usable concept를 반환하고, 내부 네이밍 후보 5개는 절대 노출하지 말라.`,
       '3개 후보는 winner-loser 비교가 아니라 서로 다른 전략 방향 옵션이어야 한다.',
       'primaryRfpConceptType은 invalid logic 차단, evidence selection, contamination 방지, matrix/context 선택용 guardrail이다. strategicDirectionLabel을 type preset으로 처방하지 말라. current RFP evidence, hidden need, evaluator risk, client position, category shift, perception gap, required proof, signature opportunity에서 direction axis를 발견한다. proposal_patterns는 이 단계에서 완전히 비활성화되어야 하며 direction source, modifier, caution으로도 사용하지 않는다.',
+      '다중 주체형(공동관/파빌리온)에서 특정 참여 주체에 대표·리더십·주체 지위를 부여하려면 현재 RFP가 주관사·주최·호스트·대표 기관·메인 스폰서 등으로 그 주체를 명시해야 한다. 명시 근거가 없으면 등장 순서·언급 빈도·제품 분량·예산 비중·부스 규모·중요도 추정·모델 추측으로 한 주체를 대표로 세우지 말고, 파빌리온 전체 관점·주체 간 관계와 역할 구조·통합 역량·공동 메시지·관람객의 파빌리온 전체 이해로 방향을 만든다.',
       `사용자가 선택한 제안서 유형(${proposalTypeLabels[effectiveProposalType]})이 전략 방향의 1차 guardrail이다. 자동 추론은 보조 맥락일 뿐 사용자 선택 유형을 덮어쓰지 않는다. 모든 방향은 이 유형의 전략 축 family 안에서 생성하고 유형에 맞지 않는 논리로 수렴시키지 말라: 다중 주체형은 한 참여 주체로 collapse 금지(주체 간 관계·역할·공동 메시지·통합 역량을 다룬다), 기술·에너지·미래산업형은 전 카드가 클라이언트/브랜드명 중심이 되는 것 금지(카테고리 이슈·기술 현실성·현재 대 미래 긴장·이해 격차를 다룬다), 방문관·견학·쇼룸형은 시설/외관/리모델링 명사가 전략 주어가 되는 것 금지(제품·브랜드 가치·공정 신뢰·방문 후 변화를 다룬다), MICE·운영형은 운영 확신·프로그램·참가자 동선 중심, 팝업·리테일형은 방문 동기·참여 행동·공유 기억 중심으로 둔다. 단 다중 주체/파빌리온 논리는 RFP에 동등 비중 복수 주체가 실제로 존재할 때만 사용하고, 그 외 유형에 강제하지 않는다. 라벨/논리는 항상 현재 RFP 진단·근거에서 도출하며 예시 라벨을 복사하지 않는다.`,
       '각 후보는 rfpConceptType, secondaryRfpConceptTypes, strategicDirectionType, strategicDirectionLabel, directionSource, whatThisDirectionEmphasizes, oneLineStrategicBet, whenToChooseThisDirection, failurePatternAvoided, winningPatternUsed를 반드시 포함한다. strategicDirectionLabel은 discovery brief의 direction axis와 현재 RFP evidence에서 새로 만든 2~8단어의 짧은 방향명이어야 하며 type별 고정 preset, 과거 RFP 언어, 말줄임표를 금지한다.',
       'oneLineStrategicBet은 사용자에게 보이는 문장이므로 proof/evidence/proof burden 같은 내부 영어를 쓰지 말고 “이 방향은 ___을 통해 ___을 설득하는 전략입니다.” 형식의 자연스러운 한국어 1문장으로 쓴다. whenToChooseThisDirection은 “클라이언트가 ___을 가장 중요하게 볼 때 선택합니다.”에 가까운 실무 선택 기준으로 쓴다. signatureProofIdea의 대표 장면/콘텐츠는 카드에서 대표 체험 장면으로 읽히도록 구체 구 하나로 요약 가능해야 한다.',

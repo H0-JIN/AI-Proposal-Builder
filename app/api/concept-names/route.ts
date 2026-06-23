@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { conceptNameOptionsJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, BrandExperienceMatrixItem, ConceptCandidate, ConceptDevelopmentLogic, ConceptNameOptionsResult, EntityDifferentiationItem, MatrixType, ProjectInput, ProposalNarrative, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
+import type { AnalysisResult, BrandExperienceMatrixItem, ConceptCandidate, ConceptDevelopmentLogic, ConceptNameOptionsResult, EntityDifferentiationItem, MatrixType, ProjectInput, ProposalNarrative, ProposalType, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
+import { normalizeProposalType } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { getActiveMatrix, sanitizeConceptContextByRfpType } from '@/lib/conceptContextSanitizer';
 
@@ -131,8 +132,35 @@ function isWeakConceptName(name: string, input: { clientName?: string; projectNa
   return false;
 }
 
+// Conservative brand/client tokens (same source as isWeakConceptName: only clientName/projectName).
+function brandTokensOf(input: { clientName?: string; projectName?: string }): string[] {
+  return [input.clientName, input.projectName]
+    .filter(Boolean)
+    .flatMap((value) => String(value).split(/\s+/))
+    .map((token) => token.replace(/[^가-힣A-Za-z0-9]/g, ''))
+    .filter((token) => token.length >= 2);
+}
+
+// Relaxed: the name contains a brand/client token ANYWHERE (vs isWeakConceptName which also requires the rest to be
+// generic). Used only for the cross-option "not ALL names brand-centered" check on cover-title proposal types.
+function isBrandCenteredName(name: string, brandTokens: string[]): boolean {
+  if (!brandTokens.length) return false;
+  const nameTokens = (name || '').split(/\s+/).map((token) => token.replace(/[^가-힣A-Za-z0-9]/g, '')).filter(Boolean);
+  return nameTokens.some((token) => brandTokens.some((brand) => token.toLowerCase() === brand.toLowerCase()));
+}
+
+// Exhibition / content / energy / technology / showcase family: final names must read like proposal-cover concept
+// titles, not brand+noun. Visitor-room/factory-tour, MICE, conference, and basic are intentionally EXCLUDED (unchanged).
+const COVER_TITLE_PROPOSAL_TYPES = new Set<ProposalType>(['exhibition_booth_content', 'corporate_technology_showcase', 'experience_marketing']);
+const COVER_TITLE_RFP_CONCEPT_TYPES = new Set<string>(['technology_showcase', 'exhibition_booth', 'content_media_experience', 'product_experience_space']);
+function isCoverTitleNamingFamily(input: ProjectInput, selectedDirection: ConceptCandidate): boolean {
+  if (COVER_TITLE_PROPOSAL_TYPES.has(normalizeProposalType(input.proposalType))) return true;
+  const rfpConceptType = selectedDirection.rfpConceptType;
+  return rfpConceptType ? COVER_TITLE_RFP_CONCEPT_TYPES.has(rfpConceptType) : false;
+}
+
 // Stricter-filter instruction appended to the prompt for the single allowed regeneration when the first pass is all-weak.
-const STRICTER_RETRY_ADDENDUM = '\n\n[재생성 지시] 앞선 후보가 너무 일반적이거나 선택한 전략 방향과 약하게 연결되어 모두 거부되었다. 더 엄격하게 다시 생성하라: (1) 가치 증명/기억의 증명/인식 전환/경험 이해/가치 체험/실체화/한눈에 보는/___ 중심/___ 시그니처/Core Experience/Insight/Panorama/Signature/Experience/Journey/Moment 형태를 절대 쓰지 말 것. (2) 선택한 전략 방향의 directionAxis와 대표 설득 장면, 그리고 currentRfpVocabularySet의 실제 RFP 어휘에서 직접 도출할 것. (3) 브랜드/클라이언트명 단독 + 일반 명사 조합 금지. (4) 다른 RFP에도 그대로 쓸 수 있는 범용 이름 금지. (5) 표지 제목으로 바로 쓸 수 있는 짧고 구체적인 이름만.';
+const STRICTER_RETRY_ADDENDUM = '\n\n[재생성 지시] 앞선 후보가 너무 일반적이거나 선택한 전략 방향과 약하게 연결되어 모두 거부되었다. 더 엄격하게 다시 생성하라: (1) 가치 증명/기억의 증명/인식 전환/경험 이해/가치 체험/실체화/한눈에 보는/___ 중심/___ 시그니처/Core Experience/Insight/Panorama/Signature/Experience/Journey/Moment 형태를 절대 쓰지 말 것. (2) 선택한 전략 방향의 directionAxis와 대표 설득 장면, 그리고 currentRfpVocabularySet의 실제 RFP 어휘에서 직접 도출할 것. (3) 브랜드/클라이언트명 단독 + 일반 명사 조합 금지. (4) 다른 RFP에도 그대로 쓸 수 있는 범용 이름 금지. (5) 표지 제목으로 바로 쓸 수 있는 짧고 구체적인 이름만. (6) 전시/콘텐츠/에너지/기술/쇼케이스 유형이면 모든 후보가 클라이언트·브랜드명 중심이 되지 않게 하고, 선택한 전략 방향의 관점·경험·전환·공간/콘텐츠 프레임을 표현하는 제안 표지 콘셉트 타이틀로 만든다. 후보마다 어휘와 논리를 다르게 한다.';
 
 function normalizeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9가-힣]/gi, '');
@@ -300,9 +328,16 @@ function buildFinalOptions(
   // contamination guard (a name importing another category's terms uses no current vocabulary, so it fails here).
   const vocabRich = currentRfpVocabularySet.length >= 6;
   const quality = safe.filter((entry) => !isWeakConceptName(entry.option.conceptName || '', body.input) && (!vocabRich || entry.usesVocabulary));
+  // Cross-option guard (cover-title types only): if EVERY surviving name is brand/client-name-centered, the set reads
+  // like brand+noun labels rather than proposal-cover concept titles — drop the whole pool so the regenerate-once path
+  // fires (and, if still all brand-centered, the existing 422 error). Requires >=2 so a single lone name is not zeroed.
+  const brandTokens = brandTokensOf(body.input);
+  const coverTitleFamily = isCoverTitleNamingFamily(body.input, body.selectedDirection);
+  const allBrandCentered = coverTitleFamily && quality.length >= 2 && quality.every((entry) => isBrandCenteredName(entry.option.conceptName || '', brandTokens));
+  const qualityPool = allBrandCentered ? [] : quality;
   // Soft preference: still rank vocab-matching names first within the quality pool.
-  const vocabMatched = quality.filter((entry) => entry.usesVocabulary);
-  const ranked = (vocabMatched.length ? [...vocabMatched, ...quality.filter((entry) => !entry.usesVocabulary)] : quality).map((entry) => entry.option);
+  const vocabMatched = qualityPool.filter((entry) => entry.usesVocabulary);
+  const ranked = (vocabMatched.length ? [...vocabMatched, ...qualityPool.filter((entry) => !entry.usesVocabulary)] : qualityPool).map((entry) => entry.option);
   const options = ranked.slice(0, 3).map((option, index) => {
     const whyItFits = option.whyItFitsRfp || option.whyItFits || option.whyItFitsSelectedDirection || option.shortMeaning;
     const mainRisk = option.mainRisk || option.risk || '';
@@ -328,7 +363,7 @@ function buildFinalOptions(
       risk: option.risk ?? mainRisk,
     };
   });
-  return { options, diag: { returned: (result.options ?? []).length, deduped: deduped.length, safe: safe.length, quality: quality.length, blockedNameDrops } };
+  return { options, diag: { returned: (result.options ?? []).length, deduped: deduped.length, safe: safe.length, quality: quality.length, blockedNameDrops, coverTitleFamily, allBrandCentered } };
 }
 
 export async function POST(request: Request) {
