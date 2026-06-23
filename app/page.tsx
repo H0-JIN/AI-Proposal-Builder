@@ -1720,6 +1720,33 @@ function appendUploadedDocument(document: UploadedDocument) {
   });
 }
 
+// Brand/product intelligence is an OPTIONAL enrichment for direction generation. When it is missing (skipped after a
+// partial analysis), pass this empty object so the user is never hard-blocked from generating strategic directions.
+function buildFallbackBrandProductIntelligence(): BrandProductIntelligence {
+  return { clientOrBrandRole: '', productOrServiceMeaning: '', categoryContext: '', audiencePerceptionGap: '', brandSpecificVocabulary: [], wordsToAvoid: [], toneGuidance: '', strategyImplication: '', namingImplication: '' };
+}
+
+// Lightweight diagnosis derived from the current RFP summary only — used as a last-resort fallback so the user can
+// still generate strategic directions from a partial analysis when full diagnosis generation keeps failing. The real
+// /api/diagnosis result is always preferred; this only fills the minimum the direction generator needs.
+function buildFallbackDiagnosis(analysis: AnalysisResult): RfpDiagnosis {
+  const deliverables = (analysis.requiredDeliverables?.length ? analysis.requiredDeliverables : analysis.requiredItems) ?? [];
+  return {
+    decisionMakerConcern: analysis.clientChallenge || analysis.projectOverview || '',
+    coreProposalThesis: analysis.projectOverview || '',
+    coreWinningCondition: analysis.clientChallenge || analysis.projectOverview || '',
+    hiddenNeed: analysis.clientChallenge || '',
+    evaluatorDecisionRisk: (analysis.evaluationCriteria ?? []).slice(0, 3).join(' / '),
+    clientUniquePosition: analysis.projectOverview || '',
+    strategicIssue: analysis.clientChallenge || '',
+    strategicTension: analysis.clientChallenge || '',
+    proofBurden: deliverables.slice(0, 3).join(' / '),
+    genericProposalFailureReason: '',
+    requiredProofElements: deliverables.slice(0, 5),
+    rfpEvidenceAnchors: ((analysis.requiredItems?.length ? analysis.requiredItems : deliverables) ?? []).slice(0, 5),
+  };
+}
+
 function safeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '_').trim() || 'proposal';
 }
@@ -3281,6 +3308,36 @@ export default function Home() {
     }
   };
 
+  // Continuation CTA for a partial analysis where diagnosis is missing: generate the (lightweight) diagnosis via the
+  // existing /api/diagnosis route, then OPTIONALLY the brand/product layer (never blocking on it). Once diagnosis is
+  // set, the strategic direction button enables. Reuses the existing diagnosis endpoint — no full re-analysis.
+  const continueStrategyDiagnosis = async () => {
+    if (!state.analysis) return;
+    const analysis = state.analysis;
+    setError('');
+    setLoading('제안 전략 진단 생성 중...');
+    try {
+      const diagnosis = (await postJson<{ result: RfpDiagnosis }>('/api/diagnosis', { input: analysisInput, analysis })).result;
+      setState((current) => ({ ...current, rfpDiagnosis: diagnosis }));
+      try {
+        setLoading('브랜드/제품 이해 생성 중...');
+        const brandProductIntelligence = (await postJson<{ result: BrandProductIntelligence }>('/api/brand-product-intelligence', { input: analysisInput, analysis, rfpDiagnosis: diagnosis, uploadedDocuments: state.uploadedDocuments, additionalInfo: supplementalInfo })).result;
+        setState((current) => ({ ...current, brandProductIntelligence }));
+      } catch {
+        // Brand/product intelligence is optional — diagnosis alone is enough to generate strategic directions.
+      }
+    } catch (err) {
+      const rawMessage = err instanceof Error ? err.message : '전략 진단 생성 중 오류가 발생했습니다.';
+      // Diagnosis is optional for proceeding — on ANY failure point the user to the RFP-summary direction path so
+      // they are never stuck. Append the raw cause only for non-timeout errors (useful for debugging).
+      setError(isTimeoutMessage(rawMessage)
+        ? '전략 진단 생성이 지연되었습니다. RFP 요약을 기반으로 전략 방향을 먼저 생성할 수 있습니다.'
+        : `전략 진단 생성이 지연되었습니다. RFP 요약을 기반으로 전략 방향을 먼저 생성할 수 있습니다. (${rawMessage})`);
+    } finally {
+      setLoading('');
+    }
+  };
+
   // One analysis attempt: core RFP analysis (full or lite) committed to state first, then the deferred (fail-open)
   // diagnosis + brand steps. Only the /api/analyze call can throw out of here (the deferred steps swallow their own errors).
   const performAnalysis = async (input: ProjectInput, mode: 'full' | 'lite') => {
@@ -3309,7 +3366,7 @@ export default function Home() {
       try {
         setLoading('전체 분석이 길어 핵심 분석만 빠르게 진행 중...');
         await performAnalysis(input, 'lite');
-        setError('전체 분석 시간이 초과되어 핵심 분석만 먼저 완료했습니다. 전략 방향은 별도로 생성할 수 있습니다.');
+        setError('전체 분석 시간이 초과되어 핵심 분석만 먼저 완료했습니다. 아래 버튼으로 전략 진단과 방향 생성을 이어서 진행할 수 있습니다.');
       } catch (liteErr) {
         const liteMessage = liteErr instanceof Error ? liteErr.message : '핵심 분석 중 오류가 발생했습니다.';
         setError(isTimeoutMessage(liteMessage)
@@ -3391,14 +3448,11 @@ export default function Home() {
 
   const runConcepts = async (options: { retryLight?: boolean } = {}) => {
     if (!state.analysis) return;
-    if (!state.rfpDiagnosis) {
-      setError('제안 전략 진단을 먼저 확정해 주세요.');
-      return;
-    }
-    if (!state.brandProductIntelligence) {
-      setError('브랜드/제품 이해를 먼저 생성하거나 확정해 주세요.');
-      return;
-    }
+    // Minimum to generate strategic directions = RFP summary + diagnosis. Brand/product intelligence is optional, and
+    // diagnosis falls back to a lightweight RFP-summary-derived object so a partial analysis never hard-blocks the user.
+    // Real values are always preferred; fallbacks only fill in what generation skipped.
+    const effectiveDiagnosis = state.rfpDiagnosis ?? buildFallbackDiagnosis(state.analysis);
+    const effectiveBrand = state.brandProductIntelligence ?? buildFallbackBrandProductIntelligence();
     const generationAttempt = conceptGenerationAttemptRef.current + 1;
     conceptGenerationAttemptRef.current = generationAttempt;
     const requestedAt = new Date().toISOString();
@@ -3430,8 +3484,8 @@ export default function Home() {
         input: analysisInput,
         analysis: state.analysis,
         proposalNarrative,
-        rfpDiagnosis: state.rfpDiagnosis,
-        brandProductIntelligence: state.brandProductIntelligence,
+        rfpDiagnosis: effectiveDiagnosis,
+        brandProductIntelligence: effectiveBrand,
         conceptPromptVersion,
         regenerationId,
         timestamp: requestedAt,
@@ -3936,7 +3990,7 @@ export default function Home() {
                         {getDiagnosisText(state.rfpDiagnosis, 'strategicIssue') && <p><span className="text-indigo-700">전략적 쟁점</span> · {getDiagnosisText(state.rfpDiagnosis, 'strategicIssue')}</p>}
                       </div>
                     ) : (
-                      <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-indigo-900">전략 방향 생성 전에 제안 전략 진단이 필요합니다.</p>
+                      <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-indigo-900">전략 방향 생성 전에 제안 전략 진단이 필요합니다. 아래 ‘전략 진단 계속 생성’ 버튼으로 이어서 생성할 수 있습니다.</p>
                     )}
                   </div>
                   <span className="rounded-full bg-white px-4 py-2 text-sm font-black text-indigo-700 shadow-sm">진단 내용 보기·수정</span>
@@ -4006,15 +4060,21 @@ export default function Home() {
               {state.analysisBasis?.type === 'partial' && !hasFullVisionAnalysisInProgress && (
                 <PrimaryButton onClick={runAnalyze} disabled={Boolean(loading)}>전체 분석 결과로 다시 AI 분석하기</PrimaryButton>
               )}
-              {hasConfirmationNeeds ? (
-                <>
-                  <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
-                  <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.rfpDiagnosis || !state.brandProductIntelligence}>진단·브랜드 이해 확정 후 전략 방향 생성</SecondaryButton>
-                </>
+              {hasConfirmationNeeds && (
+                <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
+              )}
+              {state.rfpDiagnosis ? (
+                <PrimaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.analysis}>전략 방향 생성</PrimaryButton>
               ) : (
-                <PrimaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.rfpDiagnosis || !state.brandProductIntelligence}>진단·브랜드 이해 확정 후 전략 방향 생성</PrimaryButton>
+                <>
+                  <PrimaryButton onClick={continueStrategyDiagnosis} disabled={Boolean(loading) || !state.analysis}>전략 진단 계속 생성</PrimaryButton>
+                  <SecondaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.analysis}>RFP 요약 기반 전략 방향 생성</SecondaryButton>
+                </>
               )}
             </div>
+            {state.rfpDiagnosis && !state.brandProductIntelligence && (
+              <p className="mt-3 text-sm font-semibold leading-6 text-sky-800">브랜드/제품 이해는 선택 분석 항목입니다. 현재 RFP 요약과 전략 진단만으로도 전략 방향을 생성할 수 있습니다.</p>
+            )}
           </SectionCard>
         )}
 
