@@ -78,26 +78,61 @@ const INTERNAL_COPY_REPLACEMENTS: Array<[RegExp, string]> = [
   [/증거/g, '확인 요소'],
 ];
 
+// Category-neutral generic weak names only. Do NOT add brand/category-specific sample phrases
+// (e.g. hydrogen/Pocari/factory) — cross-RFP contamination is handled generically by vocabulary grounding.
 const BLOCKED_EXAMPLE_CONCEPT_NAMES = [
-  'Hydrogen, Here.',
-  'The Hydrogen Reality',
-  'Now, Hydrogen',
-  'Here Comes Hydrogen',
   'The Future Runs Here',
   'From Vision to Current',
-  'Future Grid',
   'Nexus',
   'Pulse',
   'Vanguard',
   'Sphere',
-  '수소가 닿는 밤',
-  '기술을 만나는 길',
-  '수소의 순간',
   'Moment Room',
   'Visible Moment',
   'Memory Moment',
   'Moment to Memory',
 ];
+
+// Exact user-facing error when no sufficiently specific name can be produced even after one stricter regeneration.
+const WEAK_NAMING_ERROR = '선택한 전략 방향에 맞는 충분히 구체적인 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.';
+
+// Anti-pattern naming forms (generic, no hardcoded brands). A concept name is rejected when it is dominated by one
+// of these, UNLESS it is transformed into a specific RFP-grounded idea (grounding is enforced separately by vocabulary).
+const SPEC_BANNED_NAME_PATTERNS: RegExp[] = [
+  /가치\s*증명/u,
+  /기억\s*의?\s*증명/u,
+  /인식\s*전환/u,
+  /경험\s*이해/u,
+  /가치\s*체험/u,
+  /실체화/u,
+  /한눈에\s*보는/u,
+  /시그니처/u,
+  /\S+\s*중심\s*$/u,
+  /(core\s*experience|insight\s*hub|insight|panorama|signature|moment|journey|experience)\s*$/i,
+];
+
+const BRAND_NOUN_GENERIC_TAILS = /^(experience|journey|moment|signature|insight|panorama|value|proof|hub|platform|zone|center|story|space|vision|future)$/i;
+
+// True when the name is dominated by a banned abstract/consulting form or is just brand/client name + a generic noun.
+function isWeakConceptName(name: string, input: { clientName?: string; projectName?: string }) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return true;
+  if (SPEC_BANNED_NAME_PATTERNS.some((pattern) => pattern.test(trimmed))) return true;
+  const brandTokens = [input.clientName, input.projectName]
+    .filter(Boolean)
+    .flatMap((value) => String(value).split(/\s+/))
+    .map((token) => token.replace(/[^가-힣A-Za-z0-9]/g, ''))
+    .filter((token) => token.length >= 2);
+  const nameTokens = trimmed.split(/\s+/).map((token) => token.replace(/[^가-힣A-Za-z0-9]/g, '')).filter(Boolean);
+  if (nameTokens.length >= 2 && nameTokens.some((token) => brandTokens.some((brand) => token.toLowerCase() === brand.toLowerCase()))) {
+    const nonBrand = nameTokens.filter((token) => !brandTokens.some((brand) => token.toLowerCase() === brand.toLowerCase()));
+    if (nonBrand.length && nonBrand.every((token) => (GENERIC_MAIN_HOOKS as readonly string[]).includes(token) || BRAND_NOUN_GENERIC_TAILS.test(token))) return true;
+  }
+  return false;
+}
+
+// Stricter-filter instruction appended to the prompt for the single allowed regeneration when the first pass is all-weak.
+const STRICTER_RETRY_ADDENDUM = '\n\n[재생성 지시] 앞선 후보가 너무 일반적이거나 선택한 전략 방향과 약하게 연결되어 모두 거부되었다. 더 엄격하게 다시 생성하라: (1) 가치 증명/기억의 증명/인식 전환/경험 이해/가치 체험/실체화/한눈에 보는/___ 중심/___ 시그니처/Core Experience/Insight/Panorama/Signature/Experience/Journey/Moment 형태를 절대 쓰지 말 것. (2) 선택한 전략 방향의 directionAxis와 대표 설득 장면, 그리고 currentRfpVocabularySet의 실제 RFP 어휘에서 직접 도출할 것. (3) 브랜드/클라이언트명 단독 + 일반 명사 조합 금지. (4) 다른 RFP에도 그대로 쓸 수 있는 범용 이름 금지. (5) 표지 제목으로 바로 쓸 수 있는 짧고 구체적인 이름만.';
 
 function normalizeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9가-힣]/gi, '');
@@ -182,25 +217,15 @@ function usesCurrentVocabulary(option: ConceptNameOptionsResult['options'][numbe
   return vocabulary.some((word) => word.length >= 2 && text.includes(word.toLowerCase()));
 }
 
-function hasUnsupportedCategoryTerms(name: string, context: string) {
-  const lowerContext = context.toLowerCase();
-  const unsupportedGroups = [
-    { terms: ['hydrogen', '수소', 'energy', '에너지', 'grid'], evidence: /hydrogen|수소|energy|에너지|grid|전력|전기/i },
-    { terms: ['pocari', '포카리', 'beverage', 'drink', '음료'], evidence: /pocari|포카리|beverage|drink|음료|이온|factory|공장/i },
-  ];
-  return unsupportedGroups.some((group) => group.terms.some((term) => name.toLowerCase().includes(term.toLowerCase())) && !group.evidence.test(lowerContext));
-}
-
-function passesNameFirewall(option: ConceptNameOptionsResult['options'][number], context: string, repeatedHooks?: Map<string, number>) {
+function passesNameFirewall(option: ConceptNameOptionsResult['options'][number], repeatedHooks?: Map<string, number>) {
   const name = option.conceptName || '';
   if (!name.trim()) return false;
   if (resemblesBlockedExample(name)) return false;
-  if (hasUnsupportedCategoryTerms(name, context)) return false;
   if (hasInternalMainCopy(option)) return false;
   if (repeatedHooks && repeatsGenericMainHook(option, repeatedHooks)) return false;
-  // Concrete safety checks only. We intentionally do NOT require every validation boolean to be true,
-  // and the RFP-vocabulary check is now a soft ranking preference (applied in the pipeline) rather than a
-  // hard gate, so an abstract/English cover name the prompt itself requests can never zero out the response.
+  // Concrete safety checks only. Cross-RFP category contamination is no longer a hardcoded brand list — it is handled
+  // generically by the vocabulary-grounding quality filter (a name with no current-RFP vocabulary, including one that
+  // imports another category's terms, fails grounding) before the result is returned.
   return true;
 }
 
@@ -239,6 +264,71 @@ function truthyValidation() {
     connectedToDiagnosis: true,
     connectedToBrandProductIntelligence: true,
   };
+}
+
+// Run the full client-side filtering pipeline on one model result: dedup -> safety firewall -> quality/grounding gate
+// -> rank -> top 3. Weak/anti-pattern names and (when vocabulary is rich) ungrounded names are dropped, never padded.
+function buildFinalOptions(
+  result: ConceptNameOptionsResult,
+  body: { input: ProjectInput; selectedDirection: ConceptCandidate; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[] },
+  currentRfpVocabularySet: string[],
+) {
+  const styles = ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] as const;
+  const repeatedHooks = genericHookCounts(result.options ?? []);
+  const blockedNameSet = new Set([...(body.recentNameOptions ?? []), ...(body.existingNamesForSelectedDirection ?? []), ...(body.blockedOtherDirectionNames ?? [])].map(normalizeName).filter(Boolean));
+  const seenNameSet = new Set<string>();
+  const seenFingerprintSet = new Set<string>();
+  let blockedNameDrops = 0;
+  const deduped = (result.options ?? []).filter((option) => {
+    const nameKey = normalizeName(option.conceptName || '');
+    const fingerprint = optionTextFingerprint(option);
+    if (!nameKey) return false;
+    if (blockedNameSet.has(nameKey)) { blockedNameDrops += 1; return false; }
+    if (seenNameSet.has(nameKey) || (fingerprint && seenFingerprintSet.has(fingerprint))) return false;
+    seenNameSet.add(nameKey);
+    if (fingerprint) seenFingerprintSet.add(fingerprint);
+    return true;
+  });
+  // Compute the vocabulary match on the RAW option (before userFacingCopy truncates/replaces the fields it reads).
+  const prepared = deduped.map((option) => ({
+    usesVocabulary: usesCurrentVocabulary(option, currentRfpVocabularySet),
+    option: { ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.whyItFitsSelectedDirection || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) },
+  }));
+  const safe = prepared.filter((entry) => passesNameFirewall(entry.option, repeatedHooks));
+  // Quality gate: drop spec anti-pattern names, and — when the RFP vocabulary is rich enough to judge grounding —
+  // drop names that use no current-RFP vocabulary. The grounding drop is the generic, bidirectional cross-RFP
+  // contamination guard (a name importing another category's terms uses no current vocabulary, so it fails here).
+  const vocabRich = currentRfpVocabularySet.length >= 6;
+  const quality = safe.filter((entry) => !isWeakConceptName(entry.option.conceptName || '', body.input) && (!vocabRich || entry.usesVocabulary));
+  // Soft preference: still rank vocab-matching names first within the quality pool.
+  const vocabMatched = quality.filter((entry) => entry.usesVocabulary);
+  const ranked = (vocabMatched.length ? [...vocabMatched, ...quality.filter((entry) => !entry.usesVocabulary)] : quality).map((entry) => entry.option);
+  const options = ranked.slice(0, 3).map((option, index) => {
+    const whyItFits = option.whyItFitsRfp || option.whyItFits || option.whyItFitsSelectedDirection || option.shortMeaning;
+    const mainRisk = option.mainRisk || option.risk || '';
+    // Scores / validation / expandability are server-derived (no longer required from the model output).
+    return {
+      ...option,
+      id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`,
+      koreanSubtitle: option.koreanSubtitle ?? '',
+      oneLineSlogan: option.oneLineSlogan || option.shortMeaning,
+      whyItFitsRfp: whyItFits,
+      whyItFitsSelectedDirection: option.whyItFitsSelectedDirection || whyItFits,
+      namingStyle: option.namingStyle ?? styles[index % styles.length],
+      mainRisk,
+      strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning,
+      expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: whyItFits, media: option.oneLineSlogan || option.shortMeaning, operation: mainRisk },
+      validation: option.validation ?? truthyValidation(),
+      coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore ?? 4,
+      specificityScore: option.specificityScore ?? option.rfpSpecificityScore ?? 4,
+      coverTitleScore: option.coverTitleScore ?? 4,
+      memorabilityScore: option.memorabilityScore ?? 4,
+      rfpSpecificityScore: option.rfpSpecificityScore ?? 4,
+      expandabilityScore: option.expandabilityScore ?? 4,
+      risk: option.risk ?? mainRisk,
+    };
+  });
+  return { options, diag: { returned: (result.options ?? []).length, deduped: deduped.length, safe: safe.length, quality: quality.length, blockedNameDrops } };
 }
 
 export async function POST(request: Request) {
@@ -301,73 +391,31 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
 - main visible copy(conceptName, oneLineSlogan, shortMeaning, whyItFitsSelectedDirection, mainRisk)에 raw English internal terms(proof/evidence/proof burden/evaluator clarity/validation/source/score/signature proof idea)를 쓰지 말고 한국어 사용자 언어로 번역한다.
 - 컨셉명은 선택한 전략 방향에만 맞아야 하고 다른 방향에는 어색해야 하며, 후보끼리 근접 중복이 아니어야 한다. validation boolean 블록은 출력하지 말라(구분성·금지어·중복 검증과 점수는 서버가 코드로 수행한다).
 - 금지 예시명/이전 예시명을 그대로 출력하거나 변형하지 말라: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}.
-- 현재 RFP/진단/brandProductIntelligence에 없는 category word(예: Pocari/공장 방문 RFP의 hydrogen/energy/grid)를 쓰면 실패다. 수소/에너지 RFP에서만 현재 증거가 있을 때 허용한다.
-- brandProductIntelligence.wordsToAvoid와 무관 카테고리 어휘를 쓰면 실패다. Pocari와 수소 전시 양쪽에 그대로 맞는 이름, Moment/Memory/Proof/Evidence/Field/Flow/Grid 같은 범용어 중심 이름은 현재 RFP 강한 근거가 없으면 거부한다.
+- 현재 RFP/진단/brandProductIntelligence에 근거가 없는 다른 카테고리(에너지/음료/기술/공간/이벤트 등)의 어휘를 가져오면 실패다. 어떤 category word든 현재 RFP 증거에 실제로 있을 때만 사용한다.
+- brandProductIntelligence.wordsToAvoid와 무관 카테고리 어휘를 쓰면 실패다. 서로 다른 RFP 카테고리에 모두 그대로 맞는 이름, Moment/Memory/Proof/Evidence/Field/Flow/Grid/Signature/Panorama/Insight 같은 범용어 중심 이름은 현재 RFP 강한 근거가 없으면 거부한다.
+- 다음 형태는 컨셉명/슬로건의 주된 naming device로 쓰지 말라(현재 RFP에 맞게 구체적으로 변형된 경우만 예외): 가치 증명, 기억의 증명, 인식 전환, 경험 이해, 가치 체험, 실체화, 한눈에 보는 ___, ___ 중심, ___ 시그니처, ___ Core Experience, ___ Insight, ___ Panorama, ___ Signature, ___ Experience, ___ Journey, ___ Moment. 브랜드/클라이언트명 단독 + 일반 명사 조합도 거부한다.
 - Final naming source lock: selectedStrategicDirection, confirmed diagnosis, current RFP summary만 네이밍 근거로 사용하라. proposal_patterns, previous proposal names, old clients/categories/wording은 사용하지 말라. hardcoded direction presets는 사용하지 말라.
 - matrixType이 entityDifferentiationMatrix가 아니면 Entity Differentiation Matrix, 역할 구분, 통합+역할 차별화, 상징적 리더십을 네이밍 근거로 사용하지 말라.
 - single_brand_experience 또는 visitor_center_or_tour는 brand meaning, sensory cue, product value, process/확인 장면, visitor memory, transformation after visit에서 이름을 도출하고 multi-entity role separation, pavilion leadership, stakeholder integration으로 네이밍하지 말라.
 - multi_entity_pavilion만 shared pavilion frame, entity/domain relationship, system logic, capability 확인 장면, symbolic presence 기반 네이밍을 허용한다.`;
 
-    const result = await createStructuredJson<ConceptNameOptionsResult>({ schemaName: 'concept_name_options', schema: conceptNameOptionsJsonSchema, system, user, timeoutMs: 18_000, maxRetries: 1 });
-    const styles = ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] as const;
-    const relevanceContext = [body.input.projectName, body.input.clientName, compact(body.analysis, 5000), compact(body.rfpDiagnosis, 2500), compact(body.brandProductIntelligence, 2500), compact(body.selectedDirection, 2500)].join(' ');
-    const repeatedHooks = genericHookCounts(result.options ?? []);
-    const blockedNameSet = new Set([...(body.recentNameOptions ?? []), ...(body.existingNamesForSelectedDirection ?? []), ...(body.blockedOtherDirectionNames ?? [])].map(normalizeName).filter(Boolean));
-    const seenNameSet = new Set<string>();
-    const seenFingerprintSet = new Set<string>();
-    let blockedNameDrops = 0;
-    const deduped = (result.options ?? []).filter((option) => {
-      const nameKey = normalizeName(option.conceptName || '');
-      const fingerprint = optionTextFingerprint(option);
-      if (!nameKey) return false;
-      if (blockedNameSet.has(nameKey)) { blockedNameDrops += 1; return false; }
-      if (seenNameSet.has(nameKey) || (fingerprint && seenFingerprintSet.has(fingerprint))) return false;
-      seenNameSet.add(nameKey);
-      if (fingerprint) seenFingerprintSet.add(fingerprint);
-      return true;
-    });
-    // Compute the vocabulary match on the RAW option (before userFacingCopy truncates/replaces the fields it reads).
-    const prepared = deduped.map((option) => ({
-      usesVocabulary: usesCurrentVocabulary(option, currentRfpVocabularySet),
-      option: { ...option, oneLineSlogan: userFacingCopy(option.oneLineSlogan || option.shortMeaning, 120), shortMeaning: userFacingCopy(option.shortMeaning, 100), whyItFitsRfp: userFacingCopy(option.whyItFitsRfp || option.whyItFits || option.whyItFitsSelectedDirection || option.shortMeaning, 180), mainRisk: userFacingCopy(option.mainRisk || option.risk, 120) },
-    }));
-    const safe = prepared.filter((entry) => passesNameFirewall(entry.option, relevanceContext, repeatedHooks));
-    // Soft vocabulary preference: prefer vocab-matching names, but never let the vocab check alone drop the count to 0.
-    const vocabMatched = safe.filter((entry) => entry.usesVocabulary);
-    const ranked = (vocabMatched.length ? [...vocabMatched, ...safe.filter((entry) => !entry.usesVocabulary)] : safe).map((entry) => entry.option);
-    const options = ranked.slice(0, 3).map((option, index) => {
-      const whyItFits = option.whyItFitsRfp || option.whyItFits || option.whyItFitsSelectedDirection || option.shortMeaning;
-      const mainRisk = option.mainRisk || option.risk || '';
-      // Scores / validation / expandability are server-derived (no longer required from the model output).
-      return {
-        ...option,
-        id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`,
-        koreanSubtitle: option.koreanSubtitle ?? '',
-        oneLineSlogan: option.oneLineSlogan || option.shortMeaning,
-        whyItFitsRfp: whyItFits,
-        whyItFitsSelectedDirection: option.whyItFitsSelectedDirection || whyItFits,
-        namingStyle: option.namingStyle ?? styles[index % styles.length],
-        mainRisk,
-        strategicClaim: option.strategicClaim || option.oneLineSlogan || option.shortMeaning,
-        expandableTo: option.expandableTo ?? { space: option.shortMeaning, content: whyItFits, media: option.oneLineSlogan || option.shortMeaning, operation: mainRisk },
-        validation: option.validation ?? truthyValidation(),
-        coverReadinessScore: option.coverReadinessScore ?? option.coverTitleScore ?? 4,
-        specificityScore: option.specificityScore ?? option.rfpSpecificityScore ?? 4,
-        coverTitleScore: option.coverTitleScore ?? 4,
-        memorabilityScore: option.memorabilityScore ?? 4,
-        rfpSpecificityScore: option.rfpSpecificityScore ?? 4,
-        expandabilityScore: option.expandabilityScore ?? 4,
-        risk: option.risk ?? mainRisk,
-      };
-    });
-    const normalized = { ...result, selectedDirectionId: body.selectedDirection.conceptId, options };
-    if (!options.length) {
-      const reason = !deduped.length ? (blockedNameDrops ? 'blocked_name_zeroout' : 'no_model_options') : 'firewall_zeroout';
-      return json(errorResponse('선택한 전략 방향과 충분히 구분되는 컨셉명이 생성되지 않았습니다. 다시 생성해 주세요.', `reason=${reason}; returned=${(result.options ?? []).length}; deduped=${deduped.length}; safe=${safe.length}; blockedNameDrops=${blockedNameDrops}`), { status: 422 });
+    const generate = (userPrompt: string) => createStructuredJson<ConceptNameOptionsResult>({ schemaName: 'concept_name_options', schema: conceptNameOptionsJsonSchema, system, user: userPrompt, timeoutMs: 18_000, maxRetries: 1 });
+
+    let result = await generate(user);
+    let built = buildFinalOptions(result, body, currentRfpVocabularySet);
+    // Spec: if the first pass produces zero sufficiently-specific options (all weak/ungrounded/duplicate),
+    // regenerate ONCE with stricter anti-pattern filtering before failing. Never show weak fallback names.
+    if (!built.options.length) {
+      result = await generate(user + STRICTER_RETRY_ADDENDUM);
+      built = buildFinalOptions(result, body, currentRfpVocabularySet);
     }
-    return json(successResponse(normalized));
+    if (!built.options.length) {
+      const { returned, deduped, safe, quality, blockedNameDrops } = built.diag;
+      return json(errorResponse(WEAK_NAMING_ERROR, `reason=weak_after_retry; returned=${returned}; deduped=${deduped}; safe=${safe}; quality=${quality}; blockedNameDrops=${blockedNameDrops}`), { status: 422 });
+    }
+    return json(successResponse({ ...result, selectedDirectionId: body.selectedDirection.conceptId, options: built.options }));
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
-    return json(errorResponse('선택한 전략 방향에 맞는 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.', `reason=${classifyServerError(message)}; ${message}`), { status: 502 });
+    return json(errorResponse(WEAK_NAMING_ERROR, `reason=${classifyServerError(message)}; ${message}`), { status: 502 });
   }
 }
