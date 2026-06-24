@@ -4,6 +4,7 @@ import type { AnalysisResult, BrandExperienceMatrixItem, ConceptCandidate, Conce
 import { normalizeProposalType } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { getActiveMatrix, sanitizeConceptContextByRfpType } from '@/lib/conceptContextSanitizer';
+import { extractRfpConceptHierarchy, type RfpProvidedConceptHierarchy } from '@/lib/rfpConceptHierarchy';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -227,7 +228,7 @@ function buildCurrentRfpVocabularySet(body: { input: ProjectInput; analysis: Ana
 // derived from strategy (claim/tension/perception/scene), then category/mechanism/frame, with the client/brand/entity
 // name only as a secondary modifier. For pavilions it adds a pavilion-level conceptual frame so blocking a single
 // participant does not collapse into generic names. No example names, no hardcoded brands — all current-RFP fields.
-function buildConceptNamingAnchor(body: { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; proposalNarrative?: ProposalNarrative; primaryRfpConceptType?: string }): string {
+function buildConceptNamingAnchor(body: { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; proposalNarrative?: ProposalNarrative; primaryRfpConceptType?: string }, hierarchy?: RfpProvidedConceptHierarchy): string {
   const dir = body.selectedDirection;
   const diag = body.rfpDiagnosis;
   const bpi = body.brandProductIntelligence;
@@ -242,7 +243,12 @@ function buildConceptNamingAnchor(body: { input: ProjectInput; analysis: Analysi
   const pavilionFrame = isPavilion
     ? `\n[파빌리온 프레임] 공동 메시지=${v(narrative?.unifyingFrame || diag?.coreWinningCondition)} · 주체 간 관계/역할=${v(narrative?.differentiationPrinciple || diag?.strategicTension)} · 결합 역량=${v(diag?.coreWinningCondition || dir.whatThisDirectionEmphasizes)} · 관람객의 전체 이해=${v(bpi?.audiencePerceptionGap || diag?.hiddenNeed)}`
     : '';
-  return `=== Concept Naming Anchor (PRIMARY 네이밍 소스. client/brand/entity name은 보조 수식어로만 사용) ===\n[Priority 1] ${p1}\n[Priority 2] ${p2}${pavilionFrame}\n[Priority 3] client/brand/entity name = 보조 수식어 한정. 모든 후보가 client/brand/entity name에 의존하면 안 된다.`;
+  // Priority 0: the RFP's OWN explicit concept hierarchy (when provided) outranks everything below, ahead of any
+  // participant/brand name. For pavilions, names must come from the pavilion-level theme, not one participant.
+  const p0 = hierarchy
+    ? `\n[Priority 0 — RFP 제공 공식 컨셉 위계, 최우선] 메인 테마=${compact(hierarchy.mainTheme, 160) || '없음'} · 서브 테마=${compact(hierarchy.subThemes.join(' / '), 200) || '없음'} · 존 컨셉=${compact(hierarchy.zoneConcepts.join(' / '), 200) || '없음'} · 공식 슬로건=${compact(hierarchy.officialSlogan, 160) || '없음'} · 핵심 메시지=${compact(hierarchy.keyMessage, 160) || '없음'}. 이 위계가 네이밍 1순위 앵커이며 참여 주체/브랜드명보다 우선한다.`
+    : '';
+  return `=== Concept Naming Anchor (PRIMARY 네이밍 소스. client/brand/entity name은 보조 수식어로만 사용) ===${p0}\n[Priority 1] ${p1}\n[Priority 2] ${p2}${pavilionFrame}\n[Priority 3] client/brand/entity name = 보조 수식어 한정. 모든 후보가 client/brand/entity name에 의존하면 안 된다.`;
 }
 
 function hasInternalMainCopy(option: ConceptNameOptionsResult['options'][number]) {
@@ -412,7 +418,10 @@ export async function POST(request: Request) {
     const currentRfpOnlyMode = true; // final naming context = selected direction + confirmed diagnosis + current RFP only; proposal_patterns are not allowed.
 
     const currentRfpVocabularySet = buildCurrentRfpVocabularySet(body, activeMatrix);
-    const namingAnchorBlock = buildConceptNamingAnchor(body);
+    // Explicit RFP-provided concept hierarchy (current RFP text only) → highest-priority naming anchor (above brand/entity).
+    const rfpHierarchy = extractRfpConceptHierarchy(body.input.briefText);
+    const namingAnchorBlock = buildConceptNamingAnchor(body, rfpHierarchy);
+    console.info('[concept-names:gating]', { rfpProvidedConceptHierarchyDetected: Boolean(rfpHierarchy), hierarchyFieldsUsedForNaming: rfpHierarchy ? Object.entries({ mainTheme: rfpHierarchy.mainTheme, subThemes: rfpHierarchy.subThemes.length, zoneConcepts: rfpHierarchy.zoneConcepts.length, officialSlogan: rfpHierarchy.officialSlogan, keyMessage: rfpHierarchy.keyMessage }).filter(([, v]) => v).map(([k]) => k) : [] });
 
     const system = [
       'You are a senior Korean proposal concept naming director.',
@@ -421,6 +430,7 @@ export async function POST(request: Request) {
       'Avoid consulting labels, analysis headings, internal strategy phrases, generic abstract nouns, awkward translated phrases, product-specific names, one-zone-specific names, one-entity-specific names, unsupported poetic metaphors, and generic tech/event slogans.',
       'Names must be proposal-cover concepts that express the winning claim and can expand into space, content, media, and operation.',
       'Internally use coreWinningCondition, strategicTension, proofBurden, selectedStrategicDirection, and signatureProofIdea, but translate all visible copy into planner-friendly Korean: proof=설득 포인트/확인 장면/대표 설득 장면, evidence=근거, proof burden=설득 과제, required proof elements=필수 설득 요소, signature proof idea=대표 설득 장면.',
+      'If the Concept Naming Anchor includes a [Priority 0 — RFP 제공 공식 컨셉 위계] line, that RFP-provided concept hierarchy (main theme / sub themes / zone concept / official slogan / key message) OUTRANKS everything below and is the primary naming source, ahead of the client/brand/entity name; for multi-entity pavilions, name from the pavilion-level theme, never from one participant.',
       'Naming source priority (STRICT). Priority 1: the selected direction\'s strategic claim, the current RFP\'s strategic tension, the audience/evaluator perception shift, and the representative persuasion scene. Priority 2: category/industry/project-specific vocabulary, the spatial/media/content/UX mechanism, and the pavilion or exhibition-level narrative frame. Priority 3: client/brand/entity name. The client/brand/entity name may be used ONLY as a secondary modifier that adds strategic meaning, never as the default naming subject, and NOT in every candidate. Derive names from the Concept Naming Anchor block first; use currentRfpVocabularySet as supporting vocabulary, not as a brand-first source. Do not hardcode example vocabularies across RFPs.',
       'For multi-entity pavilion RFPs, name at pavilion / relationship / system / collective-experience level using the 파빌리온 프레임 anchor. Never make a single participant the title subject unless the RFP explicitly establishes it as the lead owner. Do NOT produce a name merely by deleting an entity name (that yields generic names) — replace it with a specific pavilion-level conceptual frame from the diagnosis.',
       'For exhibition/content/energy/technology RFPs, NOT all candidates may contain the client/brand name; use it only when the selected direction is explicitly about leadership/ownership/representative role, and even then keep it limited and meaning-adding. Default to the category/industry shift, the core audience understanding gap, the experience/content mechanism, current-reality-vs-future tension when present, and the intended post-viewing perception — not client/brand name + generic/exhibition/experience noun, and not a descriptive restatement of the RFP.',
