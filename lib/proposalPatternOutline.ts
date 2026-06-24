@@ -3,6 +3,7 @@ import 'server-only';
 import { getSupabaseConfigState } from './supabase';
 import { buildAvoidanceRuleFromOutcomeReason, classifyFailureAreas, classifyOutcomeReason, getOutcomeReasonTypeFromMetadata, resolveFailureAreasFromMetadata, type FailureArea, type OutcomeReasonType } from './outcomeReasonClassifier';
 import type { JsonValue, ProposalPatternRecord } from './dbTypes';
+import type { PatternLearningSummary } from './types';
 
 export interface OutlineProposalPattern {
   pattern_type: string | null;
@@ -31,10 +32,30 @@ export interface ProposalPatternRetrievalSummary {
   lostUsableStructureCount: number;
 }
 
+// A safe, structured won-vs-lost comparison derived ONLY from existing columns of the CURRENT project's own uploaded
+// reference proposals. It is advisory structure/logic guidance — it must never override the current RFP, selected
+// strategic direction, or final concept, and it carries NO old proposal copy (all text is name/file scrubbed).
+export interface SuccessPatternItem {
+  slideRole: string | null;
+  narrativeStage: string | null;
+  principle: string;
+}
+export interface ProposalSuccessPatternComparison {
+  similarWinningPatterns: SuccessPatternItem[];
+  similarLosingPatterns: Array<{ slideRole: string | null; narrativeStage: string | null; failureAreas: FailureArea[]; risk: string }>;
+  winningDifferentiators: string[];
+  losingRisksToAvoid: string[];
+  recommendedPatternToApply: string | null;
+  contentPatternToApply: string | null;
+  proofPatternToApply: string | null;
+  confidence: 'high' | 'medium' | 'low';
+  evidenceSource: { wonCount: number; lostQualityCount: number; lostExternalCount: number; typeMatchedCount: number; sameProjectOnly: true };
+}
 export interface RetrievedProposalPatternGuidance {
   patterns: OutlineProposalPattern[];
   avoidanceRules: string[];
   summary: ProposalPatternRetrievalSummary;
+  comparison: ProposalSuccessPatternComparison;
 }
 
 interface ProposalPatternWithSourceMetadata extends ProposalPatternRecord {
@@ -45,6 +66,7 @@ interface ProposalPatternWithSourceMetadata extends ProposalPatternRecord {
   projects?: {
     name?: string | null;
     client_name?: string | null;
+    proposal_type?: string | null;
   } | null;
 }
 
@@ -56,6 +78,9 @@ export interface RetrieveProposalPatternsForOutlineOptions {
   // patterns must never influence the current outline (generic structural principles are used instead).
   projectId?: string | null;
   documentIds?: string[];
+  // Current proposal type (user-selected/inferred). Used only as a soft similarity signal for the success-pattern
+  // comparison — never as a hard filter, since the patterns are already scoped to this project's own uploads.
+  currentProposalType?: string | null;
 }
 
 const defaultPatternLimit = 16;
@@ -300,6 +325,92 @@ function summarize(patterns: OutlineProposalPattern[], avoidanceRules: string[])
   };
 }
 
+const CONTENT_PATTERN_ROLES = new Set(['hero_experience', 'key_media_scene', 'content_detail', 'spatial_strategy', 'visitor_journey']);
+const PROOF_PATTERN_ROLES = new Set(['impact_summary', 'company_credential', 'team_credential', 'execution_plan', 'operation_plan']);
+
+function patternProjectType(pattern: ProposalPatternWithSourceMetadata): string {
+  return normalizeText(pattern.projects?.proposal_type).toLowerCase();
+}
+
+function emptyComparison(): ProposalSuccessPatternComparison {
+  return {
+    similarWinningPatterns: [], similarLosingPatterns: [], winningDifferentiators: [], losingRisksToAvoid: [],
+    recommendedPatternToApply: null, contentPatternToApply: null, proofPatternToApply: null,
+    confidence: 'low', evidenceSource: { wonCount: 0, lostQualityCount: 0, lostExternalCount: 0, typeMatchedCount: 0, sameProjectOnly: true },
+  };
+}
+
+// Built from the RAW sorted records so every column (can_use_for_content/execution/operation, projects.proposal_type)
+// is available — the structure-only OutlineProposalPattern filter drops those. All text is name/file scrubbed.
+function buildSuccessPatternComparison(sorted: ProposalPatternWithSourceMetadata[], avoidanceRules: string[], currentProposalType?: string | null): ProposalSuccessPatternComparison {
+  const currentType = normalizeText(currentProposalType).toLowerCase();
+  const usable = sorted.filter((pattern) => isUsefulPrinciple(normalizeText(pattern.reusable_principle), collectSourceNames(pattern)) && ['high', 'medium'].includes(normalizeText(pattern.confidence).toLowerCase()));
+  const isPositive = (pattern: ProposalPatternWithSourceMetadata) => resolvedOutcome(pattern) === 'won' || (resolvedOutcome(pattern) === 'lost' && outcomeReasonType(pattern) === 'external');
+  const isQualityLoss = (pattern: ProposalPatternWithSourceMetadata) => resolvedOutcome(pattern) === 'lost' && (outcomeReasonType(pattern) === 'quality' || outcomeReasonType(pattern) === 'mixed');
+  const won = usable.filter(isPositive);
+  const lostQuality = usable.filter(isQualityLoss);
+  if (!won.length && !lostQuality.length) return emptyComparison();
+
+  const principleOf = (pattern: ProposalPatternWithSourceMetadata) => sanitizeField(normalizeText(pattern.reusable_principle), collectSourceNames(pattern)) || '';
+  const toItem = (pattern: ProposalPatternWithSourceMetadata): SuccessPatternItem => ({ slideRole: sanitizeField(pattern.slide_role, collectSourceNames(pattern)), narrativeStage: sanitizeField(pattern.narrative_stage, collectSourceNames(pattern)), principle: principleOf(pattern) });
+
+  const similarWinningPatterns = won.map(toItem).filter((item) => item.principle).slice(0, 8);
+  const similarLosingPatterns = lostQuality.slice(0, 6).map((pattern) => ({ slideRole: sanitizeField(pattern.slide_role, collectSourceNames(pattern)), narrativeStage: sanitizeField(pattern.narrative_stage, collectSourceNames(pattern)), failureAreas: resolvedFailureAreas(pattern), risk: sanitizeField(resolvedOutcomeReason(pattern), collectSourceNames(pattern)) || '' }));
+
+  const lostRoles = new Set(lostQuality.map((pattern) => normalizeText(pattern.slide_role).toLowerCase()).filter(Boolean));
+  const winningDifferentiators = Array.from(new Set(won.filter((pattern) => lostRoles.has(normalizeText(pattern.slide_role).toLowerCase())).map(principleOf).filter(Boolean))).slice(0, 5);
+  const losingRisksToAvoid = Array.from(new Set([...avoidanceRules, ...lostQuality.flatMap((pattern) => resolvedFailureAreas(pattern))])).slice(0, 8);
+
+  const contentWon = won.find((pattern) => CONTENT_PATTERN_ROLES.has(normalizeText(pattern.slide_role).toLowerCase()) && pattern.can_use_for_content !== false);
+  const proofWon = won.find((pattern) => (normalizeText(pattern.narrative_stage).toLowerCase() === 'proof' || PROOF_PATTERN_ROLES.has(normalizeText(pattern.slide_role).toLowerCase())) && (pattern.can_use_for_execution !== false || pattern.can_use_for_operation !== false));
+
+  const typeMatchedCount = currentType ? usable.filter((pattern) => patternProjectType(pattern) === currentType).length : 0;
+  const lostExternalCount = usable.filter((pattern) => resolvedOutcome(pattern) === 'lost' && outcomeReasonType(pattern) === 'external').length;
+  const confidence: 'high' | 'medium' | 'low' = won.length >= 2 && typeMatchedCount >= 1 ? 'high' : won.length >= 1 ? 'medium' : 'low';
+
+  return {
+    similarWinningPatterns,
+    similarLosingPatterns,
+    winningDifferentiators,
+    losingRisksToAvoid,
+    recommendedPatternToApply: similarWinningPatterns[0]?.principle ?? null,
+    contentPatternToApply: contentWon ? (principleOf(contentWon) || null) : null,
+    proofPatternToApply: proofWon ? (principleOf(proofWon) || null) : null,
+    confidence,
+    evidenceSource: { wonCount: won.length, lostQualityCount: lostQuality.length, lostExternalCount, typeMatchedCount, sameProjectOnly: true },
+  };
+}
+
+export function formatProposalSuccessPatternComparisonForPrompt(comparison: ProposalSuccessPatternComparison): string {
+  if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length) {
+    return '수주 패턴 비교 데이터 없음 — 현재 RFP/선택 전략 방향/최종 컨셉 근거만 사용한다.';
+  }
+  const lines: string[] = [];
+  if (comparison.similarWinningPatterns.length) lines.push(`수주 제안 구조 패턴(참고): ${comparison.similarWinningPatterns.map((p) => `[${p.narrativeStage || p.slideRole || '구조'}] ${p.principle}`).join(' / ')}`);
+  if (comparison.winningDifferentiators.length) lines.push(`수주를 만든 차별 포인트: ${comparison.winningDifferentiators.join(' / ')}`);
+  if (comparison.similarLosingPatterns.length) lines.push(`미수주 약점 패턴(반복 금지, 리스크 경고로만): ${comparison.similarLosingPatterns.map((p) => `[${p.narrativeStage || p.slideRole || '구조'}] ${[p.risk, p.failureAreas.join(',')].filter(Boolean).join(' · ') || '약한 구조'}`).join(' / ')}`);
+  if (comparison.losingRisksToAvoid.length) lines.push(`미수주 회피 리스크(반복 금지, 리스크 경고로만 사용): ${comparison.losingRisksToAvoid.join(' / ')}`);
+  if (comparison.recommendedPatternToApply) lines.push(`적용 권장 구조 패턴: ${comparison.recommendedPatternToApply}`);
+  if (comparison.contentPatternToApply) lines.push(`콘텐츠/미디어 적용 패턴(컨셉 선언 이후 콘텐츠 페이지에 구체화): ${comparison.contentPatternToApply}`);
+  if (comparison.proofPatternToApply) lines.push(`증명/실행 신뢰 패턴: ${comparison.proofPatternToApply}`);
+  lines.push(`신뢰도: ${comparison.confidence} · 근거: 수주 ${comparison.evidenceSource.wonCount} / 품질 미수주 ${comparison.evidenceSource.lostQualityCount} / 유형 일치 ${comparison.evidenceSource.typeMatchedCount} (현재 프로젝트 업로드 레퍼런스 한정)`);
+  lines.push('주의: 위 패턴은 구조·논리 참고용이다. 현재 RFP·선택 전략 방향·최종 컨셉명/슬로건·RFP 위계를 절대 덮어쓰지 않는다. 과거 제안의 컨셉명/슬로건/원문/클라이언트명/프로젝트명을 복사하지 않는다.');
+  return lines.join('\n');
+}
+
+export function buildPatternLearningSummary(comparison: ProposalSuccessPatternComparison): PatternLearningSummary | null {
+  if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length) return null;
+  return {
+    used: true,
+    confidence: comparison.confidence,
+    winningPatternCount: comparison.similarWinningPatterns.length,
+    riskCount: comparison.losingRisksToAvoid.length,
+    contentPatternUsed: Boolean(comparison.contentPatternToApply),
+    proofPatternUsed: Boolean(comparison.proofPatternToApply),
+    recommendedPatternRole: comparison.similarWinningPatterns[0]?.slideRole ?? comparison.similarWinningPatterns[0]?.narrativeStage ?? null,
+  };
+}
+
 export async function retrieveProposalPatternsForOutline(options: RetrieveProposalPatternsForOutlineOptions = {}): Promise<RetrievedProposalPatternGuidance> {
   const { client } = getSupabaseConfigState();
   const limit = Math.max(1, Math.min(20, options.limit ?? defaultPatternLimit));
@@ -309,11 +420,11 @@ export async function retrieveProposalPatternsForOutline(options: RetrievePropos
   const hasScope = Boolean(options.projectId) || documentIds.length > 0;
   if (!client || !hasScope) {
     // No Supabase client OR no current project/document scope → do NOT read patterns globally across projects.
-    return { patterns: [], avoidanceRules: [], summary: summarize([], []) };
+    return { patterns: [], avoidanceRules: [], summary: summarize([], []), comparison: emptyComparison() };
   }
 
   try {
-    const baseSelect = '*, documents(file_name, metadata), projects(name, client_name)';
+    const baseSelect = '*, documents(file_name, metadata), projects(name, client_name, proposal_type)';
     let query = client
       .from('proposal_patterns')
       .select(baseSelect)
@@ -329,17 +440,18 @@ export async function retrieveProposalPatternsForOutline(options: RetrievePropos
 
     if (error) {
       console.error(`[proposalPatternOutline] retrieveProposalPatternsForOutline query failed: ${error.message}`);
-      return { patterns: [], avoidanceRules: [], summary: summarize([], []) };
+      return { patterns: [], avoidanceRules: [], summary: summarize([], []), comparison: emptyComparison() };
     }
 
     const sorted = sortPatternCandidates((data ?? []) as ProposalPatternRecord[]);
     const patterns = filterProposalPatternsForOutline(sorted, limit);
     const avoidanceRules = extractAvoidanceRules(sorted, antiPatternLimit);
-    return { patterns, avoidanceRules, summary: summarize(patterns, avoidanceRules) };
+    const comparison = buildSuccessPatternComparison(sorted as ProposalPatternWithSourceMetadata[], avoidanceRules, options.currentProposalType);
+    return { patterns, avoidanceRules, summary: summarize(patterns, avoidanceRules), comparison };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[proposalPatternOutline] retrieveProposalPatternsForOutline failed: ${message}`);
-    return { patterns: [], avoidanceRules: [], summary: summarize([], []) };
+    return { patterns: [], avoidanceRules: [], summary: summarize([], []), comparison: emptyComparison() };
   }
 }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence, DesignGuide } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence, DesignGuide, PatternLearningSummary } from '@/lib/types';
 import { normalizeProposalType, proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -3769,10 +3769,11 @@ export default function Home() {
       const scopedDocuments = [...(state.uploadedDocuments ?? []), ...(state.dbUploadedDocuments ?? [])];
       const projectId = scopedDocuments.find((document) => document.dbProjectId)?.dbProjectId ?? null;
       const documentIds = Array.from(new Set(scopedDocuments.map((document) => document.dbDocumentId).filter((id): id is string => Boolean(id))));
-      const outlineResponse = await postJson<{ slides: SlideOutline[]; designGuide?: DesignGuide } | SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, selectedStrategicDirection: state.selectedStrategicDirection, rfpDiagnosis: state.rfpDiagnosis, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, proposalNarrative: state.proposalNarrative, documentChunks, projectId, documentIds });
+      const outlineResponse = await postJson<{ slides: SlideOutline[]; designGuide?: DesignGuide; patternLearningSummary?: PatternLearningSummary } | SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, selectedStrategicDirection: state.selectedStrategicDirection, rfpDiagnosis: state.rfpDiagnosis, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, proposalNarrative: state.proposalNarrative, documentChunks, projectId, documentIds });
       const outline = Array.isArray(outlineResponse) ? outlineResponse : outlineResponse.slides;
       const designGuide = Array.isArray(outlineResponse) ? undefined : outlineResponse.designGuide;
-      setState((current) => ({ ...current, outline, designGuide, slides: undefined }));
+      const patternLearningSummary = Array.isArray(outlineResponse) ? undefined : outlineResponse.patternLearningSummary;
+      setState((current) => ({ ...current, outline, designGuide, patternLearningSummary, slides: undefined }));
       setStep('outline');
     } catch (err) {
       setError(err instanceof Error ? err.message : '구조 생성 중 오류가 발생했습니다.');
@@ -4399,6 +4400,18 @@ export default function Home() {
             <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-semibold leading-6 text-emerald-900">
               이 구조는 최종 문안 생성과 PPTX 다운로드의 기준입니다. 내부 의사결정용 콘셉트 후보 비교 장표는 제외되며, 필요한 장표는 직접 수정·삭제·추가할 수 있습니다.
             </div>
+            {state.patternLearningSummary?.used && (
+              <details className="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+                <summary className="cursor-pointer text-sm font-bold text-slate-600">수주 패턴 참고 {state.patternLearningSummary.winningPatternCount}개 · 신뢰도 {state.patternLearningSummary.confidence === 'high' ? '높음' : state.patternLearningSummary.confidence === 'medium' ? '보통' : '낮음'}</summary>
+                <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
+                  {state.patternLearningSummary.winningPatternCount > 0 && <li>유사 수주 제안서의 설득 구조를 참고했습니다.</li>}
+                  {state.patternLearningSummary.riskCount > 0 && <li>미수주 제안서의 약점 패턴을 리스크로 반영했습니다.</li>}
+                  {state.patternLearningSummary.contentPatternUsed && <li>콘텐츠 구성에는 유사 프로젝트의 미디어/체험 패턴을 참고했습니다.</li>}
+                  {state.patternLearningSummary.proofPatternUsed && <li>증명/실행 신뢰 구조에 수주 패턴을 반영했습니다.</li>}
+                </ul>
+                <p className="mt-2 text-xs text-slate-400">현재 프로젝트에 업로드한 레퍼런스 제안서의 구조·논리만 참고하며, 과거 제안 원문·컨셉명·슬로건은 사용하지 않습니다.</p>
+              </details>
+            )}
             <div className="space-y-3">
               {state.outline.map((slide, index) => (
                 <article key={slide.slideNumber} className="rounded-2xl border border-slate-200 p-4">

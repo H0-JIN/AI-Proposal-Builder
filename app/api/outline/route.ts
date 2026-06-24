@@ -15,7 +15,7 @@ import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, isReferen
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
 import { getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
-import { formatProposalAvoidanceRulesForPrompt, formatProposalPatternDiagnostics, formatProposalPatternsForOutlinePrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
+import { buildPatternLearningSummary, formatProposalAvoidanceRulesForPrompt, formatProposalPatternDiagnostics, formatProposalPatternsForOutlinePrompt, formatProposalSuccessPatternComparisonForPrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
 import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
 import { applyDeckStructure, buildDeckDesignGuide, validateDeckStructure, type DeckSlideSeed } from '@/lib/deckStructure';
 
@@ -232,11 +232,14 @@ export async function POST(request: Request) {
     const differentiationStrategy = buildRfpDifferentiationStrategy(body.analysis, proposalNarrative);
     // Scope proposal_patterns to the CURRENT project's own uploaded reference proposals only. When no project/document
     // scope is available, retrieveProposalPatternsForOutline skips the global read (no cross-project / orphan patterns).
-    const proposalPatternGuidance = await retrieveProposalPatternsForOutline({ limit: 16, projectId: body.projectId ?? null, documentIds: body.documentIds ?? [] });
+    const proposalPatternGuidance = await retrieveProposalPatternsForOutline({ limit: 16, projectId: body.projectId ?? null, documentIds: body.documentIds ?? [], currentProposalType: effectiveProposalType });
     const outlineProposalPatterns = proposalPatternGuidance.patterns;
     const proposalPatternContext = formatProposalPatternsForOutlinePrompt(outlineProposalPatterns);
     const proposalAvoidanceRuleContext = formatProposalAvoidanceRulesForPrompt(proposalPatternGuidance.avoidanceRules);
     const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, differentiationStrategy.hasMultipleEntities);
+    // Phase 3: structured won-vs-lost learning (Priority 2 — advisory only, never overrides the current RFP / concept).
+    const successComparisonContext = formatProposalSuccessPatternComparisonForPrompt(proposalPatternGuidance.comparison);
+    const patternLearningSummary = buildPatternLearningSummary(proposalPatternGuidance.comparison);
 
     const result = await createStructuredJson<{ slides: SlideOutline[] }>({
       schemaName: 'proposal_outline',
@@ -256,6 +259,7 @@ export async function POST(request: Request) {
         'Pattern priority: won patterns first, lost_external second, unknown neutral third, lost_mixed with caution fourth, lost_quality only as anti-patterns. Budget-only or external-only losses are not proposal quality failures.',
         'Quality-related lost proposal reasons must become avoidance rules for generic concept, weak differentiation, over-integrated story, unclear client benefit, weak audience insight, weak proof of feasibility, missing operational detail, content list without hierarchy, visuals/media without reason, concept before rationale, or copied old structure without current relevance.',
         'proposal_patterns는 구조적 흐름만 참고한다. 현재 RFP 분석을 최우선 원천으로 삼고, 패턴은 slide order, concept buildup, core concept 선언 타이밍, problem→insight→strategy→concept→content→proof→operation 관계, 각 장표의 존재 이유, operation/credential 장표 배치를 개선하는 보조 가이드로만 사용하라.',
+        '"수주/미수주 패턴 비교"(Priority 2) 블록이 제공되면: 수주 차별 포인트는 Approach·Concept Strategy·Content·증명 섹션의 구조와 논리를 강화하는 데 쓰고, 콘텐츠/미디어 적용 패턴은 컨셉 선언 이후 콘텐츠 페이지를 더 구체적으로 만드는 데만 쓰며, 미수주 회피 리스크는 같은 약점을 반복하지 않기 위한 리스크 경고로만 쓴다. 이 비교는 advisory이며 현재 RFP·선택 전략 방향·최종 컨셉명/슬로건·RFP 위계를 절대 덮어쓰지 않는다. 과거 제안의 컨셉명/슬로건/원문/클라이언트명/프로젝트명을 복사하지 말고, 비슷한 패턴이 없으면 현재 RFP·전략·컨셉 근거만으로 생성한다.',
         'Do not default to generic concept words. The concept must emerge from the current RFP’s specific strategic tension, audience barrier, client objective, and proof logic.',
         'If the RFP contains multiple entities, do not solve the proposal only with unity. Define what is unified and what remains distinct. Include one or more entity differentiation slides before/around Concept Rationale: entity differentiation strategy, role/message matrix, entity-by-entity content strategy, and integration logic that connects entities without erasing their differences.',
         'Before finalizing, detect duplicate slide roles or near-duplicate titles such as Audience Insight + 대상 관객 인사이트, Strategic Opportunity + 전략적 기회, Concept Rationale + Core Concept with repeated bullets; merge or remove duplicates instead of outputting both. Every slide needs a clear role, why it exists, sourceEvidence from the current RFP when possible, and explicit relation to proposalThesis. Operation/proof/credential slides appear only where they support the thesis.',
@@ -330,6 +334,9 @@ ${proposalPatternContext}
 품질 관련 미수주 회피 규칙 JSON(현재 RFP에 맞는 회피 원칙으로만 사용):
 ${proposalAvoidanceRuleContext}
 
+수주/미수주 패턴 비교 (Priority 2 — 구조·논리 참고용. 현재 RFP·선택 전략 방향·최종 컨셉·RFP 위계를 절대 변경하지 않는다):
+${successComparisonContext}
+
 RFP Entity / Content Differentiation Strategy JSON:
 ${summarizeDifferentiationStrategy(differentiationStrategy)}
 
@@ -397,7 +404,7 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
     const deckSlides = applyDeckStructure(dedupedSlides, { finalConceptName, finalConceptSlogan, projectName: body.input.projectName, clientName: body.input.clientName, proposalTypeLabel, makeSlide: makeOutlineDeckSlide });
     const designGuide = buildDeckDesignGuide(body.input);
     console.info('[outline:deck-structure]', validateDeckStructure(deckSlides, finalConceptName));
-    return NextResponse.json({ slides: deckSlides, designGuide });
+    return NextResponse.json({ slides: deckSlides, designGuide, patternLearningSummary });
   } catch (error) {
     const message = error instanceof Error ? error.message : '아웃라인 생성 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });
