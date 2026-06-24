@@ -639,9 +639,20 @@ function UploadedDocumentsList({
     );
   }
 
+  const completedCount = documents.filter((document) => /완료/.test(document.extractionStatus)).length;
+  const hasPrimaryRfp = documents.length === 1 || documents.some((document) => /rfp|제안요청|과업|입찰|공고|제안서|rfi/i.test(`${document.documentRole ?? ''} ${document.fileName}`));
+  const supportingCount = Math.max(0, documents.length - 1);
   return (
-    <div className="mt-4 overflow-hidden rounded-2xl border border-blue-100 bg-white">
-      <div className="grid grid-cols-12 gap-3 border-b border-blue-100 bg-blue-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-blue-700">
+    <div className="mt-4 space-y-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">업로드 완료 {documents.length}개</span>
+        {hasPrimaryRfp ? <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-700">대표 RFP 감지됨</span> : <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">대표 RFP 확인 필요</span>}
+        {supportingCount > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">참고자료 {supportingCount}개</span>}
+        {documents.length > 0 && completedCount === documents.length && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">분석 준비 완료</span>}
+      </div>
+      <details className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <summary className="cursor-pointer px-4 py-2.5 text-xs font-bold text-slate-500">업로드 상세 보기</summary>
+      <div className="grid grid-cols-12 gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
         <span className="col-span-3">문서명</span>
         <span className="col-span-1">문서 유형</span>
         <span className="col-span-2">추출 상태</span>
@@ -698,6 +709,7 @@ function UploadedDocumentsList({
           </div>
         ))}
       </div>
+      </details>
     </div>
   );
 }
@@ -2040,7 +2052,7 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[], selecte
 }
 
 export default function Home() {
-  const [step, setStep] = useState<Step>('home');
+  const [step, setStep] = useState<Step>('create');
   const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [], dbUploadedDocuments: [] });
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -3985,11 +3997,10 @@ export default function Home() {
               <div className="rounded-3xl border border-dashed border-blue-200 bg-blue-50/60 p-5 md:col-span-2">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
-                    <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">RFP / 전달자료 업로드</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-700">지원 형식: PDF, PPTX, DOCX, TXT, MD · 최대 10MB</p>
-                    <p className="mt-1 text-sm leading-6 text-slate-600">업로드된 파일은 텍스트 추출/Vision 분석 요청에만 사용되며 원본 파일은 저장하지 않습니다.</p>
+                    <p className="text-sm font-black text-slate-900">RFP 및 참고자료 업로드</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">RFP와 함께 전시·제품·브랜드·행사·기술 정보, 이전 제안 레퍼런스 등 참고자료를 한 번에 올릴 수 있습니다. 대표 RFP는 자동 감지되며 나머지는 참고자료로 사용됩니다.</p>
+                    <p className="mt-1 text-xs text-slate-400">PDF · PPTX · DOCX · TXT · MD · 최대 10MB</p>
                     {hasVisionAnalysisInProgress && <p className="mt-1 text-sm leading-6 text-amber-700">{VISION_PROCESSING_GUIDANCE}</p>}
-                    <p className="mt-1 text-xs font-bold text-blue-700">Vision 옵션: {VISION_FULL_CHUNKED_LABEL}</p>
                   </div>
                   <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-bold text-blue-700 shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50">
                     파일 선택
@@ -4052,14 +4063,30 @@ export default function Home() {
                 </div>
               )}
               <DbSaveStatusIndicator status={dbSaveStatus} />
-              <KeyValueList data={state.analysis} evidence={state.retrievalEvidence} />
+              {state.rfpDiagnosis && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-400">분석 요약</p>
+                  <div className="mt-3 grid gap-3 text-sm leading-6 text-slate-700">
+                    {getDiagnosisText(state.rfpDiagnosis, 'coreProposalThesis') && <p><b className="text-slate-900">핵심 제안 명제</b><br />{getDiagnosisText(state.rfpDiagnosis, 'coreProposalThesis')}</p>}
+                    {getDiagnosisText(state.rfpDiagnosis, 'hiddenRequirement') && <p><b className="text-slate-900">숨은 요구</b><br />{getDiagnosisText(state.rfpDiagnosis, 'hiddenRequirement')}</p>}
+                    {getDiagnosisText(state.rfpDiagnosis, 'persuasionTask') && <p><b className="text-slate-900">주요 설득 과제</b><br />{getDiagnosisText(state.rfpDiagnosis, 'persuasionTask')}</p>}
+                    {state.conceptRecommendation?.recommendedDirectionLabel && <p><b className="text-slate-900">추천 전략 방향</b><br />{state.conceptRecommendation.recommendedDirectionLabel}</p>}
+                  </div>
+                </div>
+              )}
               {conceptRetryVisible && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-950">
                   <p>컨셉 생성 시간이 초과되었습니다. 분석 결과는 유지됩니다.</p>
                   <button onClick={() => runConcepts({ retryLight: true })} disabled={Boolean(loading)} className="mt-3 rounded-xl bg-amber-600 px-4 py-2 font-black text-white transition hover:bg-amber-700 disabled:opacity-50">가볍게 다시 생성</button>
                 </div>
               )}
-              <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
+              <details className="rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3">
+                <summary className="cursor-pointer text-sm font-bold text-slate-600">분석 자세히 보기</summary>
+                <div className="mt-3 space-y-4">
+                  <KeyValueList data={state.analysis} evidence={state.retrievalEvidence} />
+                  <RetrievalEvidencePanel evidence={state.retrievalEvidence} />
+                </div>
+              </details>
               <details className="rounded-3xl border border-indigo-200 bg-indigo-50 p-5">
                 <summary className="flex cursor-pointer list-none flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
@@ -4161,14 +4188,11 @@ export default function Home() {
 
         {step === 'concepts' && state.analysis && (state.conceptCandidates?.length || state.selectedConcept || loading.includes('새 후보')) && (
           <SectionCard title="전략 방향 선택">
-            <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 text-blue-950">
-              <p className="text-sm font-black uppercase tracking-[0.2em] text-blue-700">Required Step</p>
-              <h3 className="mt-2 text-xl font-black">제안서 구조 생성 전에 전략 방향 3개 중 하나를 선택해주세요.</h3>
-              <p className="mt-2 text-sm leading-6">
-                먼저 전략 방향을 선택한 뒤, 선택한 방향을 바탕으로 최종 컨셉명을 생성하세요. 방향명은 최종 컨셉명이 아니며 구조/PPT 생성에는 확정된 컨셉명을 사용합니다.
-              </p>
-              <p className="mt-3 text-xs font-bold text-blue-700">
-                prompt {state.conceptGenerationResult?.conceptPromptVersion || conceptPromptVersion} · attempt {(state.conceptGenerationResult?.generationAttempt ?? conceptGenerationAttemptRef.current) || '-'} · generated {state.conceptGenerationResult?.generatedAt || (loading.includes('새 후보') ? 'generating...' : '-')}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+              <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-400">다음 단계</p>
+              <h3 className="mt-1.5 text-lg font-black text-slate-900">전략 방향을 선택하세요</h3>
+              <p className="mt-1.5 text-sm leading-6 text-slate-600">
+                방향을 고르면 그 방향을 바탕으로 최종 컨셉명을 생성합니다. 방향명 자체는 최종 컨셉명이 아닙니다.
               </p>
               <details className="mt-3 rounded-2xl border border-blue-100 bg-white/70 px-3 py-2 text-[11px] font-bold text-slate-500">
                 <summary className="cursor-pointer font-black text-blue-700">근거/검증 정보 보기</summary>
@@ -4192,23 +4216,37 @@ export default function Home() {
                 {state.conceptGenerationResult.namingGuardNotice.message}
               </div>
             )}
-            <ProposalNarrativePanel narrative={state.proposalNarrative} />
-            <ConceptDevelopmentLogicPanel logic={state.conceptDevelopmentLogic} />
-            <EntityDifferentiationMatrixPanel matrix={state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix} matrixType={state.conceptGenerationResult?.matrixType} primaryRfpConceptType={state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType} />
-            <BrandExperienceMatrixPanel matrix={state.conceptGenerationResult?.brandExperienceMatrix} matrixType={state.conceptGenerationResult?.matrixType} />
-            <ConceptRecommendationPanel recommendation={state.conceptRecommendation} />
+            <details className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3">
+              <summary className="cursor-pointer text-sm font-bold text-slate-600">분석 자세히 보기</summary>
+              <div className="mt-2">
+                <ProposalNarrativePanel narrative={state.proposalNarrative} />
+                <ConceptDevelopmentLogicPanel logic={state.conceptDevelopmentLogic} />
+                <EntityDifferentiationMatrixPanel matrix={state.conceptGenerationResult?.entityDifferentiationMatrix ?? state.proposalNarrative?.entityDifferentiationMatrix} matrixType={state.conceptGenerationResult?.matrixType} primaryRfpConceptType={state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType} />
+              </div>
+            </details>
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
               {visibleStrategicDirections.map((concept, index) => {
                 const selected = typeof state.selectedDirectionIndex === 'number' ? state.selectedDirectionIndex === index : selectedStrategicDirectionId === getStrategicDirectionId(concept);
+                const rec = state.conceptRecommendation;
+                const isRecommended = Boolean(rec && (rec.recommendedConceptId === concept.conceptId || (rec.recommendedDirectionLabel && getStrategicDirectionLabel(concept) === rec.recommendedDirectionLabel)));
                 return (
                   <article key={`direction-card-${index}`} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
-                    <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
+                      {isRecommended && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-black text-emerald-700">AI 추천</span>}
+                    </div>
                     <h3 className="mt-2 text-2xl font-black leading-tight text-slate-950">{getStrategicDirectionLabel(concept)}</h3>
+                    {isRecommended && rec?.recommendationReason && (
+                      <details className="mt-2 rounded-xl bg-emerald-50/60 px-2.5 py-1.5 text-xs">
+                        <summary className="cursor-pointer font-bold text-emerald-700">왜 이 방향인가?</summary>
+                        <p className="mt-1.5 font-semibold leading-5 text-slate-600">{rec.recommendationReason}</p>
+                        {(rec.otherDirectionsUsefulness || rec.whyNotOthers) && <p className="mt-1.5 leading-5 text-slate-500">다른 방향: {rec.otherDirectionsUsefulness || rec.whyNotOthers}</p>}
+                      </details>
+                    )}
                     <div className="mt-4 grid gap-3 text-sm font-bold leading-6 text-slate-700">
                       <p><b className="text-slate-950">어떻게 설득하는가</b> {getStrategicBet(concept)}</p>
                       <p><b className="text-indigo-700">선택 기준</b> {userFacingDirectionCopy(concept.whenToChooseThisDirection || '', '이 전략 관점이 심사자의 선택 이유를 가장 선명하게 만들 때 선택합니다.')}</p>
                       <p><b className="text-blue-700">대표 설득 장면</b> {userFacingDirectionCopy(getSignatureProofSummary(concept))}</p>
-                      <p><b className="text-rose-700">주요 리스크</b> {shortText(concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution, 130) || '-'}</p>
                     </div>
                     <div className="mt-4 flex-1 space-y-2">
                       <CompactAccordion title="상세 보기">
@@ -4220,6 +4258,7 @@ export default function Home() {
                         <p className="mt-2"><b>전환 포인트</b> {concept.conceptLeap?.conceptLeap || concept.conceptLeap?.corePromise || getConceptDefinition(concept)}</p>
                         <p className="mt-2"><b>설득 과제</b> {concept.winningThesisUse?.whatMustBeProven || concept.signatureProofIdea?.whyThisProvesTheConcept}</p>
                         <p className="mt-2"><b>필수 설득 요소</b> {concept.requiredProofElementsAddressed?.join(' · ') || '-'}</p>
+                        <p className="mt-2"><b className="text-rose-700">주요 리스크</b> {shortText(concept.mainRisk || concept.risks?.[0] || concept.riskOrCaution, 130) || '-'}</p>
                       </CompactAccordion>
                       <CompactAccordion title="개발 정보 보기">
                         <p>primaryRfpConceptType: {concept.rfpConceptType || 'unknown'} · secondaryRfpConceptTypes: {concept.secondaryRfpConceptTypes?.join(' / ') || 'none'} · matrixType: {state.conceptGenerationResult?.matrixType || 'none'}</p>
@@ -4319,6 +4358,14 @@ export default function Home() {
                   </label>
                 </div>
               </section>
+            )}
+            {finalConceptNameSelected && Boolean(state.conceptGenerationResult?.brandExperienceMatrix?.length) && (
+              <details className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3">
+                <summary className="cursor-pointer text-sm font-bold text-slate-600">컨셉 전략 근거 보기</summary>
+                <div className="mt-2">
+                  <BrandExperienceMatrixPanel matrix={state.conceptGenerationResult?.brandExperienceMatrix} matrixType={state.conceptGenerationResult?.matrixType} />
+                </div>
+              </details>
             )}
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('analysis')}>분석 결과 보기</SecondaryButton>
