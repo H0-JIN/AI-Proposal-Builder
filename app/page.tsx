@@ -2056,10 +2056,12 @@ export default function Home() {
   const currentProjectKey = buildCurrentProjectKey(state.input, uploadedDocuments);
   // The naming section is scoped to exactly one (project, direction) pair at a time.
   const activeNamingContextKey = selectedStrategicDirectionExists ? `${currentProjectKey}::${selectedDirectionKey}` : '';
-  // STRICT: render ONLY candidates whose stamp matches the current project AND the current selected direction. A
-  // candidate with no/mismatched stamp (older un-stamped state, a content-key collision in the same index slot, or a
-  // stale async write to another bucket) is never shown — the user regenerates for the new direction instead.
-  const directionConceptNameOptions = (selectedDirectionKey ? (state.conceptNameOptionsByDirection?.[selectedDirectionKey] ?? []) : [])
+  // STRICT: render ONLY candidates whose stamp matches the current project AND the current selected direction, and ONLY
+  // when a definite direction index is set. Without a numeric index the `dir{index}` key prefix collapses, so two
+  // directions with a colliding content key would share a bucket AND collide on their stamps — the filter could not tell
+  // them apart. Requiring the index (always set by a card click) closes that path; any un-stamped/cross-direction/stale
+  // candidate is never shown and the user regenerates for the current direction.
+  const directionConceptNameOptions = ((typeof state.selectedDirectionIndex === 'number' && selectedDirectionKey) ? (state.conceptNameOptionsByDirection?.[selectedDirectionKey] ?? []) : [])
     .filter((option) => option.projectKey === currentProjectKey && option.directionKey === selectedDirectionKey);
   const visibleStrategicDirections = useMemo(() => (state.conceptCandidates ?? []).slice(0, 3), [state.conceptCandidates]);
   const finalNameOptionsCount = directionConceptNameOptions.length;
@@ -4144,7 +4146,7 @@ export default function Home() {
               {visibleStrategicDirections.map((concept, index) => {
                 const selected = typeof state.selectedDirectionIndex === 'number' ? state.selectedDirectionIndex === index : selectedStrategicDirectionId === getStrategicDirectionId(concept);
                 return (
-                  <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
+                  <article key={`direction-card-${index}`} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
                     <h3 className="mt-2 text-2xl font-black leading-tight text-slate-950">{getStrategicDirectionLabel(concept)}</h3>
                     <div className="mt-4 grid gap-3 text-sm font-bold leading-6 text-slate-700">
@@ -4187,7 +4189,7 @@ export default function Home() {
               })}
             </div>
             {selectedStrategicDirectionExists && state.selectedConcept && (
-              <section className="mt-8 rounded-[2rem] border border-indigo-100 bg-white p-5 shadow-sm md:p-6">
+              <section key={activeNamingContextKey || 'no-active-direction'} className="mt-8 rounded-[2rem] border border-indigo-100 bg-white p-5 shadow-sm md:p-6">
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
                     <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Final naming step</p>
@@ -4242,7 +4244,7 @@ export default function Home() {
                               {option.strategicClaim && <p><b>전략적 주장</b> {option.strategicClaim}</p>}
                               <p className="mt-2">상세 rationale: {option.whyItFitsRfp || option.whyItFits}</p>
                               <p className="mt-2">개발 리스크: {option.risk}</p>
-                              {option.validation && <CompactAccordion title="개발 정보 보기"><p>{Object.entries(option.validation).filter(([, value]) => value).map(([key]) => key).join(' · ')}</p></CompactAccordion>}
+                              {(option.validation || option.koreanConceptSeed) && <CompactAccordion title="개발 정보 보기"><p>{option.koreanConceptSeed ? `internal Korean concept seed: ${option.koreanConceptSeed}` : ''}</p>{option.validation && <p className="mt-1">{Object.entries(option.validation).filter(([, value]) => value).map(([key]) => key).join(' · ')}</p>}</CompactAccordion>}
                             </CompactAccordion>
                           </div>
                           <button type="button" onClick={() => selectConceptNameOption(option)} className={`mt-4 inline-flex rounded-xl px-4 py-2 text-sm font-black ${optionSelected ? 'bg-indigo-600 text-white' : 'bg-slate-950 text-white'}`}>{optionSelected ? '선택됨' : '이 이름 선택'}</button>

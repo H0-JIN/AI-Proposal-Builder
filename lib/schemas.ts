@@ -773,6 +773,7 @@ const conceptNameOptionSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    koreanConceptSeed: { type: 'string' },
     conceptName: { type: 'string' },
     languageMode: { type: 'string', enum: ['Korean', 'English', 'bilingual'] },
     koreanSubtitle: { type: 'string' },
@@ -782,7 +783,7 @@ const conceptNameOptionSchema = {
     namingStyle: { type: 'string', enum: ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] },
     mainRisk: { type: 'string' },
   },
-  required: ['conceptName', 'languageMode', 'koreanSubtitle', 'oneLineSlogan', 'shortMeaning', 'whyItFitsSelectedDirection', 'namingStyle', 'mainRisk'],
+  required: ['koreanConceptSeed', 'conceptName', 'languageMode', 'koreanSubtitle', 'oneLineSlogan', 'shortMeaning', 'whyItFitsSelectedDirection', 'namingStyle', 'mainRisk'],
 } as const;
 
 export const conceptNameOptionsJsonSchema = {
