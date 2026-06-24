@@ -1704,6 +1704,7 @@ const CLEARED_PROJECT_GENERATED_STATE = {
   conceptGenerationResult: undefined,
   proposalNarrative: undefined,
   selectedStrategicDirection: undefined,
+  selectedDirectionIndex: undefined,
   selectedConcept: undefined,
   conceptNameOptions: undefined,
   conceptNameOptionsByDirection: undefined,
@@ -1744,6 +1745,13 @@ function getStrategicDirectionId(concept?: ConceptCandidate) {
 
 function getStrategicDirectionKey(concept?: ConceptCandidate) {
   return [concept?.conceptId, concept?.directionAxis, concept?.strategicDirectionLabel || concept?.directionLabel].filter(Boolean).join('::') || getStrategicDirectionId(concept);
+}
+// Per-direction concept-name cache key. Prefixing with the direction INDEX (0/1/2) guarantees the three current
+// directions never collide on one bucket even when their content-derived key is identical, and the content key keeps
+// regenerated directions (new content at the same index) from inheriting a stale bucket. Falls back to the content
+// key alone for older persisted state that has no index yet.
+function getDirectionCacheKey(index: number | undefined, concept?: ConceptCandidate) {
+  return [typeof index === 'number' ? `dir${index}` : undefined, getStrategicDirectionKey(concept)].filter(Boolean).join('::');
 }
 
 
@@ -2038,7 +2046,7 @@ export default function Home() {
   const selectedStrategicDirectionLabel = getStrategicDirectionLabel(selectedStrategicDirection);
   const selectedStrategicDirectionExists = Boolean(selectedStrategicDirection);
   const finalNamingLoading = loading === '컨셉명 후보 생성 중';
-  const selectedDirectionKey = getStrategicDirectionKey(selectedStrategicDirection);
+  const selectedDirectionKey = getDirectionCacheKey(state.selectedDirectionIndex, selectedStrategicDirection);
   const directionConceptNameOptions = selectedDirectionKey ? (state.conceptNameOptionsByDirection?.[selectedDirectionKey] ?? []) : [];
   const visibleStrategicDirections = useMemo(() => (state.conceptCandidates ?? []).slice(0, 3), [state.conceptCandidates]);
   const finalNameOptionsCount = directionConceptNameOptions.length;
@@ -3385,7 +3393,7 @@ export default function Home() {
     setLoading('제안 전략 진단 중...');
     try {
       const response = await postJson<{ result: RfpDiagnosis }>('/api/diagnosis', { input: analysisInput, analysis: state.analysis });
-      setState((current) => ({ ...current, rfpDiagnosis: response.result, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, rfpDiagnosis: response.result, brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedDirectionIndex: undefined, selectedConcept: undefined, conceptNameOptions: undefined, conceptNameOptionsByDirection: undefined, outline: undefined, slides: undefined }));
     } catch (err) {
       setError(err instanceof Error ? err.message : '진단 생성 중 오류가 발생했습니다.');
     } finally {
@@ -3394,11 +3402,11 @@ export default function Home() {
   };
 
   const updateDiagnosisField = (key: NewDiagnosisTextKey, value: string) => {
-    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: withDiagnosisText(current.rfpDiagnosis, key, value), brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: withDiagnosisText(current.rfpDiagnosis, key, value), brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedDirectionIndex: undefined, selectedConcept: undefined, conceptNameOptions: undefined, conceptNameOptionsByDirection: undefined, outline: undefined, slides: undefined }) : current);
   };
 
   const updateDiagnosisProofElements = (value: string) => {
-    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: withDiagnosisList(current.rfpDiagnosis, value), brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+    setState((current) => current.rfpDiagnosis ? ({ ...current, rfpDiagnosis: withDiagnosisList(current.rfpDiagnosis, value), brandProductIntelligence: undefined, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedDirectionIndex: undefined, selectedConcept: undefined, conceptNameOptions: undefined, conceptNameOptionsByDirection: undefined, outline: undefined, slides: undefined }) : current);
   };
 
 
@@ -3408,7 +3416,7 @@ export default function Home() {
     setLoading('브랜드/제품 이해 정리 중...');
     try {
       const response = await postJson<{ result: BrandProductIntelligence }>('/api/brand-product-intelligence', { input: analysisInput, analysis: state.analysis, rfpDiagnosis: state.rfpDiagnosis, uploadedDocuments: state.uploadedDocuments, additionalInfo: supplementalInfo });
-      setState((current) => ({ ...current, brandProductIntelligence: response.result, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }));
+      setState((current) => ({ ...current, brandProductIntelligence: response.result, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedDirectionIndex: undefined, selectedConcept: undefined, conceptNameOptions: undefined, conceptNameOptionsByDirection: undefined, outline: undefined, slides: undefined }));
     } catch (err) {
       setError(err instanceof Error ? err.message : '브랜드/제품 이해 생성 중 오류가 발생했습니다.');
     } finally {
@@ -3417,11 +3425,11 @@ export default function Home() {
   };
 
   const updateBrandProductIntelligenceField = (key: keyof BrandProductIntelligence, value: string) => {
-    setState((current) => current.brandProductIntelligence ? ({ ...current, brandProductIntelligence: { ...current.brandProductIntelligence, [key]: value }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+    setState((current) => current.brandProductIntelligence ? ({ ...current, brandProductIntelligence: { ...current.brandProductIntelligence, [key]: value }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedDirectionIndex: undefined, selectedConcept: undefined, conceptNameOptions: undefined, conceptNameOptionsByDirection: undefined, outline: undefined, slides: undefined }) : current);
   };
 
   const updateBrandProductIntelligenceList = (key: 'brandSpecificVocabulary' | 'wordsToAvoid', value: string) => {
-    setState((current) => current.brandProductIntelligence ? ({ ...current, brandProductIntelligence: { ...current.brandProductIntelligence, [key]: value.split('\n').map((item) => item.trim()).filter(Boolean) }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedConcept: undefined, conceptNameOptions: undefined, outline: undefined, slides: undefined }) : current);
+    setState((current) => current.brandProductIntelligence ? ({ ...current, brandProductIntelligence: { ...current.brandProductIntelligence, [key]: value.split('\n').map((item) => item.trim()).filter(Boolean) }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedDirectionIndex: undefined, selectedConcept: undefined, conceptNameOptions: undefined, conceptNameOptionsByDirection: undefined, outline: undefined, slides: undefined }) : current);
   };
 
   const runConcepts = async (options: { retryLight?: boolean } = {}) => {
@@ -3450,6 +3458,7 @@ export default function Home() {
       conceptRecommendation: undefined,
       conceptGenerationResult: undefined,
       selectedStrategicDirection: undefined,
+      selectedDirectionIndex: undefined,
       selectedConcept: undefined,
       conceptNameOptions: undefined,
       conceptNameOptionsByDirection: undefined,
@@ -3499,13 +3508,16 @@ export default function Home() {
     }
   };
 
-  const selectConcept = (concept: ConceptCandidate) => {
+  const selectConcept = (concept: ConceptCandidate, index?: number) => {
     setFinalNamingError('');
     setFinalNamingDebug({});
     const selectedDirection = { ...concept };
+    // Changing the selected direction always clears the final naming section (name, slogan, selected option) and only
+    // surfaces candidates that belong to THIS exact direction bucket; conceptFrameSynthesis is route-rebuilt per request.
     setState((current) => ({
       ...current,
       selectedStrategicDirection: selectedDirection,
+      selectedDirectionIndex: index,
       selectedConcept: {
         ...selectedDirection,
         finalConceptName: '',
@@ -3513,7 +3525,7 @@ export default function Home() {
         finalConceptNameOption: undefined,
         selectedDirection,
       },
-      conceptNameOptions: current.conceptNameOptionsByDirection?.[getStrategicDirectionKey(selectedDirection)] ?? undefined,
+      conceptNameOptions: current.conceptNameOptionsByDirection?.[getDirectionCacheKey(index, selectedDirection)] ?? undefined,
       selectedFinalConceptNameOption: undefined,
       outline: undefined,
       slides: undefined,
@@ -3527,7 +3539,7 @@ export default function Home() {
     setLoading('컨셉명 후보 생성 중');
     try {
       const selectedDirection = selectedStrategicDirection;
-      const directionKey = getStrategicDirectionKey(selectedDirection);
+      const directionKey = getDirectionCacheKey(state.selectedDirectionIndex, selectedDirection);
       const directionValidation = validateStrategicDirectionForDisplay(selectedDirection);
       const selectedDirectionForNaming = normalizeSelectedDirectionForNaming(selectedDirection);
       setFinalNamingDebug({ selectedDirectionKey: directionKey, missingFields: directionValidation.missingFields });
@@ -4103,8 +4115,8 @@ export default function Home() {
             <BrandExperienceMatrixPanel matrix={state.conceptGenerationResult?.brandExperienceMatrix} matrixType={state.conceptGenerationResult?.matrixType} />
             <ConceptRecommendationPanel recommendation={state.conceptRecommendation} />
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
-              {visibleStrategicDirections.map((concept) => {
-                const selected = selectedStrategicDirectionId === getStrategicDirectionId(concept);
+              {visibleStrategicDirections.map((concept, index) => {
+                const selected = typeof state.selectedDirectionIndex === 'number' ? state.selectedDirectionIndex === index : selectedStrategicDirectionId === getStrategicDirectionId(concept);
                 return (
                   <article key={concept.conceptId} className={`flex flex-col rounded-3xl border p-5 ${selected ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-slate-200 bg-white'}`}>
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{concept.conceptId}</p>
@@ -4133,7 +4145,7 @@ export default function Home() {
                       </CompactAccordion>
                     </div>
                     <button
-                      onClick={() => selectConcept(concept)}
+                      onClick={() => selectConcept(concept, index)}
                       className={`mt-5 rounded-2xl px-4 py-3 font-bold transition ${selected ? 'bg-blue-600 text-white' : 'bg-slate-950 text-white hover:bg-blue-700'}`}
                     >
                       {selected ? '이 방향 선택됨' : '이 방향 선택'}
@@ -4170,7 +4182,7 @@ export default function Home() {
                     )}
                   </div>
                 )}
-                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'} · responseStatus: {finalNamingDebug.responseStatus || 'none'} · responseErrorMessage: {finalNamingDebug.responseErrorMessage || 'none'} · selectedDirectionKey: {finalNamingDebug.selectedDirectionKey || selectedDirectionKey || 'none'} · missingFields: {finalNamingDebug.missingFields?.join(', ') || 'none'}</p></details>
+                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'} · responseStatus: {finalNamingDebug.responseStatus || 'none'} · responseErrorMessage: {finalNamingDebug.responseErrorMessage || 'none'} · selectedDirectionIndex: {state.selectedDirectionIndex ?? 'none'} · selectedDirectionKey: {finalNamingDebug.selectedDirectionKey || selectedDirectionKey || 'none'} · indexScopedCandidates: {String(typeof state.selectedDirectionIndex === 'number')} · otherDirectionBuckets: {Object.keys(state.conceptNameOptionsByDirection ?? {}).filter((key) => key !== selectedDirectionKey).length} · missingFields: {finalNamingDebug.missingFields?.join(', ') || 'none'}</p></details>
                 {directionConceptNameOptions.length ? (
                   <>
                   <div className="mt-5 grid gap-4 xl:grid-cols-3">
@@ -4214,7 +4226,7 @@ export default function Home() {
                   </div>
                   <button type="button" onClick={() => runConceptNames({ append: true })} disabled={Boolean(loading) || !selectedStrategicDirectionExists} className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-black text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50">추가 컨셉 보기</button>
                   </>
-                ) : <p className="mt-5 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50 px-4 py-5 text-sm font-bold text-indigo-900">컨셉명을 생성하면 후보 카드가 이 영역에 표시됩니다.</p>}
+                ) : <p className="mt-5 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50 px-4 py-5 text-sm font-bold text-indigo-900">{selectedStrategicDirectionExists ? '선택한 전략 방향에 맞는 컨셉명을 다시 생성해 주세요.' : '컨셉명을 생성하면 후보 카드가 이 영역에 표시됩니다.'}</p>}
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <label className="block text-sm font-black text-slate-800">최종 컨셉명 수동 편집
                     <input value={state.selectedConcept.finalConceptName ?? ''} onChange={(event) => updateFinalConceptField('finalConceptName', event.target.value)} placeholder="최종 컨셉명을 입력하거나 후보를 선택하세요" className="mt-2 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-indigo-500" />

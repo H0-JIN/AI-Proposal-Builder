@@ -863,6 +863,9 @@ export interface ProposalState {
   conceptGenerationResult?: ConceptCandidatesResult;
   proposalNarrative?: ProposalNarrative;
   selectedStrategicDirection?: ConceptCandidate;
+  // Index (0/1/2) of the selected strategic direction within conceptCandidates. Used to scope per-direction concept
+  // name candidates so two directions never share a cache bucket even if their content-derived key collides.
+  selectedDirectionIndex?: number;
   selectedConcept?: ConceptCandidate;
   conceptNameOptions?: ConceptNameOption[];
   conceptNameOptionsByDirection?: Record<string, ConceptNameOption[]>;
