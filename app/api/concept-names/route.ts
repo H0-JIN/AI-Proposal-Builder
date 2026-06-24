@@ -508,12 +508,14 @@ export async function POST(request: Request) {
     const conceptFrameBlock = buildConceptFrameSynthesis(body);
     const conceptLanguage = decidePrimaryConceptLanguage(body);
     const languagePolicyBlock = [
-      '=== Concept Name Language Policy (deterministic, 현재 RFP 기준) ===',
+      '=== Concept Name Language Policy (제목의 "언어"만 결정한다. 제목의 강도·구조·독창성은 위 Concept Frame Synthesis가 결정한다) ===',
       `primaryConceptLanguage: ${conceptLanguage.language} — ${conceptLanguage.reason}`,
-      'english_default: conceptName 3개 중 최소 2개는 영어 타이틀로 출력한다. 한국어 conceptName은 서술형 라벨/문장이 아니라 단독으로 서는 압축 타이틀이고, 현재 RFP가 한국어 네이밍을 강하게 뒷받침할 때만 허용한다.',
-      'korean_primary: 한국어 conceptName을 우선 허용하되 여전히 설명/문장/전략 라벨이 아니라 압축된 표지 타이틀이어야 한다.',
-      '공통: 영어 conceptName에는 반드시 자연스러운 한국어 koreanSubtitle를 함께 제공한다. koreanSubtitle/oneLineSlogan/shortMeaning/whyItFitsRfp는 한국어로 작성한다(UI 언어가 한국어). oneLineSlogan은 conceptName을 그대로 반복하지 말고 날카롭게 한다.',
-      'conceptName은 짧고 기억되는 표지 타이틀이며 문장/서술/전략 라벨/선택한 전략 방향 문구의 반복이 아니다.',
+      '네이밍 시퀀스(반드시 이 순서로 내부 사고): (1) 위 Concept Frame Synthesis에서 가장 강한 개념적 의미를 잡는다. (2) 그 의미를 담은 강한 한국어 "컨셉 시드 타이틀"을 내부적으로 만든다(좋은 한국어 제안 컨셉 제목처럼 압축적이고 상징적). (3) english_default이면 이 한국어 시드를 영어 conceptName으로 trans-create 한다 — 새 범용 영어 라벨을 만들지 말고, 시드의 이미지·긴장·움직임·상징 프레임을 영어로 보존한다. (4) 한국어 시드(또는 다듬은 버전)를 koreanSubtitle로 쓴다. (5) oneLineSlogan은 한국어 기본. (6) 영어 conceptName과 한국어 koreanSubtitle가 한 쌍처럼 맞물리게 한다.',
+      'korean_primary이면 한국어 시드 자체가 conceptName이 된다(여전히 설명/문장/전략 라벨이 아니라 압축된 표지 타이틀).',
+      'english_default이면 conceptName 3개 중 최소 2개가 영어 trans-created 타이틀이고, 각 영어 conceptName에는 자연스러운 한국어 koreanSubtitle와 한국어 oneLineSlogan을 함께 둔다.',
+      '검증: 영어 conceptName은 한국어 시드의 개념적 강도를 보존해야 한다. 영어가 시드보다 약하거나 더 범용적/더 추상적이면 재생성한다. 영어가 일반 명사·전략 라벨·카테고리 라벨로 납작해지면 거부한다. 한국어 시드가 모든 영어 후보보다 강하면, 영어 conceptName은 새로 만든 범용 라벨이 아니라 시드의 trans-creation이어야 한다. koreanSubtitle는 영어 이름의 단순 번역이 아니라 원래 한국어 시드 의미를 보존한다.',
+      '언어 정책은 제목의 언어만 정한다. conceptName의 강도/독창성은 symbolic frame, experiential image, narrative motion, audience afterimage, spatial/content gesture, strategic tension, 대표 설득 장면에서 나온다(범용 영어 단어 조합이 아니다).',
+      'koreanSubtitle/oneLineSlogan/shortMeaning/whyItFitsRfp는 한국어로 작성한다(UI 언어가 한국어). 내부 한국어 시드는 main UI에 노출하지 않는다.',
     ].join('\n');
     console.info('[concept-names:gating]', { rfpProvidedConceptHierarchyDetected: Boolean(rfpHierarchy), primaryConceptLanguage: conceptLanguage.language, hierarchyFieldsUsedForNaming: rfpHierarchy ? Object.entries({ mainTheme: rfpHierarchy.mainTheme, subThemes: rfpHierarchy.subThemes.length, zoneConcepts: rfpHierarchy.zoneConcepts.length, officialSlogan: rfpHierarchy.officialSlogan, keyMessage: rfpHierarchy.keyMessage }).filter(([, v]) => v).map(([k]) => k) : [] });
 
@@ -521,7 +523,7 @@ export async function POST(request: Request) {
       'You are a senior Korean proposal concept naming director.',
       'Generate final cover-level concept name options only after a strategic direction has been selected.',
       'Return exactly 3 strong final concept name options for the selected strategic direction only. Fewer, sharper, non-interchangeable options are required.',
-      'Obey the Concept Name Language Policy block: when primaryConceptLanguage is english_default, default the conceptName to a short English cover title (at least 2 of 3) with a natural Korean koreanSubtitle and a Korean oneLineSlogan; a Korean conceptName is allowed only when it reads as a compressed title (never a descriptive label or sentence) and the current RFP strongly supports Korean naming. When primaryConceptLanguage is korean_primary, a Korean title is preferred but must still be a compressed cover title, not an explanation.',
+      'Concept Frame Synthesis is the PRIMARY naming driver and always comes first. Build the conceptName from the frame, not from the language policy: derive the strongest conceptual meaning from the frame, form an internal strong Korean concept-seed title, and only then apply the language. When primaryConceptLanguage is english_default, TRANS-CREATE the Korean seed into a short English cover title (at least 2 of 3) that preserves the seed\'s image/tension/movement/symbol — never invent a separate generic English label, and never flatten it into a business keyword; carry the Korean seed as koreanSubtitle and a Korean oneLineSlogan. When korean_primary, the Korean seed is the conceptName. The language policy decides ONLY the title language; the title\'s strength, distinctiveness, and structure must come from the symbolic frame / experiential image / narrative motion / audience afterimage / strategic tension / representative proof scene. Reject any English name that is weaker, more generic, or more abstract than the Korean seed, or that reads as a generic noun, strategy label, category label, or description.',
       'Avoid consulting labels, analysis headings, internal strategy phrases, generic abstract nouns, awkward translated phrases, product-specific names, one-zone-specific names, one-entity-specific names, unsupported poetic metaphors, and generic tech/event slogans.',
       'Names must be proposal-cover concepts that express the winning claim and can expand into space, content, media, and operation.',
       'Internally use coreWinningCondition, strategicTension, proofBurden, selectedStrategicDirection, and signatureProofIdea, but translate all visible copy into planner-friendly Korean: proof=설득 포인트/확인 장면/대표 설득 장면, evidence=근거, proof burden=설득 과제, required proof elements=필수 설득 요소, signature proof idea=대표 설득 장면.',
@@ -533,7 +535,7 @@ export async function POST(request: Request) {
       `Blocked example names are banned as outputs and paraphrase sources: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}. Do not output or imitate them.`,
     ].join('\n');
 
-    const user = `${languagePolicyBlock}\n\n${conceptFrameBlock}\n\n${namingAnchorBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
+    const user = `${conceptFrameBlock}\n\n${namingAnchorBlock}\n\n${languagePolicyBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
 Selected secondaryRfpConceptTypes: ${body.selectedDirection.secondaryRfpConceptTypes?.join(' / ') || 'none'}
 Relevant Matrix Type: ${sanitizedContext.matrixType}
 Active Matrix Type: ${sanitizedContext.activeMatrixType}
@@ -559,7 +561,7 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
 - Use the selected direction’s directionAxis and 대표 설득 장면 as the primary naming source.
 - 추가 후보 요청이면 Existing names for selected direction과 Names already generated for other directions를 모두 피하고, 같은 slogan structure / strategic claim / shortMeaning 반복을 거부하라.
 - 각 후보 생성 전 내부적으로 What must this proposal prove? What belief shift should evaluator make? Strongest claim? Cover first-page fit? Expandable to space/content/media/operation? 을 검증하고 실패하면 버려라.
-- 위 Concept Name Language Policy를 따른다. english_default이면 conceptName 3개 중 최소 2개를 영어 타이틀로 출력하고(나머지 한 개도 한국어가 서술형이면 영어로 전환), 영어 conceptName마다 자연스러운 한국어 koreanSubtitle와 한국어 oneLineSlogan을 함께 제공한다. korean_primary이면 한국어 타이틀을 우선하되 압축된 표지 타이틀이어야 한다. 두 경우 모두 한국어 conceptName이 설명 문장/서술형 라벨로 읽히면 거부하고 영어 타이틀+한국어 부제로 재작성한다.
+- 위 Concept Name Language Policy의 네이밍 시퀀스를 따른다: Concept Frame Synthesis → 강한 한국어 컨셉 시드 → (english_default면) 시드를 영어 conceptName으로 trans-create → koreanSubtitle=시드 의미 보존 → 한국어 oneLineSlogan. 영어 conceptName은 시드에서 trans-create한 타이틀이어야 하고 새로 만든 범용 영어 라벨/비즈니스 키워드/일반 명사가 아니다. 영어가 한국어 시드보다 약하거나 더 범용/추상적이면 거부하고 재작성한다. korean_primary면 한국어 시드가 conceptName이며 여전히 설명 문장/서술형 라벨이 아니어야 한다.
 - main visible copy(conceptName, oneLineSlogan, shortMeaning, whyItFitsSelectedDirection, mainRisk)에 raw English internal terms(proof/evidence/proof burden/evaluator clarity/validation/source/score/signature proof idea)를 쓰지 말고 한국어 사용자 언어로 번역한다.
 - 컨셉명은 선택한 전략 방향에만 맞아야 하고 다른 방향에는 어색해야 하며, 후보끼리 근접 중복이 아니어야 한다. validation boolean 블록은 출력하지 말라(구분성·금지어·중복 검증과 점수는 서버가 코드로 수행한다).
 - 금지 예시명/이전 예시명을 그대로 출력하거나 변형하지 말라: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}.
