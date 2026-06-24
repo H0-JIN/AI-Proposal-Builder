@@ -258,6 +258,18 @@ export type DeckHeroElement = 'none' | 'big-number' | 'big-keyword' | 'full-imag
 export type DeckVisualWeight = 'text-led' | 'balanced' | 'visual-led';
 export type DeckTextDensity = 'low' | 'medium' | 'high';
 
+// UI-safe summary of how past won/lost proposal pattern learning informed the generated proposal structure. Carries
+// NO raw old-proposal copy — only counts/flags for the collapsed "수주 패턴 참고" chip.
+export interface PatternLearningSummary {
+  used: boolean;
+  confidence: 'high' | 'medium' | 'low';
+  winningPatternCount: number;
+  riskCount: number;
+  contentPatternUsed: boolean;
+  proofPatternUsed: boolean;
+  recommendedPatternRole: string | null;
+}
+
 // Deck-level design guide (deterministic, themed by proposal type). Applied to the PPTX (fonts, colors, before/after-
 // concept band styling). Pretendard is the default body font.
 export interface DesignGuide {
@@ -911,6 +923,7 @@ export interface ProposalState {
   outline?: SlideOutline[];
   slides?: SlideContent[];
   designGuide?: DesignGuide;
+  patternLearningSummary?: PatternLearningSummary;
   retrievalEvidence?: RetrievalEvidenceItem[];
   analysisBasis?: {
     type: 'full' | 'partial';
