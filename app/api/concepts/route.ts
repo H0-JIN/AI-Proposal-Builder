@@ -876,14 +876,26 @@ function buildStrategicDirectionDiscoveryBrief(analysis: AnalysisResult, narrati
   // axes instead of a generic default. Evidence for each axis comes from the confirmed diagnosis-derived discovery brief.
   const hasFactorySignal = /공장|제조|생산|품질\s*관리|factory|plant|manufactur/i.test(evidenceText);
   const hasVisitSignal = /견학|방문|체험|투어|관람|tour|visit|쇼룸|showroom|홍보관|체험관|견학룸|visitor\s*center|brand\s*room|브랜드\s*룸|제품\s*교육/i.test(evidenceText);
-  const hasRoomSignal = /견학|쇼룸|showroom|홍보관|체험관|견학룸|visitor\s*center|visitor\s*room|factory\s*tour|brand\s*room|브랜드\s*룸|제품\s*교육|제조\s*공정|생산\s*공정/i.test(evidenceText);
+  // hasRoomSignal = an actual visitor-room / tour SPACE. Mere process/production wording (제조/생산 공정) is NOT a
+  // visitor-room signal — it is common in tech/energy RFPs and must not pull them into factory-tour axes.
+  const hasRoomSignal = /견학|쇼룸|showroom|홍보관|체험관|견학룸|visitor\s*center|visitor\s*room|factory\s*tour|brand\s*room|브랜드\s*룸|제품\s*교육/i.test(evidenceText);
+  // Tech/energy/future-industry signal — such RFPs must NOT collapse into visitor-room/factory-tour axes on incidental
+  // factory/visit wording. They (and exhibition/content/tech concept types) only get visitor-room axes when the CURRENT
+  // RFP EXPLICITLY requests a tour / visitor room / production tour. Genuine visitor-room/factory-tour RFPs (no tech-energy
+  // framing) keep the existing incidental detection, so they do not regress.
+  const hasTechEnergySignal = /수소|hydrogen|에너지|energy|기술|technology|모빌리티|mobility|밸류체인|value\s*chain|생태계|ecosystem|미래\s*기술|future\s*tech|ICT|\bAI\b|디지털|플랫폼|솔루션|혁신/i.test(evidenceText);
+  const hasExplicitVisitorRoomRequest = /공장\s*견학|견학\s*(프로그램|동선|코스|신청|프로세스)|견학룸|체험룸|방문객\s*체험\s*(룸|관)|visitor\s*room|factory\s*tour|production\s*tour|생산\s*견학|제조\s*견학|투어\s*(프로그램|동선|코스)|브랜드\s*룸|brand\s*room|쇼룸|showroom|홍보관|제품\s*교육/i.test(evidenceText);
+  const isExhibitionContentTechType = conceptType === 'exhibition_booth' || conceptType === 'content_media_experience' || conceptType === 'product_experience_space';
   const isVisitorRoomFactory = conceptType === 'visitor_center_or_tour'
     || (conceptType !== 'multi_entity_pavilion' && conceptType !== 'technology_showcase'
-      && (hasRoomSignal || (hasFactorySignal && hasVisitSignal)));
+      && ((hasTechEnergySignal || isExhibitionContentTechType)
+        ? hasExplicitVisitorRoomRequest
+        : (hasRoomSignal || (hasFactorySignal && hasVisitSignal))));
   const isTechShowcase = !isVisitorRoomFactory
     && (conceptType === 'technology_showcase'
       || ((conceptType === 'single_brand_experience' || conceptType === 'exhibition_booth' || conceptType === 'product_experience_space')
-        && /수소|hydrogen|에너지|energy|기술|technology|모빌리티|mobility|밸류체인|value\s*chain|생태계|ecosystem|미래\s*기술|future\s*tech|ICT|\bAI\b|디지털|플랫폼|솔루션|혁신/i.test(evidenceText)));
+        && hasTechEnergySignal));
+  console.info('[concepts:axis-guard]', { conceptType, hasTechEnergySignal, hasExplicitVisitorRoomRequest, isVisitorRoomFactory, isTechShowcase, noVisitorRoomAxesForExhibitionUnlessExplicit: !((hasTechEnergySignal || isExhibitionContentTechType) && !hasExplicitVisitorRoomRequest && isVisitorRoomFactory) });
   const contextAxisSets: Partial<Record<RfpConceptType, string[]>> = {
     visitor_center_or_tour: ['product_value_proof', 'process_trust', 'brand_memory'],
     single_brand_experience: ['product_value_proof', 'brand_memory', 'representative_position'],
