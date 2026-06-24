@@ -196,25 +196,53 @@ function tokenizeKoreanNouns(text: string) {
 
 function buildCurrentRfpVocabularySet(body: { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic }, activeMatrix: unknown) {
   const analysisVocabulary = body.analysis as AnalysisResult & { targetAudience?: string; brandKeywords?: string[]; coreRequirements?: string[] };
+  // STRATEGY-first ordering: the selected direction + diagnosis + category vocabulary come first so the model's
+  // "use currentRfpVocabularySet first" instinct lands on strategic value, NOT the brand. projectName/clientName are
+  // demoted to the end (kept only so a brand token can still ground a name when the direction warrants it).
   const fields = [
-    body.input.projectName,
-    body.input.clientName,
+    body.selectedDirection.strategicDirectionLabel,
+    body.selectedDirection.whatThisDirectionEmphasizes,
+    body.selectedDirection.oneLineStrategicBet,
+    body.rfpDiagnosis?.strategicTension,
+    body.rfpDiagnosis?.coreWinningCondition,
+    body.rfpDiagnosis?.hiddenNeed,
+    body.rfpDiagnosis?.persuasionTask,
+    body.rfpDiagnosis?.clientUniquePosition,
+    body.selectedDirection.rfpGrounding?.join(' '),
     body.analysis.projectOverview,
     analysisVocabulary.targetAudience,
     body.analysis.requiredScope?.join(' '),
-    analysisVocabulary.brandKeywords?.join(' '),
     analysisVocabulary.coreRequirements?.join(' '),
     compact(body.analysis.rfpRequirements, 1000),
-    body.rfpDiagnosis?.clientUniquePosition,
-    body.rfpDiagnosis?.coreWinningCondition,
-    body.rfpDiagnosis?.hiddenNeed,
-    body.selectedDirection.strategicDirectionLabel,
-    body.selectedDirection.whatThisDirectionEmphasizes,
-    body.selectedDirection.rfpGrounding?.join(' '),
     compact(body.conceptDevelopmentLogic, 1000),
     compact(activeMatrix, 1000),
+    analysisVocabulary.brandKeywords?.join(' '),
+    body.input.projectName,
+    body.input.clientName,
   ];
   return tokenizeKoreanNouns(fields.filter(Boolean).join(' ')).slice(0, 28);
+}
+
+// Build a current-RFP-specific concept-naming ANCHOR block, fed to the model as the PRIMARY naming source so names are
+// derived from strategy (claim/tension/perception/scene), then category/mechanism/frame, with the client/brand/entity
+// name only as a secondary modifier. For pavilions it adds a pavilion-level conceptual frame so blocking a single
+// participant does not collapse into generic names. No example names, no hardcoded brands — all current-RFP fields.
+function buildConceptNamingAnchor(body: { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; proposalNarrative?: ProposalNarrative; primaryRfpConceptType?: string }): string {
+  const dir = body.selectedDirection;
+  const diag = body.rfpDiagnosis;
+  const bpi = body.brandProductIntelligence;
+  const narrative = body.proposalNarrative;
+  const rfpConceptType = dir.rfpConceptType || body.primaryRfpConceptType || body.analysis.primaryRfpConceptType;
+  const isPavilion = rfpConceptType === 'multi_entity_pavilion' || normalizeProposalType(body.input.proposalType) === 'multi_entity_pavilion';
+  const sig = dir.signatureProofIdea;
+  const scene = (dir as { representativePersuasionScene?: string }).representativePersuasionScene || sig?.signatureScene || sig?.signatureContent || sig?.signatureSpatialMove || '';
+  const v = (value?: string, max = 160) => compact(value, max) || '없음';
+  const p1 = `전략 주장=${v(dir.oneLineStrategicBet || dir.winningThesisUse?.winningClaim || dir.whatThisDirectionEmphasizes)} · 전략적 긴장=${v(diag?.strategicTension || diag?.coreWinningCondition)} · 인식 전환=${v(bpi?.audiencePerceptionGap || diag?.evaluatorDecisionRisk || diag?.hiddenNeed)} · 설득 과제=${v(diag?.persuasionTask || diag?.proofBurden)} · 대표 설득 장면=${v(scene)}`;
+  const p2 = `카테고리/산업 어휘=${v(bpi?.categoryContext || bpi?.productOrServiceMeaning)} · 경험/콘텐츠/공간 메커니즘=${v(sig?.signatureSpatialMove || sig?.signatureMediaOrInteraction || sig?.signatureContent || body.analysis.contentCondition)}`;
+  const pavilionFrame = isPavilion
+    ? `\n[파빌리온 프레임] 공동 메시지=${v(narrative?.unifyingFrame || diag?.coreWinningCondition)} · 주체 간 관계/역할=${v(narrative?.differentiationPrinciple || diag?.strategicTension)} · 결합 역량=${v(diag?.coreWinningCondition || dir.whatThisDirectionEmphasizes)} · 관람객의 전체 이해=${v(bpi?.audiencePerceptionGap || diag?.hiddenNeed)}`
+    : '';
+  return `=== Concept Naming Anchor (PRIMARY 네이밍 소스. client/brand/entity name은 보조 수식어로만 사용) ===\n[Priority 1] ${p1}\n[Priority 2] ${p2}${pavilionFrame}\n[Priority 3] client/brand/entity name = 보조 수식어 한정. 모든 후보가 client/brand/entity name에 의존하면 안 된다.`;
 }
 
 function hasInternalMainCopy(option: ConceptNameOptionsResult['options'][number]) {
@@ -384,6 +412,7 @@ export async function POST(request: Request) {
     const currentRfpOnlyMode = true; // final naming context = selected direction + confirmed diagnosis + current RFP only; proposal_patterns are not allowed.
 
     const currentRfpVocabularySet = buildCurrentRfpVocabularySet(body, activeMatrix);
+    const namingAnchorBlock = buildConceptNamingAnchor(body);
 
     const system = [
       'You are a senior Korean proposal concept naming director.',
@@ -392,12 +421,14 @@ export async function POST(request: Request) {
       'Avoid consulting labels, analysis headings, internal strategy phrases, generic abstract nouns, awkward translated phrases, product-specific names, one-zone-specific names, one-entity-specific names, unsupported poetic metaphors, and generic tech/event slogans.',
       'Names must be proposal-cover concepts that express the winning claim and can expand into space, content, media, and operation.',
       'Internally use coreWinningCondition, strategicTension, proofBurden, selectedStrategicDirection, and signatureProofIdea, but translate all visible copy into planner-friendly Korean: proof=설득 포인트/확인 장면/대표 설득 장면, evidence=근거, proof burden=설득 과제, required proof elements=필수 설득 요소, signature proof idea=대표 설득 장면.',
-      'Build names from currentRfpVocabularySet first: brand keywords, product/service words, sensory cues, audience context, process/operation words, spatial context, and category-specific language supported by the current RFP. Do not hardcode example vocabularies across RFPs.',
+      'Naming source priority (STRICT). Priority 1: the selected direction\'s strategic claim, the current RFP\'s strategic tension, the audience/evaluator perception shift, and the representative persuasion scene. Priority 2: category/industry/project-specific vocabulary, the spatial/media/content/UX mechanism, and the pavilion or exhibition-level narrative frame. Priority 3: client/brand/entity name. The client/brand/entity name may be used ONLY as a secondary modifier that adds strategic meaning, never as the default naming subject, and NOT in every candidate. Derive names from the Concept Naming Anchor block first; use currentRfpVocabularySet as supporting vocabulary, not as a brand-first source. Do not hardcode example vocabularies across RFPs.',
+      'For multi-entity pavilion RFPs, name at pavilion / relationship / system / collective-experience level using the 파빌리온 프레임 anchor. Never make a single participant the title subject unless the RFP explicitly establishes it as the lead owner. Do NOT produce a name merely by deleting an entity name (that yields generic names) — replace it with a specific pavilion-level conceptual frame from the diagnosis.',
+      'For exhibition/content/energy/technology RFPs, NOT all candidates may contain the client/brand name; use it only when the selected direction is explicitly about leadership/ownership/representative role, and even then keep it limited and meaning-adding. Default to the category/industry shift, the core audience understanding gap, the experience/content mechanism, current-reality-vs-future tension when present, and the intended post-viewing perception — not client/brand name + generic/exhibition/experience noun, and not a descriptive restatement of the RFP.',
       'Use only selected strategic direction, its directionAxis and 대표 설득 장면, confirmed diagnosis, brandProductIntelligence, signatureProofIdea, and current RFP analysis. Do not use proposal_patterns, previous proposal names, old clients/categories, WDS/pavilion wording, won/lost outcomes, old slogans, or old structures.',
       `Blocked example names are banned as outputs and paraphrase sources: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}. Do not output or imitate them.`,
     ].join('\n');
 
-    const user = `프로젝트: ${body.input.projectName}\n클라이언트: ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
+    const user = `${namingAnchorBlock}\n\n위 Concept Naming Anchor를 1차 네이밍 소스로 사용한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
 Selected secondaryRfpConceptTypes: ${body.selectedDirection.secondaryRfpConceptTypes?.join(' / ') || 'none'}
 Relevant Matrix Type: ${sanitizedContext.matrixType}
 Active Matrix Type: ${sanitizedContext.activeMatrixType}
