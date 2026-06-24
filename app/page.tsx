@@ -2054,11 +2054,13 @@ export default function Home() {
   const finalNamingLoading = loading === '컨셉명 후보 생성 중';
   const selectedDirectionKey = getDirectionCacheKey(state.selectedDirectionIndex, selectedStrategicDirection);
   const currentProjectKey = buildCurrentProjectKey(state.input, uploadedDocuments);
-  // Render ONLY candidates whose stamp matches the current project + selected direction. Older un-stamped candidates
-  // (projectKey/directionKey undefined) are trusted because they already live in this exact direction bucket; any
-  // candidate stamped for another project/direction (e.g. a stale async write) is dropped and never shown.
+  // The naming section is scoped to exactly one (project, direction) pair at a time.
+  const activeNamingContextKey = selectedStrategicDirectionExists ? `${currentProjectKey}::${selectedDirectionKey}` : '';
+  // STRICT: render ONLY candidates whose stamp matches the current project AND the current selected direction. A
+  // candidate with no/mismatched stamp (older un-stamped state, a content-key collision in the same index slot, or a
+  // stale async write to another bucket) is never shown — the user regenerates for the new direction instead.
   const directionConceptNameOptions = (selectedDirectionKey ? (state.conceptNameOptionsByDirection?.[selectedDirectionKey] ?? []) : [])
-    .filter((option) => (option.projectKey === undefined || option.projectKey === currentProjectKey) && (option.directionKey === undefined || option.directionKey === selectedDirectionKey));
+    .filter((option) => option.projectKey === currentProjectKey && option.directionKey === selectedDirectionKey);
   const visibleStrategicDirections = useMemo(() => (state.conceptCandidates ?? []).slice(0, 3), [state.conceptCandidates]);
   const finalNameOptionsCount = directionConceptNameOptions.length;
   const finalConceptNameSelected = Boolean(state.selectedConcept?.finalConceptName?.trim());
@@ -4206,7 +4208,7 @@ export default function Home() {
                     )}
                   </div>
                 )}
-                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'} · responseStatus: {finalNamingDebug.responseStatus || 'none'} · responseErrorMessage: {finalNamingDebug.responseErrorMessage || 'none'} · selectedDirectionIndex: {state.selectedDirectionIndex ?? 'none'} · selectedDirectionKey: {finalNamingDebug.selectedDirectionKey || selectedDirectionKey || 'none'} · indexScopedCandidates: {String(typeof state.selectedDirectionIndex === 'number')} · otherDirectionBuckets: {Object.keys(state.conceptNameOptionsByDirection ?? {}).filter((key) => key !== selectedDirectionKey).length} · missingFields: {finalNamingDebug.missingFields?.join(', ') || 'none'}</p></details>
+                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'} · responseStatus: {finalNamingDebug.responseStatus || 'none'} · responseErrorMessage: {finalNamingDebug.responseErrorMessage || 'none'} · selectedDirectionIndex: {state.selectedDirectionIndex ?? 'none'} · selectedDirectionKey: {finalNamingDebug.selectedDirectionKey || selectedDirectionKey || 'none'} · indexScopedCandidates: {String(typeof state.selectedDirectionIndex === 'number')} · activeNamingContextKey: {activeNamingContextKey || 'none'} · candidatesMatchCurrentDirection: {String(directionConceptNameOptions.every((option) => option.directionKey === selectedDirectionKey && option.projectKey === currentProjectKey))} · otherDirectionBuckets: {Object.keys(state.conceptNameOptionsByDirection ?? {}).filter((key) => key !== selectedDirectionKey).length} · missingFields: {finalNamingDebug.missingFields?.join(', ') || 'none'}</p></details>
                 {directionConceptNameOptions.length ? (
                   <>
                   <div className="mt-5 grid gap-4 xl:grid-cols-3">
