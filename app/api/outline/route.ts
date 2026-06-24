@@ -17,6 +17,26 @@ import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/propo
 import { getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
 import { formatProposalAvoidanceRulesForPrompt, formatProposalPatternDiagnostics, formatProposalPatternsForOutlinePrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
 import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
+import { applyDeckStructure, buildDeckDesignGuide, validateDeckStructure, type DeckSlideSeed } from '@/lib/deckStructure';
+
+// Factory used by applyDeckStructure to synthesize a Cover / Table of Contents slide as a full SlideOutline.
+function makeOutlineDeckSlide(seed: DeckSlideSeed): SlideOutline {
+  return {
+    slideNumber: seed.slideNumber,
+    slideType: seed.slideType,
+    slideTitle: seed.slideTitle,
+    slidePurpose: seed.slidePurpose,
+    slideRole: '',
+    relationToThesis: '',
+    whyThisSlideExists: '',
+    sourceEvidence: [],
+    referenceAllowed: false,
+    keyMessage: seed.keyMessage,
+    mainCopy: seed.mainCopy,
+    confirmNeededNote: '',
+    slideSection: seed.slideSection,
+  };
+}
 
 
 function normalizeOutlineSourceEvidence(value: unknown) {
@@ -223,6 +243,10 @@ export async function POST(request: Request) {
       schema: outlineJsonSchema,
       system: [
         '너는 한국어 제안서 전체 구조를 설계하는 크리에이티브 디렉터다. 전시/브랜드 체험관과 MICE/컨퍼런스 운영 제안서를 RFP 유형에 따라 구분한다.',
+        '이 산출물은 AI 분석 리포트가 아니라 실제 제안 발표 덱이다. 서버가 Cover, 목차(Table of Contents), 섹션 밴드(overview→approach→concept→conceptStrategy→content→contentDetail→operation→closing)와 장표별 레이아웃을 자동 부여한다. 너는 각 장표를 slide-ready 제안 문안으로 작성하는 데 집중한다.',
+        '내부 설계 라벨을 사용자-facing 문안에 노출하지 말라: slidePurpose/slideRole/relationToThesis/whyThisSlideExists, "이 페이지의 역할", "왜 이 장표가 존재하는가", "이 장표가 증명하는 것", "Purpose/Role/Relation" 같은 메타 설명을 slideTitle/keyMessage/mainCopy에 쓰지 말고 완성된 제안 슬라이드 문장(짧은 제목 + 한 줄 핵심 메시지 + 3~5개 간결 불릿)으로만 작성한다.',
+        '섹션 흐름: 1) Overview(프로젝트 배경·시장/행사 맥락·현황·강점/한계·기회) 2) Approach(선택된 전략 방향과 그 필요성: 핵심 RFP 과제, 평소 제안 논리가 부족한 이유, 선택한 전략 방향이 왜 정답인지, 평가자 관심·관객 인식 간극·클라이언트 목표 연결) 3) Concept(최종 컨셉 선언) 4) Concept Strategy(컨셉 전개·경험 원칙·공간/콘텐츠 전략·증명 구조) 5) Content 6) Content Detail/Scenario 7) Operation/Closing. Approach는 반드시 Concept보다 먼저 오고, Approach 장표의 제목·본문에 최종 컨셉명을 먼저 공개하지 말라(컨셉명은 Concept 섹션에서 처음 등장). Approach는 컨셉이 아니라 선택된 전략 방향을 설명한다.',
+        'Concept 선언 이전(Overview/Approach) 장표는 텍스트 주도로 간결·전문적으로 쓰고, Concept 선언 이후(Content/Content Detail) 장표는 비주얼 우선으로 한 장의 히어로 콘텐츠와 짧은 오버레이 카피 중심으로 쓴다. 콘텐츠 장표를 분석 카드/UX 리서치 표/폼 출력/필드 덤프처럼 쓰지 말라.',
         structureGuard.proposalScopeTypes.includes('contentDevelopment') ? '이 단계는 콘텐츠 개발형 제안 생성 단계의 아웃라인 설계다. 기본 18~22장, 하드캡 24장 이내로 실제 제안 내용을 담는 슬라이드 구조를 만든다.' : '이 단계는 제안 생성 단계의 아웃라인 설계다. RFP 요약이나 확인 필요 장표가 아니라 실제 제안 내용을 담을 20~40장 슬라이드 구조를 만든다.',
         isEventOperationType ? 'MICE/컨퍼런스 운영형 기본 흐름은 Cover, Project Understanding, Strategic Approach, Event Identity, Program Overview, Operation Framework, Registration & Entry Plan, Session System Operation, Partner Pavilion Plan, Networking / Catering Plan, Moving Line Plan, Setup / Conversion Plan, Staffing Plan, Risk Management, Schedule, Budget Summary, Portfolio / Organization, Closing이다.' : structureGuard.proposalScopeTypes.includes('contentDevelopment') && structureGuard.proposalScopeTypes.includes('boothExhibition') ? '콘텐츠 개발 + 부스/전시형 기본 흐름은 Cover/Intro, Project Understanding, Approach, Main Theme, Strategy & Goals, Hero Content, Sub Content, Zoning & Flow, Content Scenario, Schedule, Credential, Closing이다. 필요 시 과업 대응표를 1장 포함하되 일반 체험 마케팅 슬라이드로 확장하지 말라.' : '기본 흐름은 Cover, Project / Market Context, Core Problem or Challenge, Audience Insight, Strategic Opportunity / Strategic Direction, Concept Rationale, Core Concept, Key Experience Asset Concept, Visitor Journey, Spatial / Content Plan 복수 장표, Media / Interactive Plan 복수 장표, Viral / Communication Mechanism, Operation Plan, Expected Effect, Closing이다.',
         '아웃라인은 Proposal Narrative의 5단계 구조를 최우선으로 따른다: Phase 1 Problem Definition(시장/산업 맥락, 프로젝트 배경, 클라이언트 과제, audience insight) → Phase 2 Strategic Declaration(전략 기회, proposal thesis, concept rationale, core concept) → Phase 3 Experience Strategy(경험 원칙, visitor journey, spatial strategy) → Phase 4 Content Proposal(hero experience, main experience, media/interactive content, key proof points) → Phase 5 Proof & Impact(expected impact, differentiation, feasibility, 필요한 경우에만 operation/RFP response table).',
@@ -366,7 +390,14 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
         return NextResponse.json({ error: '선택한 컨셉을 제안서 구조로 충분히 전개하지 못했습니다. 제안서 구조를 다시 생성해 주세요.', reason: 'concept_not_carried' }, { status: 422 });
       }
     }
-    return NextResponse.json(dedupedSlides);
+    // Deterministic proposal-deck assembly: guarantee Cover (1) + Table of Contents (2), assign section bands + per-slide
+    // layout (text-led before concept, visual-first after), strip the concept name from the Approach band. This converts
+    // the model's analysis-ordered pages into a real proposal deck without relying on the LLM to emit structural fields.
+    const proposalTypeLabel = proposalTypeLabels[normalizeProposalType(body.input.proposalType)];
+    const deckSlides = applyDeckStructure(dedupedSlides, { finalConceptName, finalConceptSlogan, projectName: body.input.projectName, clientName: body.input.clientName, proposalTypeLabel, makeSlide: makeOutlineDeckSlide });
+    const designGuide = buildDeckDesignGuide(body.input);
+    console.info('[outline:deck-structure]', validateDeckStructure(deckSlides, finalConceptName));
+    return NextResponse.json({ slides: deckSlides, designGuide });
   } catch (error) {
     const message = error instanceof Error ? error.message : '아웃라인 생성 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });
