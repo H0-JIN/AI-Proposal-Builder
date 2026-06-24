@@ -1734,6 +1734,19 @@ function appendUploadedDocument(document: UploadedDocument) {
   });
 }
 
+// Map the internal namingStyle to a subtle, user-facing role label. Returns null when unknown so the badge is omitted.
+function conceptRoleBadge(namingStyle?: string): string | null {
+  const s = (namingStyle || '').toLowerCase();
+  if (!s) return null;
+  if (/global|bilingual|english/.test(s)) return '글로벌형';
+  if (/spatial|experience|scene|system/.test(s)) return '장면형';
+  if (/brand|category|sensory|sense/.test(s)) return '감각형';
+  if (/symbolic/.test(s)) return '선언형';
+  if (/strateg/.test(s)) return '전략형';
+  if (/direct|claim|statement|strong/.test(s)) return '직관형';
+  return null;
+}
+
 // Brand/product intelligence is an OPTIONAL enrichment for direction generation. When it is missing (skipped after a
 // partial analysis), pass this empty object so the user is never hard-blocked from generating strategic directions.
 function buildFallbackBrandProductIntelligence(): BrandProductIntelligence {
@@ -4284,17 +4297,20 @@ export default function Home() {
             </div>
             {selectedStrategicDirectionExists && state.selectedConcept && (
               <section key={activeNamingContextKey || 'no-active-direction'} className="mt-8 rounded-[2rem] border border-indigo-100 bg-white p-5 shadow-sm md:p-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Final naming step</p>
-                    <h3 className="mt-2 text-2xl font-black text-slate-950">최종 컨셉명 후보</h3>
-                    <p className="mt-2 text-sm font-bold leading-6 text-indigo-900">선택한 전략 방향을 바탕으로 생성된 컨셉명 후보입니다.</p>
-                    <p className="mt-3 rounded-2xl bg-indigo-50 px-4 py-3 text-sm font-bold leading-6 text-indigo-950">선택한 전략 방향: <b>{selectedStrategicDirectionLabel}</b><br />{getStrategicBet(selectedStrategicDirection!)}<br /><span className="text-blue-800">대표 설득 장면: {getSignatureProofSummary(selectedStrategicDirection!)}</span></p>
+                    <h3 className="text-xl font-black text-slate-900">최종 컨셉명 후보</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">선택한 전략 방향을 바탕으로 생성된 컨셉명 후보입니다.</p>
                   </div>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap gap-2">
                     <PrimaryButton onClick={() => runConceptNames()} disabled={Boolean(loading) || !selectedStrategicDirectionExists}>{finalNamingLoading ? '컨셉명 후보 생성 중' : (directionConceptNameOptions.length ? '컨셉명 다시 생성' : '컨셉명 생성')}</PrimaryButton>
-                    {finalNamingError && <button type="button" onClick={() => runConceptNames()} className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">다시 시도</button>}
+                    {finalNamingError && <button type="button" onClick={() => runConceptNames()} className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">다시 시도</button>}
                   </div>
+                </div>
+                <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm">
+                  <p className="font-bold text-slate-900">선택한 전략 방향 · {selectedStrategicDirectionLabel}</p>
+                  <p className="mt-1 leading-6 text-slate-600">{shortText(getStrategicBet(selectedStrategicDirection!), 120)}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">이 방향의 핵심 논리를 컨셉명으로 압축한 후보입니다. 가장 잘 맞는 이름을 선택하세요.</p>
                 </div>
                 {finalNamingError && (
                   <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
@@ -4304,59 +4320,56 @@ export default function Home() {
                     )}
                   </div>
                 )}
-                <details className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-900"><summary className="cursor-pointer">개발 정보 보기</summary><p className="mt-2">selectedStrategicDirectionExists: {String(selectedStrategicDirectionExists)} · selectedStrategicDirectionLabel: {selectedStrategicDirectionLabel} · finalNamingLoading: {String(finalNamingLoading)} · finalNameOptionsCount: {finalNameOptionsCount} · finalConceptNameSelected: {String(finalConceptNameSelected)} · finalConceptName: {state.selectedConcept.finalConceptName || 'none'} · finalNamingError: {finalNamingError || 'none'} · responseStatus: {finalNamingDebug.responseStatus || 'none'} · responseErrorMessage: {finalNamingDebug.responseErrorMessage || 'none'} · selectedDirectionIndex: {state.selectedDirectionIndex ?? 'none'} · selectedDirectionKey: {finalNamingDebug.selectedDirectionKey || selectedDirectionKey || 'none'} · indexScopedCandidates: {String(typeof state.selectedDirectionIndex === 'number')} · activeNamingContextKey: {activeNamingContextKey || 'none'} · candidatesMatchCurrentDirection: {String(directionConceptNameOptions.every((option) => option.directionKey === selectedDirectionKey && option.projectKey === currentProjectKey))} · otherDirectionBuckets: {Object.keys(state.conceptNameOptionsByDirection ?? {}).filter((key) => key !== selectedDirectionKey).length} · missingFields: {finalNamingDebug.missingFields?.join(', ') || 'none'}</p></details>
                 {directionConceptNameOptions.length ? (
                   <>
-                  <div className="mt-5 grid gap-4 xl:grid-cols-3">
+                  <div className="mt-5 grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {directionConceptNameOptions.map((option) => {
                       const optionSelected = state.selectedFinalConceptNameOption?.id ? state.selectedFinalConceptNameOption.id === option.id : state.selectedConcept?.finalConceptName === option.conceptName;
+                      const roleBadge = conceptRoleBadge(option.namingStyle);
                       return (
-                        <article key={option.id || option.conceptName} className={`rounded-3xl border p-5 text-left transition ${optionSelected ? 'border-indigo-500 bg-indigo-50 shadow-lg shadow-indigo-100' : 'border-indigo-100 bg-white hover:border-indigo-300'}`}>
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                            <h5 className="text-xl font-black leading-snug text-slate-950">{option.conceptName}</h5>
-                            <span className="w-fit rounded-full bg-indigo-100 px-2 py-1 text-[11px] font-black text-indigo-700">{option.languageMode}</span>
-                          </div>
-                          {option.koreanSubtitle && <p className="mt-1 text-sm font-black leading-6 text-slate-500">{option.koreanSubtitle}</p>}
-                          <p className="mt-2 text-sm font-bold leading-6 text-indigo-700">{option.oneLineSlogan}</p>
-                          <div className="mt-3 space-y-3 text-sm font-semibold leading-6 text-slate-700">
-                            <p><b className="text-slate-950">의미</b> {option.shortMeaning}</p>
-                            <p><b className="text-indigo-700">선택 방향 적합성</b> {option.whyItFitsRfp || option.whyItFits}</p>
-                            <p><b className="text-rose-700">주요 리스크</b> {option.mainRisk || option.risk}</p>
-                            <CompactAccordion title="점수 보기">
+                        <article key={option.id || option.conceptName} className={`flex h-full flex-col rounded-2xl border p-5 text-left transition ${optionSelected ? 'border-blue-500 bg-blue-50/40 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                          {(roleBadge || optionSelected) && (
+                            <div className="flex items-center justify-between gap-2">
+                              {roleBadge ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">{roleBadge}</span> : <span />}
+                              {optionSelected && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-black text-blue-700">선택됨</span>}
+                            </div>
+                          )}
+                          <h5 className="mt-2 text-2xl font-black leading-tight text-slate-950">{option.conceptName}</h5>
+                          {option.koreanSubtitle && <p className="mt-1 text-sm font-bold leading-6 text-slate-500">{option.koreanSubtitle}</p>}
+                          <p className="mt-2 text-sm font-bold leading-6 text-blue-700">{option.oneLineSlogan}</p>
+                          {option.shortMeaning && <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">{option.shortMeaning}</p>}
+                          <div className="mt-3 space-y-1.5 text-sm leading-6 text-slate-600">
+                            <CompactAccordion title="의미 보기"><p>{option.shortMeaning}</p></CompactAccordion>
+                            <CompactAccordion title="왜 맞는가"><p>{option.whyItFitsRfp || option.whyItFits}</p>{option.strategicClaim && <p className="mt-2 text-slate-500">{option.strategicClaim}</p>}</CompactAccordion>
+                            <CompactAccordion title="리스크 보기"><p>{option.mainRisk || option.risk}</p></CompactAccordion>
+                            <CompactAccordion title="평가 보기">
                               <p>Cover {option.coverReadinessScore ?? option.coverTitleScore} · Memory {option.memorabilityScore} · RFP {option.specificityScore ?? option.rfpSpecificityScore} · Expand {option.expandabilityScore}</p>
-                              <p className="mt-2">Style: {option.namingStyle}</p>
-                            </CompactAccordion>
-                            {option.expandableTo && (
-                              <CompactAccordion title="확장 가능성 보기">
-                                <p><b>공간</b> {option.expandableTo.space}</p>
-                                <p className="mt-2"><b>콘텐츠</b> {option.expandableTo.content}</p>
-                                <p className="mt-2"><b>미디어</b> {option.expandableTo.media}</p>
-                                <p className="mt-2"><b>운영</b> {option.expandableTo.operation}</p>
-                              </CompactAccordion>
-                            )}
-                            <CompactAccordion title="근거 보기">
-                              {option.strategicClaim && <p><b>전략적 주장</b> {option.strategicClaim}</p>}
-                              <p className="mt-2">상세 rationale: {option.whyItFitsRfp || option.whyItFits}</p>
-                              <p className="mt-2">개발 리스크: {option.risk}</p>
-                              {(option.validation || option.koreanConceptSeed) && <CompactAccordion title="개발 정보 보기"><p>{option.koreanConceptSeed ? `internal Korean concept seed: ${option.koreanConceptSeed}` : ''}</p>{option.validation && <p className="mt-1">{Object.entries(option.validation).filter(([, value]) => value).map(([key]) => key).join(' · ')}</p>}</CompactAccordion>}
+                              {option.expandableTo && <p className="mt-2 text-slate-500">확장 · 공간 {option.expandableTo.space} · 콘텐츠 {option.expandableTo.content} · 미디어 {option.expandableTo.media} · 운영 {option.expandableTo.operation}</p>}
                             </CompactAccordion>
                           </div>
-                          <button type="button" onClick={() => selectConceptNameOption(option)} className={`mt-4 inline-flex rounded-xl px-4 py-2 text-sm font-black ${optionSelected ? 'bg-indigo-600 text-white' : 'bg-slate-950 text-white'}`}>{optionSelected ? '선택됨' : '이 이름 선택'}</button>
+                          <button type="button" onClick={() => selectConceptNameOption(option)} className={`mt-4 w-full rounded-xl px-4 py-2.5 text-sm font-black transition ${optionSelected ? 'bg-blue-600 text-white' : 'bg-slate-900 text-white hover:bg-slate-800'}`}>{optionSelected ? '선택됨' : '이 이름 선택'}</button>
                         </article>
                       );
                     })}
                   </div>
-                  <button type="button" onClick={() => runConceptNames({ append: true })} disabled={Boolean(loading) || !selectedStrategicDirectionExists} className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-black text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50">추가 컨셉 보기</button>
+                  <div className="mt-4 flex justify-center">
+                    <button type="button" onClick={() => runConceptNames({ append: true })} disabled={Boolean(loading) || !selectedStrategicDirectionExists} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50">추가 컨셉 보기</button>
+                  </div>
                   </>
-                ) : <p className="mt-5 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50 px-4 py-5 text-sm font-bold text-indigo-900">{selectedStrategicDirectionExists ? '선택한 전략 방향에 맞는 컨셉명을 다시 생성해 주세요.' : '컨셉명을 생성하면 후보 카드가 이 영역에 표시됩니다.'}</p>}
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  <label className="block text-sm font-black text-slate-800">최종 컨셉명 수동 편집
-                    <input value={state.selectedConcept.finalConceptName ?? ''} onChange={(event) => updateFinalConceptField('finalConceptName', event.target.value)} placeholder="최종 컨셉명을 입력하거나 후보를 선택하세요" className="mt-2 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-indigo-500" />
-                  </label>
-                  <label className="block text-sm font-black text-slate-800">최종 컨셉 슬로건 수동 편집
-                    <input value={state.selectedConcept.finalConceptSlogan ?? ''} onChange={(event) => updateFinalConceptField('finalConceptSlogan', event.target.value)} placeholder="한 줄 슬로건을 입력하세요" className="mt-2 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none focus:border-indigo-500" />
-                  </label>
-                </div>
+                ) : <p className="mt-5 rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm font-semibold text-slate-500">{selectedStrategicDirectionExists ? '선택한 전략 방향에 맞는 컨셉명을 다시 생성해 주세요.' : '컨셉명을 생성하면 후보 카드가 이 영역에 표시됩니다.'}</p>}
+                {finalConceptNameSelected && (
+                  <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/50 p-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">선택한 컨셉 다듬기 (선택 사항)</p>
+                    <div className="mt-2 grid gap-3 md:grid-cols-2">
+                      <label className="block text-sm font-bold text-slate-700">최종 컨셉명
+                        <input value={state.selectedConcept.finalConceptName ?? ''} onChange={(event) => updateFinalConceptField('finalConceptName', event.target.value)} placeholder="최종 컨셉명" className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-bold text-slate-900 outline-none focus:border-blue-500" />
+                      </label>
+                      <label className="block text-sm font-bold text-slate-700">최종 슬로건
+                        <input value={state.selectedConcept.finalConceptSlogan ?? ''} onChange={(event) => updateFinalConceptField('finalConceptSlogan', event.target.value)} placeholder="한 줄 슬로건" className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-bold text-slate-900 outline-none focus:border-blue-500" />
+                      </label>
+                    </div>
+                  </div>
+                )}
               </section>
             )}
             {finalConceptNameSelected && Boolean(state.conceptGenerationResult?.brandExperienceMatrix?.length) && (
