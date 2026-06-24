@@ -1753,6 +1753,12 @@ function getStrategicDirectionKey(concept?: ConceptCandidate) {
 function getDirectionCacheKey(index: number | undefined, concept?: ConceptCandidate) {
   return [typeof index === 'number' ? `dir${index}` : undefined, getStrategicDirectionKey(concept)].filter(Boolean).join('::');
 }
+// Stable identity of the current RFP/project. Changes when the uploaded document, project name, client, or brief change,
+// so concept-name candidates stamped with an old project key are never rendered or reused against a new RFP.
+function buildCurrentProjectKey(input?: ProjectInput, documents?: UploadedDocument[]) {
+  const docKey = (documents ?? []).map((document) => document.dbDocumentId || document.dbProjectId || document.fileName || document.id).filter(Boolean).join(',');
+  return [input?.projectName?.trim(), input?.clientName?.trim(), String((input?.briefText ?? '').trim().length), docKey].filter(Boolean).join('::') || 'no-project';
+}
 
 
 const INVALID_DIRECTION_LABEL_PATTERN = /(KINTEX|2025|12월|2,?520㎡|Hero\s*콘텐츠\s*40%|콘텐츠\s*60%|B2B\s*대상|전시\s*목표|콘텐츠\s*개발|운영\s*구성|실체\s*Proof\s*장면|Proof\s*장면|\d{4}|\d+%|\d+㎡|킨텍스)/i;
@@ -2047,7 +2053,12 @@ export default function Home() {
   const selectedStrategicDirectionExists = Boolean(selectedStrategicDirection);
   const finalNamingLoading = loading === '컨셉명 후보 생성 중';
   const selectedDirectionKey = getDirectionCacheKey(state.selectedDirectionIndex, selectedStrategicDirection);
-  const directionConceptNameOptions = selectedDirectionKey ? (state.conceptNameOptionsByDirection?.[selectedDirectionKey] ?? []) : [];
+  const currentProjectKey = buildCurrentProjectKey(state.input, uploadedDocuments);
+  // Render ONLY candidates whose stamp matches the current project + selected direction. Older un-stamped candidates
+  // (projectKey/directionKey undefined) are trusted because they already live in this exact direction bucket; any
+  // candidate stamped for another project/direction (e.g. a stale async write) is dropped and never shown.
+  const directionConceptNameOptions = (selectedDirectionKey ? (state.conceptNameOptionsByDirection?.[selectedDirectionKey] ?? []) : [])
+    .filter((option) => (option.projectKey === undefined || option.projectKey === currentProjectKey) && (option.directionKey === undefined || option.directionKey === selectedDirectionKey));
   const visibleStrategicDirections = useMemo(() => (state.conceptCandidates ?? []).slice(0, 3), [state.conceptCandidates]);
   const finalNameOptionsCount = directionConceptNameOptions.length;
   const finalConceptNameSelected = Boolean(state.selectedConcept?.finalConceptName?.trim());
@@ -3540,6 +3551,10 @@ export default function Home() {
     try {
       const selectedDirection = selectedStrategicDirection;
       const directionKey = getDirectionCacheKey(state.selectedDirectionIndex, selectedDirection);
+      // Request identity for async-race protection: a response is only allowed to update the VISIBLE candidates if the
+      // user is still on this exact project + direction when it returns.
+      const requestProjectKey = currentProjectKey;
+      const generationBatchId = crypto.randomUUID ? crypto.randomUUID() : `${directionKey}-${requestProjectKey}`;
       const directionValidation = validateStrategicDirectionForDisplay(selectedDirection);
       const selectedDirectionForNaming = normalizeSelectedDirectionForNaming(selectedDirection);
       setFinalNamingDebug({ selectedDirectionKey: directionKey, missingFields: directionValidation.missingFields });
@@ -3561,14 +3576,23 @@ export default function Home() {
       const result = await parseJsonResponse<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string }> (namingResponse, '/api/concept-names');
       if (!namingResponse.ok) throw new Error(result.details ? `${result.error || '컨셉명 생성 실패'} (${result.details})` : (result.error || '컨셉명 생성 중 오류가 발생했습니다.'));
       const blockedOptions = [...currentDirectionOptions, ...otherDirectionOptions];
-      const nameOptions = uniqueConceptNameOptions(result.nameOptions ?? result.options ?? [], blockedOptions);
+      // Stamp every candidate with its project + direction provenance so the render filter can never show it under a
+      // different project/direction, even if it lands in state after the user has moved on.
+      const nameOptions = uniqueConceptNameOptions(result.nameOptions ?? result.options ?? [], blockedOptions)
+        .map((option) => ({ ...option, projectKey: requestProjectKey, directionKey, generationBatchId }));
       if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
       if (!nameOptions.length) throw new Error('컨셉명 후보가 비어 있습니다.');
       if (result.warning) setFinalNamingError(`컨셉명 생성 경고: ${result.warning}`);
       setState((current) => {
+        const currentKey = getDirectionCacheKey(current.selectedDirectionIndex, current.selectedStrategicDirection ?? current.selectedConcept?.selectedDirection);
+        const stillCurrent = currentKey === directionKey && buildCurrentProjectKey(current.input, current.uploadedDocuments) === requestProjectKey;
         const latestDirectionOptions = current.conceptNameOptionsByDirection?.[directionKey] ?? [];
         const nextOptions = options.append ? uniqueConceptNameOptions([...latestDirectionOptions, ...nameOptions]) : nameOptions;
-        return { ...current, conceptNameOptions: nextOptions, conceptNameOptionsByDirection: { ...(current.conceptNameOptionsByDirection ?? {}), [directionKey]: nextOptions }, selectedFinalConceptNameOption: options.append ? current.selectedFinalConceptNameOption : undefined, outline: undefined, slides: undefined };
+        const nextByDirection = { ...(current.conceptNameOptionsByDirection ?? {}), [directionKey]: nextOptions };
+        // Stale response (direction/project changed while in flight): keep the captured direction's bucket up to date for
+        // when the user returns, but do NOT overwrite the currently visible candidates or final selection.
+        if (!stillCurrent) return { ...current, conceptNameOptionsByDirection: nextByDirection };
+        return { ...current, conceptNameOptions: nextOptions, conceptNameOptionsByDirection: nextByDirection, selectedFinalConceptNameOption: options.append ? current.selectedFinalConceptNameOption : undefined, outline: undefined, slides: undefined };
       });
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.';

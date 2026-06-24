@@ -386,6 +386,23 @@ function truthyValidation() {
 
 // Run the full client-side filtering pipeline on one model result: dedup -> safety firewall -> quality/grounding gate
 // -> rank -> top 3. Weak/anti-pattern names and (when vocabulary is rich) ungrounded names are dropped, never padded.
+// Hangul / Latin dominance — used by the language policy and the koreanSubtitle backfill.
+function isLatinDominantName(value: string): boolean {
+  const latin = (value.match(/[A-Za-z]/g) || []).length;
+  const hangul = (value.match(/[가-힣]/g) || []).length;
+  return latin > 0 && latin >= hangul;
+}
+// Deterministic concept-name language policy. Default conceptName to ENGLISH for global / B2B / technology / energy /
+// mobility / exhibition / brand-showcase / corporate-pavilion / international contexts (Korean conceptNames there tend to
+// collapse into descriptive labels); allow Korean as the PRIMARY conceptName only when Korean / local / cultural / heritage
+// identity is itself the concept. Generic category signals only — no hardcoded brand/company/RFP names.
+function decidePrimaryConceptLanguage(body: { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis }): { language: 'english_default' | 'korean_primary'; reason: string } {
+  const text = [body.input.projectName, body.input.clientName, body.input.briefText, body.analysis?.projectOverview, body.selectedDirection?.strategicDirectionLabel, body.selectedDirection?.rfpConceptType, body.rfpDiagnosis?.coreWinningCondition].filter(Boolean).join(' \n ');
+  const koreanCultural = /전통\s*문화|문화\s*유산|무형\s*유산|국가\s*유산|문화재|민속|향토|향교|서원|국악|판소리|한복|한지|종가|세시|마을\s*공동체|지역\s*공동체|지역\s*주민|주민\s*참여|공공\s*문화|생활\s*문화|역사\s*문화|heritage|folk\s*culture|intangible\s*cultural|traditional\s*korean/i.test(text);
+  if (koreanCultural) return { language: 'korean_primary', reason: 'Korean/local/cultural/heritage identity is the concept' };
+  return { language: 'english_default', reason: 'global/B2B/technology/exhibition/brand-showcase/international context defaults to an English title with Korean subtitle/slogan' };
+}
+
 function buildFinalOptions(
   result: ConceptNameOptionsResult,
   body: { input: ProjectInput; selectedDirection: ConceptCandidate; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[] },
@@ -444,7 +461,9 @@ function buildFinalOptions(
     return {
       ...option,
       id: option.id || `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}`,
-      koreanSubtitle: option.koreanSubtitle ?? '',
+      // An English-dominant conceptName must always carry a Korean subtitle (the Korean reading of the concept). If the
+      // model omitted it, backfill from the Korean shortMeaning/slogan so the UI never shows an English title alone.
+      koreanSubtitle: (option.koreanSubtitle && option.koreanSubtitle.trim()) ? option.koreanSubtitle : (isLatinDominantName(option.conceptName || '') ? userFacingCopy(option.shortMeaning || option.oneLineSlogan || '', 60) : ''),
       oneLineSlogan: option.oneLineSlogan || option.shortMeaning,
       whyItFitsRfp: whyItFits,
       whyItFitsSelectedDirection: option.whyItFitsSelectedDirection || whyItFits,
@@ -487,12 +506,22 @@ export async function POST(request: Request) {
     const rfpHierarchy = extractRfpConceptHierarchy(body.input.briefText);
     const namingAnchorBlock = buildConceptNamingAnchor(body, rfpHierarchy);
     const conceptFrameBlock = buildConceptFrameSynthesis(body);
-    console.info('[concept-names:gating]', { rfpProvidedConceptHierarchyDetected: Boolean(rfpHierarchy), hierarchyFieldsUsedForNaming: rfpHierarchy ? Object.entries({ mainTheme: rfpHierarchy.mainTheme, subThemes: rfpHierarchy.subThemes.length, zoneConcepts: rfpHierarchy.zoneConcepts.length, officialSlogan: rfpHierarchy.officialSlogan, keyMessage: rfpHierarchy.keyMessage }).filter(([, v]) => v).map(([k]) => k) : [] });
+    const conceptLanguage = decidePrimaryConceptLanguage(body);
+    const languagePolicyBlock = [
+      '=== Concept Name Language Policy (deterministic, 현재 RFP 기준) ===',
+      `primaryConceptLanguage: ${conceptLanguage.language} — ${conceptLanguage.reason}`,
+      'english_default: conceptName 3개 중 최소 2개는 영어 타이틀로 출력한다. 한국어 conceptName은 서술형 라벨/문장이 아니라 단독으로 서는 압축 타이틀이고, 현재 RFP가 한국어 네이밍을 강하게 뒷받침할 때만 허용한다.',
+      'korean_primary: 한국어 conceptName을 우선 허용하되 여전히 설명/문장/전략 라벨이 아니라 압축된 표지 타이틀이어야 한다.',
+      '공통: 영어 conceptName에는 반드시 자연스러운 한국어 koreanSubtitle를 함께 제공한다. koreanSubtitle/oneLineSlogan/shortMeaning/whyItFitsRfp는 한국어로 작성한다(UI 언어가 한국어). oneLineSlogan은 conceptName을 그대로 반복하지 말고 날카롭게 한다.',
+      'conceptName은 짧고 기억되는 표지 타이틀이며 문장/서술/전략 라벨/선택한 전략 방향 문구의 반복이 아니다.',
+    ].join('\n');
+    console.info('[concept-names:gating]', { rfpProvidedConceptHierarchyDetected: Boolean(rfpHierarchy), primaryConceptLanguage: conceptLanguage.language, hierarchyFieldsUsedForNaming: rfpHierarchy ? Object.entries({ mainTheme: rfpHierarchy.mainTheme, subThemes: rfpHierarchy.subThemes.length, zoneConcepts: rfpHierarchy.zoneConcepts.length, officialSlogan: rfpHierarchy.officialSlogan, keyMessage: rfpHierarchy.keyMessage }).filter(([, v]) => v).map(([k]) => k) : [] });
 
     const system = [
       'You are a senior Korean proposal concept naming director.',
       'Generate final cover-level concept name options only after a strategic direction has been selected.',
       'Return exactly 3 strong final concept name options for the selected strategic direction only. Fewer, sharper, non-interchangeable options are required.',
+      'Obey the Concept Name Language Policy block: when primaryConceptLanguage is english_default, default the conceptName to a short English cover title (at least 2 of 3) with a natural Korean koreanSubtitle and a Korean oneLineSlogan; a Korean conceptName is allowed only when it reads as a compressed title (never a descriptive label or sentence) and the current RFP strongly supports Korean naming. When primaryConceptLanguage is korean_primary, a Korean title is preferred but must still be a compressed cover title, not an explanation.',
       'Avoid consulting labels, analysis headings, internal strategy phrases, generic abstract nouns, awkward translated phrases, product-specific names, one-zone-specific names, one-entity-specific names, unsupported poetic metaphors, and generic tech/event slogans.',
       'Names must be proposal-cover concepts that express the winning claim and can expand into space, content, media, and operation.',
       'Internally use coreWinningCondition, strategicTension, proofBurden, selectedStrategicDirection, and signatureProofIdea, but translate all visible copy into planner-friendly Korean: proof=설득 포인트/확인 장면/대표 설득 장면, evidence=근거, proof burden=설득 과제, required proof elements=필수 설득 요소, signature proof idea=대표 설득 장면.',
@@ -504,7 +533,7 @@ export async function POST(request: Request) {
       `Blocked example names are banned as outputs and paraphrase sources: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}. Do not output or imitate them.`,
     ].join('\n');
 
-    const user = `${conceptFrameBlock}\n\n${namingAnchorBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
+    const user = `${languagePolicyBlock}\n\n${conceptFrameBlock}\n\n${namingAnchorBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
 Selected secondaryRfpConceptTypes: ${body.selectedDirection.secondaryRfpConceptTypes?.join(' / ') || 'none'}
 Relevant Matrix Type: ${sanitizedContext.matrixType}
 Active Matrix Type: ${sanitizedContext.activeMatrixType}
@@ -530,7 +559,7 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
 - Use the selected direction’s directionAxis and 대표 설득 장면 as the primary naming source.
 - 추가 후보 요청이면 Existing names for selected direction과 Names already generated for other directions를 모두 피하고, 같은 slogan structure / strategic claim / shortMeaning 반복을 거부하라.
 - 각 후보 생성 전 내부적으로 What must this proposal prove? What belief shift should evaluator make? Strongest claim? Cover first-page fit? Expandable to space/content/media/operation? 을 검증하고 실패하면 버려라.
-- Korean proposal users: 최소 2개 Korean-first 후보를 포함하고, 글로벌/브랜드/전시 맥락이면 최소 2개 English 또는 bilingual 후보를 포함하라. English 후보에는 koreanSubtitle 또는 oneLineSlogan으로 자연스러운 한국어 설명을 제공하라.
+- 위 Concept Name Language Policy를 따른다. english_default이면 conceptName 3개 중 최소 2개를 영어 타이틀로 출력하고(나머지 한 개도 한국어가 서술형이면 영어로 전환), 영어 conceptName마다 자연스러운 한국어 koreanSubtitle와 한국어 oneLineSlogan을 함께 제공한다. korean_primary이면 한국어 타이틀을 우선하되 압축된 표지 타이틀이어야 한다. 두 경우 모두 한국어 conceptName이 설명 문장/서술형 라벨로 읽히면 거부하고 영어 타이틀+한국어 부제로 재작성한다.
 - main visible copy(conceptName, oneLineSlogan, shortMeaning, whyItFitsSelectedDirection, mainRisk)에 raw English internal terms(proof/evidence/proof burden/evaluator clarity/validation/source/score/signature proof idea)를 쓰지 말고 한국어 사용자 언어로 번역한다.
 - 컨셉명은 선택한 전략 방향에만 맞아야 하고 다른 방향에는 어색해야 하며, 후보끼리 근접 중복이 아니어야 한다. validation boolean 블록은 출력하지 말라(구분성·금지어·중복 검증과 점수는 서버가 코드로 수행한다).
 - 금지 예시명/이전 예시명을 그대로 출력하거나 변형하지 말라: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}.
