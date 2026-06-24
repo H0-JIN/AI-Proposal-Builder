@@ -475,6 +475,11 @@ export type ConceptNameLanguageMode = 'Korean' | 'English' | 'bilingual';
 
 export interface ConceptNameOption {
   id?: string;
+  // Client-side provenance stamps so the final naming section renders ONLY candidates that belong to the currently
+  // selected project + strategic direction, and so a late/stale async response can never surface under another direction.
+  projectKey?: string;
+  directionKey?: string;
+  generationBatchId?: string;
   conceptName: string;
   languageMode: ConceptNameLanguageMode;
   koreanSubtitle?: string;
