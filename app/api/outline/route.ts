@@ -108,6 +108,61 @@ function ensureEntityDifferentiationOutlineSlide(slides: SlideOutline[], differe
 
 const styleGuides = proposalTypeDescriptions;
 
+// Internal deck narrative spine: decides page order and gives each page a distinct role so the deck does not restate
+// the same thesis. Built deterministically from the selected concept + direction + diagnosis + current RFP (concise).
+function buildDeckNarrativeSpine(args: { finalConceptName: string; finalConceptSlogan: string; selectedDirection: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; analysis: AnalysisResult }): string {
+  const { finalConceptName, finalConceptSlogan, selectedDirection, rfpDiagnosis, analysis } = args;
+  const sig = selectedDirection.signatureProofIdea;
+  const t = (value?: string, max = 140) => ((value || '').replace(/\s+/g, ' ').trim().slice(0, max)) || '없음';
+  return [
+    '=== Deck Narrative Spine (내부 설계용. 페이지 순서와 각 페이지의 고유 역할을 결정한다. UI에 길게 노출하지 말 것) ===',
+    `openingProblem: ${t(analysis.clientChallenge || rfpDiagnosis?.hiddenNeed)}`,
+    `selectedStrategicDirectionLogic: ${t(selectedDirection.oneLineStrategicBet || selectedDirection.whatThisDirectionEmphasizes)}`,
+    `finalConceptDeclaration: ${t(finalConceptName, 60)} — ${t(finalConceptSlogan, 100)}`,
+    `conceptPromise: ${t(rfpDiagnosis?.coreWinningCondition || selectedDirection.whatThisDirectionEmphasizes)}`,
+    `proofSequence: ${t(rfpDiagnosis?.proofBurden || (rfpDiagnosis?.requiredProofElements ?? []).join(' / '))}`,
+    `signatureExperienceLogic: ${t(sig?.signatureScene || sig?.signatureContent)}`,
+    `contentArchitectureLogic: ${t(analysis.contentCondition || sig?.signatureSpatialMove)}`,
+    `operationProofLogic: ${t(analysis.operationCondition || (analysis.kpiScheduleConstraints ?? []).join(' / '))}`,
+    `closingClaim: ${t(rfpDiagnosis?.coreWinningCondition || finalConceptSlogan)}`,
+    '각 페이지는 이 spine의 서로 다른 단계를 전개한다. 같은 thesis/컨셉 선언/RFP 요약/시장 맥락/전략 기회/경험 원칙/비주얼 방향을 여러 페이지에 반복하지 말고, 페이지마다 하나의 고유 질문(이 페이지가 푸는 문제 / 증명하는 것 / 컨셉을 전진시키는 방식 / 다음 페이지를 준비하는 이유)에 답한다.',
+  ].join('\n');
+}
+
+function normalizeBoilerplateText(value?: string): string {
+  return (value || '').toLowerCase().replace(/[^가-힣a-z0-9]+/g, ' ').trim();
+}
+function splitIntoSentences(value?: string): string[] {
+  return (value || '').split(/(?<=[.!?。…])\s+|\n+/).map((sentence) => sentence.trim()).filter((sentence) => sentence.length >= 8);
+}
+
+// Repair repeated boilerplate across pages: drop sentences in mainCopy that already appeared VERBATIM earlier in the
+// deck (keep at least one), and count pages whose body collapsed or whose keyMessage duplicates another. Deterministic,
+// content-preserving (never empties a page), and used to decide if the deck is too template-like to return.
+function repairRepeatedOutlineBoilerplate(slides: SlideOutline[]): { slides: SlideOutline[]; duplicateBodySlides: number } {
+  const seenSentence = new Set<string>();
+  const seenKeyMessage = new Set<string>();
+  let duplicateBodySlides = 0;
+  const repaired = slides.map((slide) => {
+    const sentences = splitIntoSentences(slide.mainCopy);
+    const kept: string[] = [];
+    let removed = 0;
+    for (const sentence of sentences) {
+      const key = normalizeBoilerplateText(sentence);
+      if (key.length >= 14 && seenSentence.has(key)) { removed += 1; continue; }
+      if (key.length >= 14) seenSentence.add(key);
+      kept.push(sentence);
+    }
+    const newMainCopy = kept.length ? kept.join(' ') : slide.mainCopy;
+    const keyMessageKey = normalizeBoilerplateText(slide.keyMessage);
+    const keyMessageDuplicate = keyMessageKey.length >= 12 && seenKeyMessage.has(keyMessageKey);
+    if (keyMessageKey.length >= 12) seenKeyMessage.add(keyMessageKey);
+    if (keyMessageDuplicate || (removed >= 2 && !kept.length)) duplicateBodySlides += 1;
+    return { ...slide, mainCopy: newMainCopy };
+  });
+  return { slides: repaired, duplicateBodySlides };
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptGenerationResult?: ConceptCandidatesResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[]; projectId?: string | null; documentIds?: string[] };
@@ -123,6 +178,7 @@ export async function POST(request: Request) {
     const selectedDirection = body.selectedStrategicDirection ?? body.selectedConcept.selectedDirection ?? body.selectedConcept;
     const rfpDiagnosis = body.rfpDiagnosis ?? body.conceptGenerationResult?.rfpDiagnosis;
     const rfpHierarchy = extractRfpConceptHierarchy(body.input.briefText);
+    const deckNarrativeSpine = buildDeckNarrativeSpine({ finalConceptName, finalConceptSlogan, selectedDirection, rfpDiagnosis, analysis: body.analysis });
 
     const inputQuality = assessInputQuality(body.input, body.analysis);
     const missingInfoSummary = inputQuality.missingItems.map((item) => `${item.label}: ${item.description}`);
@@ -199,6 +255,11 @@ export async function POST(request: Request) {
         '아래 "제안서 구조 1순위 드라이버" 블록(최종 컨셉명·슬로건·선택된 전략 방향·제안 전략 진단·RFP 제공 컨셉 위계)이 proposal_patterns와 일반 덱 구조보다 우선한다. 오프닝은 최종 컨셉명과 직접 연결하고, 섹션 흐름은 슬로건이 약속하는 논리를 따라가며, 모든 slideTitle/keyMessage가 선택된 컨셉과 정렬되어야 한다. 증명 섹션은 선택된 전략 방향을 뒷받침하고, 클로징은 새로운 메시지가 아니라 같은 컨셉을 재강조한다. proposal_patterns는 페이지 리듬·증명 배치·섹션 순서·리스크 체크 같은 구조 참고로만 쓰고 컨셉/방향/위계를 바꾸지 않는다.',
         'RFP에 명시된 컨셉 위계/메인 테마/존 구조/레벨 구조/필수 섹션/평가 기준/공식 프레임이 있으면 그 구조를 아웃라인에 보존·매핑하고 proposal_patterns로 덮어쓰지 말라. 선택된 최종 컨셉이 그 RFP 요구를 어떻게 해석·강화하는지 드러나게 배치한다. 명시 위계가 없으면 제안 전략 진단·선택된 전략 방향·최종 컨셉명·제안서 유형에서 구조를 도출한다.',
         '사용자 선택 제안서 유형을 구조 가드로 사용한다(라벨·예시 제목은 하드코딩하지 말 것): 다중 주체/공동관형이면 공동 메시지·참여 주체 역할 구분·통합 역량·증명 흐름 중심으로 구성하되 한 참여 주체가 전체 이야기를 차지하지 않게 한다. 전시/콘텐츠/기술형이면 관객 이해·콘텐츠 경험·시스템/가치 증명·시그니처 장면·필요 시 운영 신뢰 중심으로 구성한다. 방문관/공장견학/쇼룸형이면 방문 동선·제품/공정/신뢰 증명·감각 경험·방문 후 기억 중심으로 구성한다. 국가관/엑스포형이면 테마·국가/문화 프레임·참여 여정·상징 경험·글로벌 관객 이해 중심으로 구성한다.',
+        '아래 Deck Narrative Spine을 페이지 순서와 역할의 기준으로 삼는다. 각 페이지는 spine의 서로 다른 단계를 전개하며 고유 역할을 갖는다. 같은 thesis·컨셉 선언·RFP 요약·시장 맥락·전략 기회·경험 원칙·비주얼 방향을 여러 페이지에 반복하지 말라. 제목이 달라도 내용이 사실상 같은 페이지를 만들지 말라.',
+        '페이지 메시지는 slide-ready로 쓴다: slideTitle은 문장이 아니라 짧은 제목, keyMessage는 한 줄 설득 주장 하나, mainCopy는 3~5개의 간결한 불릿(줄바꿈으로 구분, 긴 문단/중복 요약 금지)으로 쓴다. RFP 분석 원문·컨셉 rationale 원문·시장 맥락 문장을 그대로 복붙하지 말고 이 페이지에 필요한 핵심만 압축한다. “이미지 영역 삽입” 같은 placeholder 문구를 쓰지 말라.',
+        '콘텐츠/체험 상세 페이지는 visitor action / system response / placement / media·object / output·reward 같은 동일 모듈 필드를 모든 페이지에 반복하지 말라. 콘텐츠 페이지는 각각 다른 목적을 갖는다: 경험 아키텍처 정의 / 시그니처 장면 / 밸류체인·시스템 로직 증명 / 디지털·피지컬 통합 / 관객별 운영 / 실행 가능성 증명 등. 동일 템플릿을 여러 페이지에 복제하지 말고, module-spec 전용 페이지일 때만 모듈 필드를 상세히 쓴다.',
+        '최종 컨셉명을 모든 페이지 제목에 붙여 반복하지 말라. 컨셉은 narrative spine·페이지 논리·증명 순서·비주얼 톤·클로징 주장으로 작동시키고, 컨셉명 자체는 꼭 필요한 페이지(오프닝/코어 컨셉/클로징 등)에만 노출한다.',
+        '각 페이지는 현재 RFP의 구체 재료(타깃, 필수 산출물, 행사/부스/전시 조건, 콘텐츠 요구, 평가 관심사, 운영 제약, 증명 요구)를 사용하고 일반 구조에만 의존하지 말라.',
         'referenceOnly/doNotTreatAsScope 항목은 현재 RFP에 명시된 경우에도 신규 체험 상세, 제품 상세 장표, 기본 참고 방향 장표로 생성하지 말고 배경 맥락으로만 다루라. FF7/MDW/SFF/SAFE/Samsung Foundry/Galaxy/teamLab/Delight 등 현재 evidence에 없는 프로젝트명은 사용하지 말라.',
         'Key Experience Asset은 프로젝트를 대표하는 1~3개 핵심 체험 자산만 압축해 보여주는 장표로 설계하라. 일반 assetType 후보 목록을 나열하지 말고, 각 자산의 이름/역할/방문객 행동/작동 방식/공간 배치/결과물을 중심으로 구성하라.',
         '모뉴먼트가 RFP에 명시되지 않았다면 Monument를 핵심 자산으로 고정하지 말라.',
@@ -223,6 +284,8 @@ export async function POST(request: Request) {
 제안 전략 진단(핵심): 승리 조건=${(rfpDiagnosis?.coreWinningCondition || '없음').slice(0, 180)} · 전략적 긴장=${(rfpDiagnosis?.strategicTension || '없음').slice(0, 180)} · 설득 과제=${(rfpDiagnosis?.persuasionTask || rfpDiagnosis?.proofBurden || '없음').slice(0, 180)}
 ${rfpHierarchy ? formatRfpHierarchyAnchor(rfpHierarchy) : 'RFP 제공 컨셉 위계: 명시 없음 (제안 전략 진단·선택된 전략 방향·최종 컨셉명·제안서 유형에서 구조를 도출한다)'}
 요구: 오프닝=최종 컨셉명 연결, 섹션 흐름=슬로건 논리, 모든 페이지 제목=선택 컨셉과 정렬, 증명 섹션=선택 전략 방향 뒷받침, 클로징=같은 컨셉 재강조.
+
+${deckNarrativeSpine}
 
 사용자 선택 제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
 RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}
@@ -286,17 +349,24 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
     );
 
     const finalSlides = mergeDuplicateSlideRoles(ensureEntityDifferentiationOutlineSlide(guardedSlides, differentiationStrategy, body.analysis));
+    // §5/§9/§10: repair repeated boilerplate (drop verbatim-duplicated sentences across pages, keeping at least one).
+    // If the deck is still overwhelmingly template-like (most pages duplicate body/keyMessage), return the compression
+    // error instead of a repetitive generic deck. Conservative threshold (>50% of >=8 pages) avoids false failures.
+    const { slides: dedupedSlides, duplicateBodySlides } = repairRepeatedOutlineBoilerplate(finalSlides);
+    if (dedupedSlides.length >= 8 && duplicateBodySlides / dedupedSlides.length > 0.5) {
+      return NextResponse.json({ error: '선택한 컨셉을 제안서 페이지 구조로 충분히 압축하지 못했습니다. 제안서 구조를 다시 생성해 주세요.', reason: 'repeated_boilerplate' }, { status: 422 });
+    }
     // §8/§9: the outline must visibly carry the selected final concept. If the concept name is ENTIRELY absent from the
     // outline text, the structure did not transfer the concept — return the conversion error, not a generic deck.
     const conceptTokens = (finalConceptName || '').split(/[\s/·|]+/).map((token) => token.replace(/[^가-힣A-Za-z0-9]/g, '')).filter((token) => token.length >= 2);
     if (conceptTokens.length) {
-      const outlineText = finalSlides.map((slide) => [slide.slideTitle, slide.keyMessage, slide.relationToThesis, slide.mainCopy, slide.whyThisSlideExists].filter(Boolean).join(' ')).join(' ').toLowerCase();
+      const outlineText = dedupedSlides.map((slide) => [slide.slideTitle, slide.keyMessage, slide.relationToThesis, slide.mainCopy, slide.whyThisSlideExists].filter(Boolean).join(' ')).join(' ').toLowerCase();
       const conceptCarried = conceptTokens.some((token) => outlineText.includes(token.toLowerCase()));
       if (!conceptCarried) {
         return NextResponse.json({ error: '선택한 컨셉을 제안서 구조로 충분히 전개하지 못했습니다. 제안서 구조를 다시 생성해 주세요.', reason: 'concept_not_carried' }, { status: 422 });
       }
     }
-    return NextResponse.json(finalSlides);
+    return NextResponse.json(dedupedSlides);
   } catch (error) {
     const message = error instanceof Error ? error.message : '아웃라인 생성 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });
