@@ -480,6 +480,9 @@ export interface ConceptNameOption {
   projectKey?: string;
   directionKey?: string;
   generationBatchId?: string;
+  // Internal Korean concept seed: the strong Korean title built from the frame BEFORE the (often English) conceptName is
+  // transcreated from it. Not shown in the main UI; available for collapsed dev/debug only.
+  koreanConceptSeed?: string;
   conceptName: string;
   languageMode: ConceptNameLanguageMode;
   koreanSubtitle?: string;
