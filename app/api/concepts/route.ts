@@ -11,6 +11,7 @@ import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } fro
 import { formatProposalPatternDiagnostics, type OutlineProposalPattern, type ProposalPatternRetrievalSummary } from '@/lib/proposalPatternOutline';
 import { conceptPromptVersion } from '@/lib/conceptPromptVersion';
 import { getActiveMatrix, sanitizeConceptContextByRfpType, matrixTypeForRfpConceptType } from '@/lib/conceptContextSanitizer';
+import { extractRfpConceptHierarchy, hierarchyThemeSeeds, formatRfpHierarchyAnchor } from '@/lib/rfpConceptHierarchy';
 
 const DEFAULT_CONCEPT_COUNT = 3;
 const ALLOWED_DIRECTION_AXES = ['representative_position', 'audience_understanding', 'signature_scene', 'product_value_proof', 'process_trust', 'category_shift', 'system/ecosystem_proof', 'spatial_journey', 'brand_memory', 'operational_confidence', 'evaluator_clarity', 'emotional_affinity', 'technology_reality_proof'] as const;
@@ -314,9 +315,11 @@ function deriveBrandName(input?: ProjectInput, bpi?: BrandProductIntelligence): 
 
 // Strategic-value subjects, in priority order: brand/product intelligence → confirmed RFP diagnosis → product features.
 // NEVER falls back to facility/space/client/project nouns; if nothing strategic is found, uses a neutral value word.
-function buildDirectionSubjects(analysis: AnalysisResult, bpi?: BrandProductIntelligence, input?: ProjectInput, diagnosis?: RfpDiagnosis): DirectionSubjects {
+function buildDirectionSubjects(analysis: AnalysisResult, bpi?: BrandProductIntelligence, input?: ProjectInput, diagnosis?: RfpDiagnosis, hierarchySeeds: string[] = []): DirectionSubjects {
   const brandName = deriveBrandName(input, bpi);
   const exclude = new Set<string>(brandName ? [brandName] : []);
+  // The RFP's explicit concept hierarchy (when provided) is the strongest strategic-value source, above brand vocab.
+  const fromHierarchy = firstStrategicValueNoun(hierarchySeeds, exclude);
   const fromVocab = firstStrategicValueNoun(bpi?.brandSpecificVocabulary ?? [], exclude);
   const fromCategory = firstStrategicValueNoun([bpi?.categoryContext, bpi?.productOrServiceMeaning, bpi?.audiencePerceptionGap], exclude);
   const fromDiagnosis = firstStrategicValueNoun([diagnosis?.coreWinningCondition, diagnosis?.clientUniquePosition, diagnosis?.strategicTension, diagnosis?.hiddenNeed, diagnosis?.proofBurden, ...(diagnosis?.requiredProofElements ?? [])], exclude);
@@ -324,8 +327,8 @@ function buildDirectionSubjects(analysis: AnalysisResult, bpi?: BrandProductInte
     ...(analysis.productFeatures ?? []).flatMap((feature) => [feature.valueProposition, feature.keyFeature, feature.product]),
     ...(analysis.productInfo ?? []),
   ], exclude);
-  const domainValue = fromVocab || fromCategory || fromDiagnosis || fromProduct || '핵심 가치';
-  const productValue = fromProduct || fromVocab || fromDiagnosis || domainValue;
+  const domainValue = fromHierarchy || fromVocab || fromCategory || fromDiagnosis || fromProduct || '핵심 가치';
+  const productValue = fromProduct || fromHierarchy || fromVocab || fromDiagnosis || domainValue;
   return { domainValue, productValue, brandName, processWord: '공정' };
 }
 
@@ -1702,7 +1705,12 @@ export async function POST(request: Request) {
     // strategyContext = current RFP + confirmed diagnosis only. proposal_patterns are intentionally not retrieved or passed.
     const proposalPatternGuidance = { patterns: [] as OutlineProposalPattern[], avoidanceRules: [] as string[], summary: { wonStructureCount: 0, lostExternalStructureCount: 0, unknownStructureCount: 0, lostMixedCautionCount: 0, lostQualityAvoidanceRuleCount: 0, lostUsableStructureCount: 0 } as ProposalPatternRetrievalSummary };
     const proposalLearningBrief = buildProposalLearningBrief([], []);
-    const directionSubjects = buildDirectionSubjects(body.analysis, body.brandProductIntelligence, body.input, body.rfpDiagnosis);
+    // Explicit RFP-provided concept hierarchy (current RFP text only). When present it is the PRIMARY strategic anchor,
+    // above participating entity/brand names — its theme seeds drive the deterministic subjects and it is injected into
+    // the prompt as the top anchor below.
+    const rfpHierarchy = extractRfpConceptHierarchy(body.input.briefText);
+    const hierarchySeeds = hierarchyThemeSeeds(rfpHierarchy);
+    const directionSubjects = buildDirectionSubjects(body.analysis, body.brandProductIntelligence, body.input, body.rfpDiagnosis, hierarchySeeds);
     const strategicDirectionPlan = buildStrategicDirectionPlan(body.analysis, proposalNarrative, hasMultipleEntities, [], [], directionSubjects, selectedRfpConceptType);
     const rawMatrixType = body.analysis.matrixType;
     const preliminaryMatrixType = matrixTypeForRfp(selectedRfpConceptType);
@@ -1713,7 +1721,7 @@ export async function POST(request: Request) {
     const activeMatrix = getActiveMatrix(sanitizedContext);
     const directionLensSet = selectedDirectionLensSet(strategicDirectionPlan);
     const activeMatrixSummary = summarizeActiveMatrix(selectedMatrixType, { entityCount: selectedMatrixType === 'entityDifferentiationMatrix' ? differentiationStrategy.entityDifferentiationMatrix.length : 0, brandExperienceMatrix });
-    console.info('[concepts:gating]', { userSelectedProposalType, effectiveProposalType, inferredRfpConceptType, selectedProposalTypeMatchesInference, primaryRfpConceptType: selectedRfpConceptType, matrixType: selectedMatrixType, activeMatrixType: sanitizedContext.activeMatrixType, selectedDirectionLensSet: directionLensSet, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, activeMatrixSummary });
+    console.info('[concepts:gating]', { userSelectedProposalType, effectiveProposalType, inferredRfpConceptType, selectedProposalTypeMatchesInference, primaryRfpConceptType: selectedRfpConceptType, matrixType: selectedMatrixType, activeMatrixType: sanitizedContext.activeMatrixType, selectedDirectionLensSet: directionLensSet, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, activeMatrixSummary, rfpProvidedConceptHierarchyDetected: Boolean(rfpHierarchy), hierarchyFieldsUsedForStrategy: rfpHierarchy ? Object.entries({ mainTheme: rfpHierarchy.mainTheme, subThemes: rfpHierarchy.subThemes.length, levelStructure: rfpHierarchy.levelStructure.length, zoneConcepts: rfpHierarchy.zoneConcepts.length, officialSlogan: rfpHierarchy.officialSlogan, keyMessage: rfpHierarchy.keyMessage }).filter(([, v]) => v).map(([k]) => k) : [] });
     const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, hasMultipleEntities);
 
     const systemPrompt = [
@@ -1723,6 +1731,7 @@ export async function POST(request: Request) {
       '3개 후보는 winner-loser 비교가 아니라 서로 다른 전략 방향 옵션이어야 한다.',
       'primaryRfpConceptType은 invalid logic 차단, evidence selection, contamination 방지, matrix/context 선택용 guardrail이다. strategicDirectionLabel을 type preset으로 처방하지 말라. current RFP evidence, hidden need, evaluator risk, client position, category shift, perception gap, required proof, signature opportunity에서 direction axis를 발견한다. proposal_patterns는 이 단계에서 완전히 비활성화되어야 하며 direction source, modifier, caution으로도 사용하지 않는다.',
       '다중 주체형(공동관/파빌리온)에서 특정 참여 주체에 대표·리더십·주체 지위를 부여하려면 현재 RFP가 주관사·주최·호스트·대표 기관·메인 스폰서 등으로 그 주체를 명시해야 한다. 명시 근거가 없으면 등장 순서·언급 빈도·제품 분량·예산 비중·부스 규모·중요도 추정·모델 추측으로 한 주체를 대표로 세우지 말고, 파빌리온 전체 관점·주체 간 관계와 역할 구조·통합 역량·공동 메시지·관람객의 파빌리온 전체 이해로 방향을 만든다.',
+      '아래에 "RFP-Provided Concept Hierarchy" 블록이 주어지면, 그 공식 컨셉 위계(메인 테마·레벨 구조·존 컨셉·슬로건·핵심 메시지)가 전략 방향의 1순위 앵커다. 참여 주체/브랜드명·추론된 유형·이전 제안 패턴보다 우선해서 모든 방향을 그 위계에서 도출한다. 다중 주체형이면 방향은 위계의 파빌리온 레벨 프레임에서 만들고 참여 주체는 역할·도메인 기여자로만 다룬다(대표 주어 금지). 위계가 주어지지 않으면 현재 RFP 진단·근거에서 도출한다.',
       `사용자가 선택한 제안서 유형(${proposalTypeLabels[effectiveProposalType]})이 전략 방향의 1차 guardrail이다. 자동 추론은 보조 맥락일 뿐 사용자 선택 유형을 덮어쓰지 않는다. 모든 방향은 이 유형의 전략 축 family 안에서 생성하고 유형에 맞지 않는 논리로 수렴시키지 말라: 다중 주체형은 한 참여 주체로 collapse 금지(주체 간 관계·역할·공동 메시지·통합 역량을 다룬다), 기술·에너지·미래산업형은 전 카드가 클라이언트/브랜드명 중심이 되는 것 금지(카테고리 이슈·기술 현실성·현재 대 미래 긴장·이해 격차를 다룬다), 방문관·견학·쇼룸형은 시설/외관/리모델링 명사가 전략 주어가 되는 것 금지(제품·브랜드 가치·공정 신뢰·방문 후 변화를 다룬다), MICE·운영형은 운영 확신·프로그램·참가자 동선 중심, 팝업·리테일형은 방문 동기·참여 행동·공유 기억 중심으로 둔다. 단 다중 주체/파빌리온 논리는 RFP에 동등 비중 복수 주체가 실제로 존재할 때만 사용하고, 그 외 유형에 강제하지 않는다. 라벨/논리는 항상 현재 RFP 진단·근거에서 도출하며 예시 라벨을 복사하지 않는다.`,
       '각 후보는 rfpConceptType, secondaryRfpConceptTypes, strategicDirectionType, strategicDirectionLabel, directionSource, whatThisDirectionEmphasizes, oneLineStrategicBet, whenToChooseThisDirection, failurePatternAvoided, winningPatternUsed를 반드시 포함한다. strategicDirectionLabel은 discovery brief의 direction axis와 현재 RFP evidence에서 새로 만든 2~8단어의 짧은 방향명이어야 하며 type별 고정 preset, 과거 RFP 언어, 말줄임표를 금지한다.',
       'oneLineStrategicBet은 사용자에게 보이는 문장이므로 proof/evidence/proof burden 같은 내부 영어를 쓰지 말고 “이 방향은 ___을 통해 ___을 설득하는 전략입니다.” 형식의 자연스러운 한국어 1문장으로 쓴다. whenToChooseThisDirection은 “클라이언트가 ___을 가장 중요하게 볼 때 선택합니다.”에 가까운 실무 선택 기준으로 쓴다. signatureProofIdea의 대표 장면/콘텐츠는 카드에서 대표 체험 장면으로 읽히도록 구체 구 하나로 요약 가능해야 한다.',
@@ -1790,7 +1799,7 @@ export async function POST(request: Request) {
       'mainStrength와 mainRisk는 짧은 중립 문장으로 작성한다. mainRisk는 결함이 아니라 해당 방향 선택 시 보완할 trade-off로 설명한다.',
     ].join('\n');
 
-    const userPrompt = `제안서 유형: ${proposalTypeLabels[effectiveProposalType]}
+    const userPrompt = `${rfpHierarchy ? `${formatRfpHierarchyAnchor(rfpHierarchy)}\n위 공식 컨셉 위계가 1순위 앵커다. 아래 정보보다 우선해 모든 전략 방향을 이 위계에서 도출하고, 다중 주체형이면 파빌리온 레벨 프레임으로 만든다.\n\n` : ''}제안서 유형: ${proposalTypeLabels[effectiveProposalType]}
 
 Request Debug Metadata (캐시 방지 및 재생성 추적):
 ${JSON.stringify(metadata, null, 2)}
