@@ -51,6 +51,11 @@ interface ProposalPatternWithSourceMetadata extends ProposalPatternRecord {
 export interface RetrieveProposalPatternsForOutlineOptions {
   limit?: number;
   antiPatternLimit?: number;
+  // Outline-stage scoping: proposal_patterns are used only when scoped to the CURRENT project's own uploaded reference
+  // proposals. When neither is provided (no scope available), the global read is SKIPPED — orphaned / other-project
+  // patterns must never influence the current outline (generic structural principles are used instead).
+  projectId?: string | null;
+  documentIds?: string[];
 }
 
 const defaultPatternLimit = 16;
@@ -300,18 +305,25 @@ export async function retrieveProposalPatternsForOutline(options: RetrievePropos
   const limit = Math.max(1, Math.min(20, options.limit ?? defaultPatternLimit));
   const antiPatternLimit = Math.max(1, Math.min(20, options.antiPatternLimit ?? defaultAntiPatternLimit));
 
-  if (!client) {
+  const documentIds = (options.documentIds ?? []).filter((id): id is string => Boolean(id));
+  const hasScope = Boolean(options.projectId) || documentIds.length > 0;
+  if (!client || !hasScope) {
+    // No Supabase client OR no current project/document scope → do NOT read patterns globally across projects.
     return { patterns: [], avoidanceRules: [], summary: summarize([], []) };
   }
 
   try {
     const baseSelect = '*, documents(file_name, metadata), projects(name, client_name)';
-    const { data, error } = await client
+    let query = client
       .from('proposal_patterns')
       .select(baseSelect)
       .not('reusable_principle', 'is', null)
       .neq('reusable_principle', '')
-      .in('confidence', ['high', 'medium'])
+      .in('confidence', ['high', 'medium']);
+    // Scope to the current project's own uploaded reference proposals only (prevents cross-project / orphan leakage).
+    if (options.projectId) query = query.eq('project_id', options.projectId);
+    if (documentIds.length) query = query.in('document_id', documentIds);
+    const { data, error } = await query
       .order('created_at', { ascending: false })
       .limit(maxCandidateLimit);
 

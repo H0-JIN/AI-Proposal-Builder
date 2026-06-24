@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { outlineJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ProjectInput, ProposalNarrative, SlideOutline } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ProjectInput, ProposalNarrative, RfpDiagnosis, SlideOutline } from '@/lib/types';
+import { extractRfpConceptHierarchy, formatRfpHierarchyAnchor } from '@/lib/rfpConceptHierarchy';
 import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { normalizeProposalType, proposalTypeDescriptions, proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -13,7 +14,7 @@ import { applyProposalStructureGuardToOutline, buildConstraintPriorityGuardInstr
 import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, isReferenceSlideExplicitlyRequested, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
-import { getPresentationConceptName } from '@/lib/conceptNamingGuard';
+import { getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
 import { formatProposalAvoidanceRulesForPrompt, formatProposalPatternDiagnostics, formatProposalPatternsForOutlinePrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
 import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
 
@@ -109,11 +110,19 @@ const styleGuides = proposalTypeDescriptions;
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptGenerationResult?: ConceptCandidatesResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[] };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptGenerationResult?: ConceptCandidatesResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[]; projectId?: string | null; documentIds?: string[] };
 
     if (!body.input || !body.analysis || !body.selectedConcept) {
       return NextResponse.json({ error: '프로젝트 입력값, 분석 결과, 선택된 콘셉트가 필요합니다.' }, { status: 400 });
     }
+
+    // Outline drivers (current RFP + selected concept dominate). finalConceptName/slogan + selected direction + diagnosis
+    // + RFP-provided hierarchy are surfaced as a dedicated prompt block, not buried in a JSON dump.
+    const finalConceptName = getPresentationConceptName(body.selectedConcept);
+    const finalConceptSlogan = getConceptTagline(body.selectedConcept);
+    const selectedDirection = body.selectedStrategicDirection ?? body.selectedConcept.selectedDirection ?? body.selectedConcept;
+    const rfpDiagnosis = body.rfpDiagnosis ?? body.conceptGenerationResult?.rfpDiagnosis;
+    const rfpHierarchy = extractRfpConceptHierarchy(body.input.briefText);
 
     const inputQuality = assessInputQuality(body.input, body.analysis);
     const missingInfoSummary = inputQuality.missingItems.map((item) => `${item.label}: ${item.description}`);
@@ -145,7 +154,9 @@ export async function POST(request: Request) {
     const strategicMessageSummary = strategicMessageFieldsFromLogic(body.conceptDevelopmentLogic);
     const proposalNarrative = ensureProposalNarrative(body.proposalNarrative, { input: body.input, analysis: body.analysis, selectedConcept: body.selectedConcept, documentText: body.input.briefText });
     const differentiationStrategy = buildRfpDifferentiationStrategy(body.analysis, proposalNarrative);
-    const proposalPatternGuidance = await retrieveProposalPatternsForOutline({ limit: 16 });
+    // Scope proposal_patterns to the CURRENT project's own uploaded reference proposals only. When no project/document
+    // scope is available, retrieveProposalPatternsForOutline skips the global read (no cross-project / orphan patterns).
+    const proposalPatternGuidance = await retrieveProposalPatternsForOutline({ limit: 16, projectId: body.projectId ?? null, documentIds: body.documentIds ?? [] });
     const outlineProposalPatterns = proposalPatternGuidance.patterns;
     const proposalPatternContext = formatProposalPatternsForOutlinePrompt(outlineProposalPatterns);
     const proposalAvoidanceRuleContext = formatProposalAvoidanceRulesForPrompt(proposalPatternGuidance.avoidanceRules);
@@ -185,6 +196,9 @@ export async function POST(request: Request) {
         referenceGuardInstruction,
         buildConstraintPriorityGuardInstruction(),
         buildSelectedConceptDominanceInstruction(),
+        '아래 "제안서 구조 1순위 드라이버" 블록(최종 컨셉명·슬로건·선택된 전략 방향·제안 전략 진단·RFP 제공 컨셉 위계)이 proposal_patterns와 일반 덱 구조보다 우선한다. 오프닝은 최종 컨셉명과 직접 연결하고, 섹션 흐름은 슬로건이 약속하는 논리를 따라가며, 모든 slideTitle/keyMessage가 선택된 컨셉과 정렬되어야 한다. 증명 섹션은 선택된 전략 방향을 뒷받침하고, 클로징은 새로운 메시지가 아니라 같은 컨셉을 재강조한다. proposal_patterns는 페이지 리듬·증명 배치·섹션 순서·리스크 체크 같은 구조 참고로만 쓰고 컨셉/방향/위계를 바꾸지 않는다.',
+        'RFP에 명시된 컨셉 위계/메인 테마/존 구조/레벨 구조/필수 섹션/평가 기준/공식 프레임이 있으면 그 구조를 아웃라인에 보존·매핑하고 proposal_patterns로 덮어쓰지 말라. 선택된 최종 컨셉이 그 RFP 요구를 어떻게 해석·강화하는지 드러나게 배치한다. 명시 위계가 없으면 제안 전략 진단·선택된 전략 방향·최종 컨셉명·제안서 유형에서 구조를 도출한다.',
+        '사용자 선택 제안서 유형을 구조 가드로 사용한다(라벨·예시 제목은 하드코딩하지 말 것): 다중 주체/공동관형이면 공동 메시지·참여 주체 역할 구분·통합 역량·증명 흐름 중심으로 구성하되 한 참여 주체가 전체 이야기를 차지하지 않게 한다. 전시/콘텐츠/기술형이면 관객 이해·콘텐츠 경험·시스템/가치 증명·시그니처 장면·필요 시 운영 신뢰 중심으로 구성한다. 방문관/공장견학/쇼룸형이면 방문 동선·제품/공정/신뢰 증명·감각 경험·방문 후 기억 중심으로 구성한다. 국가관/엑스포형이면 테마·국가/문화 프레임·참여 여정·상징 경험·글로벌 관객 이해 중심으로 구성한다.',
         'referenceOnly/doNotTreatAsScope 항목은 현재 RFP에 명시된 경우에도 신규 체험 상세, 제품 상세 장표, 기본 참고 방향 장표로 생성하지 말고 배경 맥락으로만 다루라. FF7/MDW/SFF/SAFE/Samsung Foundry/Galaxy/teamLab/Delight 등 현재 evidence에 없는 프로젝트명은 사용하지 말라.',
         'Key Experience Asset은 프로젝트를 대표하는 1~3개 핵심 체험 자산만 압축해 보여주는 장표로 설계하라. 일반 assetType 후보 목록을 나열하지 말고, 각 자산의 이름/역할/방문객 행동/작동 방식/공간 배치/결과물을 중심으로 구성하라.',
         '모뉴먼트가 RFP에 명시되지 않았다면 Monument를 핵심 자산으로 고정하지 말라.',
@@ -202,7 +216,15 @@ export async function POST(request: Request) {
         'winningStrategyBrief / proposalThesis / experienceLogic은 Winning Strategy Layer 메타데이터다. 제공된 값이 있으면 보존해 제안서 구조의 전략 흐름에 반영하고, 없으면 서버에서 생성된 fallback 값을 사용하라. 이 메타데이터가 없다는 이유로 아웃라인 생성을 중단하거나 빈 장표를 만들지 말라.',
         'slideNumber는 1부터 순서대로 부여하라. 각 슬라이드에는 사용자가 수정할 수 있는 mainCopy를 포함하고, mainCopy에는 해당 장표의 본문 방향 또는 대표 제안서 문장을 1~2문장으로 작성하라. 모든 slide item은 schema의 모든 필드를 빠짐없이 채워야 하며 sourceEvidence가 없을 때도 []로 채워 생성 실패를 방지하라.',
       ].join('\n'),
-      user: `사용자 선택 제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
+      user: `=== 제안서 구조 1순위 드라이버 (proposal_patterns/일반 덱 구조보다 우선) ===
+최종 컨셉명: ${finalConceptName || '없음'}
+최종 컨셉 슬로건: ${finalConceptSlogan || '없음'}
+선택된 전략 방향: ${selectedDirection.strategicDirectionLabel || selectedDirection.directionLabel || '없음'} / 베팅: ${(selectedDirection.oneLineStrategicBet || selectedDirection.whatThisDirectionEmphasizes || '없음').slice(0, 200)}
+제안 전략 진단(핵심): 승리 조건=${(rfpDiagnosis?.coreWinningCondition || '없음').slice(0, 180)} · 전략적 긴장=${(rfpDiagnosis?.strategicTension || '없음').slice(0, 180)} · 설득 과제=${(rfpDiagnosis?.persuasionTask || rfpDiagnosis?.proofBurden || '없음').slice(0, 180)}
+${rfpHierarchy ? formatRfpHierarchyAnchor(rfpHierarchy) : 'RFP 제공 컨셉 위계: 명시 없음 (제안 전략 진단·선택된 전략 방향·최종 컨셉명·제안서 유형에서 구조를 도출한다)'}
+요구: 오프닝=최종 컨셉명 연결, 섹션 흐름=슬로건 논리, 모든 페이지 제목=선택 컨셉과 정렬, 증명 섹션=선택 전략 방향 뒷받침, 클로징=같은 컨셉 재강조.
+
+사용자 선택 제안서 유형: ${proposalTypeLabels[body.input.proposalType]}
 RFP 분석 기반 유형: ${proposalTypeLabels[effectiveProposalType]}
 제안 구조 유형 가이드: ${styleGuides[effectiveProposalType]}
 프로젝트명: ${body.input.projectName}
@@ -263,7 +285,18 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
       { allowReferenceSlides },
     );
 
-    return NextResponse.json(mergeDuplicateSlideRoles(ensureEntityDifferentiationOutlineSlide(guardedSlides, differentiationStrategy, body.analysis)));
+    const finalSlides = mergeDuplicateSlideRoles(ensureEntityDifferentiationOutlineSlide(guardedSlides, differentiationStrategy, body.analysis));
+    // §8/§9: the outline must visibly carry the selected final concept. If the concept name is ENTIRELY absent from the
+    // outline text, the structure did not transfer the concept — return the conversion error, not a generic deck.
+    const conceptTokens = (finalConceptName || '').split(/[\s/·|]+/).map((token) => token.replace(/[^가-힣A-Za-z0-9]/g, '')).filter((token) => token.length >= 2);
+    if (conceptTokens.length) {
+      const outlineText = finalSlides.map((slide) => [slide.slideTitle, slide.keyMessage, slide.relationToThesis, slide.mainCopy, slide.whyThisSlideExists].filter(Boolean).join(' ')).join(' ').toLowerCase();
+      const conceptCarried = conceptTokens.some((token) => outlineText.includes(token.toLowerCase()));
+      if (!conceptCarried) {
+        return NextResponse.json({ error: '선택한 컨셉을 제안서 구조로 충분히 전개하지 못했습니다. 제안서 구조를 다시 생성해 주세요.', reason: 'concept_not_carried' }, { status: 422 });
+      }
+    }
+    return NextResponse.json(finalSlides);
   } catch (error) {
     const message = error instanceof Error ? error.message : '아웃라인 생성 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });

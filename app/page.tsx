@@ -3646,7 +3646,12 @@ export default function Home() {
     setError('');
     setLoading('제안서 구조 생성 중...');
     try {
-      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, proposalNarrative: state.proposalNarrative, documentChunks });
+      // Scope proposal_patterns to THIS project's own uploaded reference proposals (its DB project/document ids). When
+      // nothing is persisted these are empty and the server skips the global pattern read.
+      const scopedDocuments = [...(state.uploadedDocuments ?? []), ...(state.dbUploadedDocuments ?? [])];
+      const projectId = scopedDocuments.find((document) => document.dbProjectId)?.dbProjectId ?? null;
+      const documentIds = Array.from(new Set(scopedDocuments.map((document) => document.dbDocumentId).filter((id): id is string => Boolean(id))));
+      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, selectedStrategicDirection: state.selectedStrategicDirection, rfpDiagnosis: state.rfpDiagnosis, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, proposalNarrative: state.proposalNarrative, documentChunks, projectId, documentIds });
       setState((current) => ({ ...current, outline, slides: undefined }));
       setStep('outline');
     } catch (err) {
