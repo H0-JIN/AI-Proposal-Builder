@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence, DesignGuide } from '@/lib/types';
 import { normalizeProposalType, proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
+import { buildDeckDesignGuide } from '@/lib/deckStructure';
 import { isInternalConceptComparisonSlide, removeInternalConceptComparisonSlides, sanitizeFinalPptxSlides, sanitizeFinalPptxText } from '@/lib/internalSlides';
 import {
   ENCODING_CORRUPTION_DETECTED_MESSAGE,
@@ -1929,58 +1930,110 @@ function buildStructuredSlideLines(slide: SlideContent) {
   return [...assetLines, ...productLines, ...scenarioLines, ...referenceLines];
 }
 
-async function downloadPptx(input: ProjectInput, slides: SlideContent[], selectedConcept?: ConceptCandidate) {
+async function downloadPptx(input: ProjectInput, slides: SlideContent[], selectedConcept?: ConceptCandidate, designGuide?: DesignGuide) {
   const exportSlides = sanitizeFinalPptxSlides(sanitizeGeneratedSlides(removeInternalConceptComparisonSlides(slides)));
+  const guide = designGuide ?? buildDeckDesignGuide(input);
+  const FONT = guide.fontPrimary || 'Pretendard';
+  const C_MAIN = guide.colorMain || '111827';
+  const C_SUB = guide.colorSub || '2563EB';
+  const C_ACCENT = guide.colorAccent || 'F59E0B';
+  const C_INK = '1F2937';
+  const C_MUTE = '64748B';
+  const proposalLabel = proposalTypeLabels[normalizeProposalType(input.proposalType)];
+  const W = 13.333;
+  const H = 7.5;
+
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = 'AI Proposal Builder';
   pptx.subject = `${input.clientName} ${input.projectName}`;
   pptx.title = input.projectName;
   pptx.company = input.clientName;
-  pptx.theme = {
-    headFontFace: 'Arial',
-    bodyFontFace: 'Arial',
+  pptx.theme = { headFontFace: FONT, bodyFontFace: FONT };
+
+  const addFooter = (slide: pptxgen.Slide, n: number) => {
+    slide.addText(`${input.clientName} · ${proposalLabel}`, { x: 0.55, y: 7.06, w: 9, h: 0.22, fontSize: 8, color: '94A3B8', fontFace: FONT });
+    slide.addText(String(n).padStart(2, '0'), { x: 12.2, y: 7.06, w: 0.6, h: 0.22, fontSize: 8, color: '94A3B8', align: 'right', fontFace: FONT });
+  };
+  // Module-detail lines belong only on after-concept content/detail pages — never on cover/toc/overview/approach.
+  const contentBullets = (slideData: SlideContent, includeModules: boolean) => {
+    const base = (slideData.bodyBullets ?? []).filter(Boolean);
+    return includeModules ? [...base, ...buildStructuredSlideLines(slideData)].filter(Boolean) : base;
   };
 
-  exportSlides.forEach((slideData) => {
+  exportSlides.forEach((slideData, idx) => {
     const slide = pptx.addSlide();
     slide.background = { color: 'FFFFFF' };
-    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 0.18, fill: { color: '2563EB' }, line: { color: '2563EB' } });
-    slide.addText(String(slideData.slideNumber).padStart(2, '0'), { x: 0.55, y: 0.35, w: 0.7, h: 0.3, fontSize: 11, color: '2563EB', bold: true });
-    slide.addText(slideData.slideTitle, { x: 0.55, y: 0.7, w: 5.8, h: 0.55, fontSize: 24, bold: true, color: '111827', breakLine: false });
-    slide.addText(slideData.keyMessage, { x: 0.58, y: 1.28, w: 5.8, h: 0.45, fontSize: 12, color: '475569' });
-    const shouldShowConcept = selectedConcept && !isInternalConceptComparisonSlide(slideData) && /selected concept rationale|core concept|key experience asset|spatial \/ content|media \/ interactive|콘셉트|핵심 체험|공간|콘텐츠|미디어|인터랙/i.test(`${slideData.slideType} ${slideData.slideTitle}`);
-    if (shouldShowConcept) {
-      slide.addShape(pptx.ShapeType.roundRect, { x: 0.72, y: 6.25, w: 11.95, h: 0.48, rectRadius: 0.08, fill: { color: 'EEF2FF' }, line: { color: 'C7D2FE' } });
-      slide.addText(sanitizeFinalPptxText(`Core Concept: ${getPresentationConceptName(selectedConcept)} · ${selectedConcept.coreMessage}`), { x: 0.95, y: 6.36, w: 11.45, h: 0.18, fontSize: 8, color: '3730A3', bold: true, fit: 'shrink' });
+    const section = slideData.slideSection;
+    const num = slideData.slideNumber || idx + 1;
+    const kicker = (slideData.pageSubtitle || '').trim();
+    const heroCopy = (slideData.keyCopy || slideData.keyMessage || '').trim();
+    if (hasText(slideData.speakerNote)) slide.addNotes(slideData.speakerNote);
+
+    // ===== COVER: clean title page, no number badge / image box / bullets =====
+    if (section === 'cover') {
+      slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 0.35, h: H, fill: { color: C_MAIN }, line: { color: C_MAIN } });
+      slide.addText((kicker || `${input.clientName} · ${proposalLabel}`).toUpperCase(), { x: 1.0, y: 2.3, w: 11.2, h: 0.4, fontSize: 13, color: C_SUB, bold: true, charSpacing: 2, fontFace: FONT });
+      slide.addText(slideData.slideTitle, { x: 0.95, y: 2.78, w: 11.4, h: 1.7, fontSize: 44, bold: true, color: C_MAIN, fontFace: FONT, valign: 'top' });
+      slide.addShape(pptx.ShapeType.rect, { x: 1.0, y: 4.55, w: 2.2, h: 0.06, fill: { color: C_ACCENT }, line: { color: C_ACCENT } });
+      if (heroCopy && heroCopy !== slideData.slideTitle) slide.addText(heroCopy, { x: 1.0, y: 4.78, w: 10.8, h: 1.0, fontSize: 18, color: C_MUTE, fontFace: FONT, valign: 'top' });
+      return;
     }
-    slide.addShape(pptx.ShapeType.rect, { x: 6.75, y: 0.72, w: 5.9, h: 3.6, fill: { color: 'E5E7EB' }, line: { color: 'CBD5E1', transparency: 20 } });
-    slide.addText(getImagePlaceholder(slideData), { x: 7.05, y: 2.0, w: 5.3, h: 0.7, align: 'center', valign: 'middle', fontSize: 14, color: '64748B', bold: true });
-    const detailLines = [
-      labelValue('Visitor Action', slideData.visitorAction),
-      labelValue('Mechanism', slideData.contentMechanism),
-      labelValue('Placement', slideData.spatialPlacement),
-      labelValue('Media/Object', slideData.mediaOrObject),
-      labelValue('Output/Reward', slideData.outputOrReward),
-    ].filter(Boolean) as string[];
-    const structuredLines = buildStructuredSlideLines(slideData);
-    const bodyText = [...slideData.bodyBullets.map((bullet) => `• ${bullet}`), ...structuredLines.map((line) => `• ${line}`)].join('\n');
-    slide.addText(bodyText, { x: 0.75, y: 1.9, w: 5.55, h: 2.0, fontSize: 13, color: '111827', breakLine: false, fit: 'shrink', valign: 'top' });
-    if (detailLines.length) {
-      slide.addShape(pptx.ShapeType.roundRect, { x: 0.72, y: 4.05, w: 5.8, h: 1.0, rectRadius: 0.08, fill: { color: 'F8FAFC' }, line: { color: 'E2E8F0' } });
-      slide.addText(detailLines.join('\n'), { x: 0.95, y: 4.17, w: 5.35, h: 0.75, fontSize: 7.8, color: '334155', fit: 'shrink', valign: 'top' });
+
+    // ===== TABLE OF CONTENTS =====
+    if (section === 'toc') {
+      slide.addText('CONTENTS', { x: 0.9, y: 0.85, w: 6, h: 0.4, fontSize: 13, color: C_SUB, bold: true, charSpacing: 2, fontFace: FONT });
+      slide.addText('목차', { x: 0.85, y: 1.25, w: 8, h: 0.9, fontSize: 34, bold: true, color: C_MAIN, fontFace: FONT });
+      const lines = (slideData.mainCopy || '').split('\n').map((s) => s.trim()).filter(Boolean);
+      const tocList = lines.length ? lines : (slideData.bodyBullets ?? []);
+      slide.addText(tocList.join('\n'), { x: 0.95, y: 2.5, w: 11, h: 4.1, fontSize: 20, color: C_INK, fontFace: FONT, lineSpacingMultiple: 1.5, valign: 'top' });
+      addFooter(slide, num);
+      return;
     }
-    if (hasText(slideData.visualDirection)) {
-      slide.addShape(pptx.ShapeType.roundRect, { x: 0.7, y: 5.15, w: 11.95, h: 0.55, rectRadius: 0.08, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE' } });
-      slide.addText(`Visual: ${slideData.visualDirection}`, { x: 0.95, y: 5.32, w: 11.45, h: 0.18, fontSize: 8.5, color: '1D4ED8', fit: 'shrink' });
+
+    // ---- Shared header for all section pages ----
+    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.16, fill: { color: C_SUB }, line: { color: C_SUB } });
+    if (kicker) slide.addText(kicker.toUpperCase(), { x: 0.6, y: 0.44, w: 11, h: 0.3, fontSize: 11, color: C_SUB, bold: true, charSpacing: 1.5, fontFace: FONT });
+    slide.addText(slideData.slideTitle, { x: 0.58, y: 0.76, w: 11.6, h: 0.7, fontSize: 26, bold: true, color: C_MAIN, fontFace: FONT, breakLine: false });
+
+    // ===== CONCEPT REVEAL / CLOSING: hero statement =====
+    if (section === 'concept' || section === 'closing') {
+      slide.addShape(pptx.ShapeType.rect, { x: 0.9, y: 2.45, w: 11.5, h: 0.08, fill: { color: C_ACCENT }, line: { color: C_ACCENT } });
+      slide.addText(heroCopy, { x: 1.0, y: 2.85, w: 11.3, h: 2.4, fontSize: 34, bold: true, color: C_MAIN, fontFace: FONT, valign: 'top' });
+      const support = slideData.keyMessage && slideData.keyMessage !== heroCopy ? slideData.keyMessage : (slideData.mainCopy || '').split('\n')[0];
+      if (hasText(support)) slide.addText(support, { x: 1.0, y: 5.35, w: 11.3, h: 1.2, fontSize: 15, color: C_MUTE, fontFace: FONT, valign: 'top' });
+      addFooter(slide, num);
+      return;
     }
-    const noteLines = [
-      slideData.speakerNote,
-    ].filter(Boolean) as string[];
-    if (noteLines.length) {
-      slide.addNotes(noteLines.join('\n'));
+
+    // ===== CONTENT / CONTENT DETAIL: visual-first =====
+    if (section === 'content' || section === 'contentDetail') {
+      const ratio = slideData.layoutRatio;
+      const imgFull = ratio === 'full-bleed-visual';
+      const imgLeft = ratio === 'visual-left-text-right';
+      const imgX = imgFull ? 0 : imgLeft ? 0.5 : 6.6;
+      const imgW = imgFull ? W : 6.2;
+      slide.addShape(pptx.ShapeType.rect, { x: imgX, y: imgFull ? 1.65 : 1.6, w: imgW, h: imgFull ? 5.0 : 5.0, fill: { color: 'E5E7EB' }, line: { color: 'CBD5E1' } });
+      slide.addText((getImagePlaceholder(slideData) || 'HERO VISUAL').toUpperCase(), { x: imgX, y: imgFull ? 5.4 : 3.8, w: imgW, h: 0.6, align: 'center', valign: 'middle', fontSize: 12, color: imgFull ? 'F1F5F9' : '94A3B8', bold: true, fontFace: FONT });
+      const textX = imgLeft ? 7.0 : 0.6;
+      const textW = imgFull ? 11.5 : 5.7;
+      if (hasText(heroCopy)) slide.addText(heroCopy, { x: imgFull ? 0.8 : textX, y: imgFull ? 1.95 : 1.7, w: textW, h: 0.9, fontSize: imgFull ? 20 : 18, bold: true, color: imgFull ? '0F172A' : C_MAIN, fontFace: FONT, valign: 'top' });
+      if (!imgFull) {
+        const bullets = contentBullets(slideData, true).slice(0, section === 'contentDetail' ? 6 : 3);
+        if (bullets.length) slide.addText(bullets.map((b) => `• ${b}`).join('\n'), { x: textX, y: 2.75, w: textW, h: 3.7, fontSize: 12, color: C_INK, fontFace: FONT, valign: 'top', lineSpacingMultiple: 1.2, fit: 'shrink' });
+      }
+      if (hasText(slideData.visualDirection)) slide.addText(`Visual · ${slideData.visualDirection}`, { x: 0.6, y: 6.78, w: 11.5, h: 0.22, fontSize: 8.5, color: C_SUB, fontFace: FONT, fit: 'shrink' });
+      addFooter(slide, num);
+      return;
     }
-    slide.addText(`${input.clientName} · ${proposalTypeLabels[normalizeProposalType(input.proposalType)]}`, { x: 0.55, y: 6.95, w: 5, h: 0.2, fontSize: 8, color: '94A3B8' });
+
+    // ===== DEFAULT text-led (overview / approach / operation) — clean, no image card, no module dump =====
+    if (hasText(slideData.keyMessage)) slide.addText(slideData.keyMessage, { x: 0.58, y: 1.36, w: 11.7, h: 0.5, fontSize: 13, color: C_SUB, bold: true, fontFace: FONT });
+    const cap = slideData.textDensity === 'low' ? 3 : slideData.textDensity === 'high' ? 7 : 5;
+    const bullets = contentBullets(slideData, false).slice(0, cap);
+    if (bullets.length) slide.addText(bullets.map((b) => `• ${b}`).join('\n'), { x: 0.62, y: 2.1, w: 11.8, h: 4.3, fontSize: 14, color: C_INK, fontFace: FONT, valign: 'top', lineSpacingMultiple: 1.25, fit: 'shrink' });
+    else if (hasText(slideData.mainCopy)) slide.addText(slideData.mainCopy, { x: 0.62, y: 2.1, w: 11.8, h: 4.3, fontSize: 14, color: C_INK, fontFace: FONT, valign: 'top', lineSpacingMultiple: 1.25, fit: 'shrink' });
+    addFooter(slide, num);
   });
 
   await pptx.writeFile({ fileName: `${safeFileName(input.projectName)}_proposal.pptx` });
@@ -3691,8 +3744,10 @@ export default function Home() {
       const scopedDocuments = [...(state.uploadedDocuments ?? []), ...(state.dbUploadedDocuments ?? [])];
       const projectId = scopedDocuments.find((document) => document.dbProjectId)?.dbProjectId ?? null;
       const documentIds = Array.from(new Set(scopedDocuments.map((document) => document.dbDocumentId).filter((id): id is string => Boolean(id))));
-      const outline = await postJson<SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, selectedStrategicDirection: state.selectedStrategicDirection, rfpDiagnosis: state.rfpDiagnosis, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, proposalNarrative: state.proposalNarrative, documentChunks, projectId, documentIds });
-      setState((current) => ({ ...current, outline, slides: undefined }));
+      const outlineResponse = await postJson<{ slides: SlideOutline[]; designGuide?: DesignGuide } | SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, selectedStrategicDirection: state.selectedStrategicDirection, rfpDiagnosis: state.rfpDiagnosis, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, proposalNarrative: state.proposalNarrative, documentChunks, projectId, documentIds });
+      const outline = Array.isArray(outlineResponse) ? outlineResponse : outlineResponse.slides;
+      const designGuide = Array.isArray(outlineResponse) ? undefined : outlineResponse.designGuide;
+      setState((current) => ({ ...current, outline, designGuide, slides: undefined }));
       setStep('outline');
     } catch (err) {
       setError(err instanceof Error ? err.message : '구조 생성 중 오류가 발생했습니다.');
@@ -4406,7 +4461,7 @@ export default function Home() {
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <SecondaryButton onClick={() => setStep('outline')}>구조 보기</SecondaryButton>
-              <PrimaryButton onClick={() => downloadPptx(state.input, state.slides || [], state.selectedConcept)}>PPTX 다운로드</PrimaryButton>
+              <PrimaryButton onClick={() => downloadPptx(state.input, state.slides || [], state.selectedConcept, state.designGuide)}>PPTX 다운로드</PrimaryButton>
             </div>
           </SectionCard>
         )}

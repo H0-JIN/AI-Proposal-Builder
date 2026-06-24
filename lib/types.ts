@@ -241,6 +241,36 @@ export interface SlideNarrativeMetadata {
   whyThisSlideExists?: string;
   sourceEvidence?: string[];
   referenceAllowed?: boolean;
+  // Deterministic proposal-deck structure metadata (server-attached; not model-generated). Drives section ordering and
+  // the slideType-branched PPTX layout so the export reads as a proposal deck, not an analysis-card report.
+  slideSection?: DeckSection;
+  layoutRatio?: DeckLayoutRatio;
+  heroElement?: DeckHeroElement;
+  visualWeight?: DeckVisualWeight;
+  textDensity?: DeckTextDensity;
+  pageSubtitle?: string;
+  keyCopy?: string;
+}
+
+export type DeckSection = 'cover' | 'toc' | 'overview' | 'approach' | 'concept' | 'conceptStrategy' | 'content' | 'contentDetail' | 'operation' | 'closing';
+export type DeckLayoutRatio = 'full-bleed-visual' | 'visual-left-text-right' | 'text-left-visual-right' | 'text-full' | 'split-50-50' | 'hero-statement';
+export type DeckHeroElement = 'none' | 'big-number' | 'big-keyword' | 'full-image' | 'quote' | 'diagram';
+export type DeckVisualWeight = 'text-led' | 'balanced' | 'visual-led';
+export type DeckTextDensity = 'low' | 'medium' | 'high';
+
+// Deck-level design guide (deterministic, themed by proposal type). Applied to the PPTX (fonts, colors, before/after-
+// concept band styling). Pretendard is the default body font.
+export interface DesignGuide {
+  visualTone: string;
+  fontPrimary: string;
+  fontSecondary: string;
+  colorMain: string;
+  colorSub: string;
+  colorAccent: string;
+  imageStyle: string;
+  iconStyle: string;
+  beforeConceptStyle: string;
+  afterConceptStyle: string;
 }
 
 export interface AnalysisResult {
@@ -880,6 +910,7 @@ export interface ProposalState {
   selectedFinalConceptNameOption?: ConceptNameOption;
   outline?: SlideOutline[];
   slides?: SlideContent[];
+  designGuide?: DesignGuide;
   retrievalEvidence?: RetrievalEvidenceItem[];
   analysisBasis?: {
     type: 'full' | 'partial';

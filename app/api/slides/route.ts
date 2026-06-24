@@ -15,7 +15,43 @@ import { applyProposalStructureGuardToOutline, applyProposalStructureGuardToSlid
 import { applyReferenceGuardToSlides, buildReferenceGuardInstruction, isReferenceSlideExplicitlyRequested, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
-import { getConceptDefinition, getPresentationConceptName } from '@/lib/conceptNamingGuard';
+import { getConceptDefinition, getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
+import { normalizeProposalType } from '@/lib/types';
+import { applyDeckStructure, type DeckSlideSeed } from '@/lib/deckStructure';
+
+// Factory used by applyDeckStructure to synthesize a Cover / Table of Contents slide as a full SlideContent.
+function makeSlideContentDeckSlide(seed: DeckSlideSeed): SlideContent {
+  return {
+    slideNumber: seed.slideNumber,
+    slideType: seed.slideType,
+    slideTitle: seed.slideTitle,
+    slidePurpose: seed.slidePurpose,
+    slideRole: '',
+    relationToThesis: '',
+    whyThisSlideExists: '',
+    sourceEvidence: [],
+    referenceAllowed: false,
+    keyMessage: seed.keyMessage,
+    mainCopy: seed.mainCopy,
+    bodyBullets: [],
+    visualDirection: '',
+    visitorAction: '',
+    contentMechanism: '',
+    spatialPlacement: '',
+    mediaOrObject: '',
+    outputOrReward: '',
+    imagePlaceholder: '',
+    visualPrompt: '',
+    diagramSuggestion: '',
+    productExperienceDetails: [],
+    keyExperienceAssets: [],
+    experienceScenarioSteps: [],
+    referenceInsights: [],
+    speakerNote: '',
+    confirmNeededNote: '',
+    slideSection: seed.slideSection,
+  };
+}
 import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
 
 
@@ -429,7 +465,17 @@ ${JSON.stringify(outlineWithEvidence, null, 2)}
       body.documentChunks ?? [],
       { allowReferenceSlides },
     );
-    return NextResponse.json(sanitizedSlides.map((slide) => ({
+    // Re-assert the deterministic proposal-deck structure on the final slide content (cover/toc, section bands, per-slide
+    // layout, Approach concept-name stripping) so the PPTX renders a real deck regardless of model ordering drift.
+    const deckSlides = applyDeckStructure(sanitizedSlides, {
+      finalConceptName: getPresentationConceptName(body.selectedConcept) || '',
+      finalConceptSlogan: getConceptTagline(body.selectedConcept) || '',
+      projectName: body.input.projectName,
+      clientName: body.input.clientName,
+      proposalTypeLabel: proposalTypeLabels[normalizeProposalType(body.input.proposalType)],
+      makeSlide: makeSlideContentDeckSlide,
+    });
+    return NextResponse.json(deckSlides.map((slide) => ({
       ...slide,
       retrievalMetadata: slideRetrievalMetadata.find((metadata) => metadata.slideNumber === slide.slideNumber || metadata.slideTitle === slide.slideTitle),
     })));
