@@ -160,8 +160,39 @@ function isCoverTitleNamingFamily(input: ProjectInput, selectedDirection: Concep
   return rfpConceptType ? COVER_TITLE_RFP_CONCEPT_TYPES.has(rfpConceptType) : false;
 }
 
+// Strategy-descriptor words that signal a name is EXPLAINING the direction rather than being a concept title.
+const STRATEGY_DESCRIPTOR_WORDS = new Set(['전략', '방향', '설득', '증명', '강화', '전환', '이해', '체험', '경험', '가치', '관점', '연결', '통합', '구조', '방안', '계획', '접근', '솔루션', '강조', '확장', '구현', '제시', '형성', '설계', '방식', '제고', '확보']);
+// Explanatory / sentence-like tail: a concept TITLE must not end like a strategy sentence.
+const EXPLANATORY_NAME_TAIL = /(합니다|입니다|하는|되는|위한|통해|중심으로|기반으로|전략|방향|방안|솔루션|구조|구현|제시|설계)\s*$/u;
+// Exact user-facing error when the strategy could not be turned into a concept-level title even after one regeneration.
+const DESCRIPTIVE_NAMING_ERROR = '선택한 전략 방향을 컨셉명으로 충분히 전환하지 못했습니다. 컨셉명을 다시 생성해 주세요.';
+
+function directionLabelTokens(dir: ConceptCandidate): Set<string> {
+  return new Set([dir.strategicDirectionLabel, dir.oneLineStrategicBet, dir.whatThisDirectionEmphasizes, (dir as { oneLineSummary?: string }).oneLineSummary]
+    .filter(Boolean)
+    .flatMap((value) => String(value).split(/[\s/·|]+/))
+    .map((token) => token.replace(/[^가-힣A-Za-z0-9]/g, ''))
+    .filter((token) => token.length >= 2));
+}
+
+// True when the conceptName reads like a DESCRIPTIVE SUMMARY / STRATEGY LABEL / direction-label restatement rather than
+// a compressed proposal-cover title. Applied ONLY to cover-title types, so visitor-room/pavilion/expo are unaffected.
+function isDescriptiveOrStrategyLabelName(name: string, dir: ConceptCandidate): boolean {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return true;
+  const tokens = trimmed.split(/[\s/·|]+/).map((token) => token.replace(/[^가-힣A-Za-z0-9]/g, '')).filter(Boolean);
+  if (tokens.length > 5 || trimmed.replace(/\s+/g, '').length > 28) return true; // too long to be a title
+  if (EXPLANATORY_NAME_TAIL.test(trimmed)) return true; // explanatory / sentence-like
+  const labelTokens = directionLabelTokens(dir);
+  const labelOverlap = tokens.filter((token) => labelTokens.has(token)).length;
+  if (labelOverlap >= 3 || (labelOverlap >= 2 && labelOverlap === tokens.length)) return true; // near-pure restatement of the direction label
+  const descCount = tokens.filter((token) => STRATEGY_DESCRIPTOR_WORDS.has(token)).length;
+  if (tokens.length >= 2 && descCount >= 2 && descCount >= Math.ceil(tokens.length / 2)) return true; // dominated by strategy-descriptor words
+  return false;
+}
+
 // Stricter-filter instruction appended to the prompt for the single allowed regeneration when the first pass is all-weak.
-const STRICTER_RETRY_ADDENDUM = '\n\n[재생성 지시] 앞선 후보가 너무 일반적이거나 선택한 전략 방향과 약하게 연결되어 모두 거부되었다. 더 엄격하게 다시 생성하라: (1) 가치 증명/기억의 증명/인식 전환/경험 이해/가치 체험/실체화/한눈에 보는/___ 중심/___ 시그니처/Core Experience/Insight/Panorama/Signature/Experience/Journey/Moment 형태를 절대 쓰지 말 것. (2) 선택한 전략 방향의 directionAxis와 대표 설득 장면, 그리고 currentRfpVocabularySet의 실제 RFP 어휘에서 직접 도출할 것. (3) 브랜드/클라이언트명 단독 + 일반 명사 조합 금지. (4) 다른 RFP에도 그대로 쓸 수 있는 범용 이름 금지. (5) 표지 제목으로 바로 쓸 수 있는 짧고 구체적인 이름만. (6) 전시/콘텐츠/에너지/기술/쇼케이스 유형이면 모든 후보가 클라이언트·브랜드명 중심이 되지 않게 하고, 선택한 전략 방향의 관점·경험·전환·공간/콘텐츠 프레임을 표현하는 제안 표지 콘셉트 타이틀로 만든다. 후보마다 어휘와 논리를 다르게 한다.';
+const STRICTER_RETRY_ADDENDUM = '\n\n[재생성 지시] 앞선 후보가 너무 일반적이거나 선택한 전략 방향과 약하게 연결되어 모두 거부되었다. 더 엄격하게 다시 생성하라: (1) 가치 증명/기억의 증명/인식 전환/경험 이해/가치 체험/실체화/한눈에 보는/___ 중심/___ 시그니처/Core Experience/Insight/Panorama/Signature/Experience/Journey/Moment 형태를 절대 쓰지 말 것. (2) 선택한 전략 방향의 directionAxis와 대표 설득 장면, 그리고 currentRfpVocabularySet의 실제 RFP 어휘에서 직접 도출할 것. (3) 브랜드/클라이언트명 단독 + 일반 명사 조합 금지. (4) 다른 RFP에도 그대로 쓸 수 있는 범용 이름 금지. (5) 표지 제목으로 바로 쓸 수 있는 짧고 구체적인 이름만. (6) 전시/콘텐츠/에너지/기술/쇼케이스 유형이면 모든 후보가 클라이언트·브랜드명 중심이 되지 않게 하고, 선택한 전략 방향의 관점·경험·전환·공간/콘텐츠 프레임을 표현하는 제안 표지 콘셉트 타이틀로 만든다. 후보마다 어휘와 논리를 다르게 한다. (7) 전략을 설명하는 서술형/전략 라벨/방향 라벨을 그대로 옮긴 이름, 슬로건이 있어야 의미가 생기는 이름은 거부한다. Concept Frame Synthesis의 symbolicFrame·experientialImage에서 압축한, 단독으로 서는 콘셉트 타이틀만 출력한다.';
 
 function normalizeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9가-힣]/gi, '');
@@ -249,6 +280,31 @@ function buildConceptNamingAnchor(body: { input: ProjectInput; analysis: Analysi
     ? `\n[Priority 0 — RFP 제공 공식 컨셉 위계, 최우선] 메인 테마=${compact(hierarchy.mainTheme, 160) || '없음'} · 서브 테마=${compact(hierarchy.subThemes.join(' / '), 200) || '없음'} · 존 컨셉=${compact(hierarchy.zoneConcepts.join(' / '), 200) || '없음'} · 공식 슬로건=${compact(hierarchy.officialSlogan, 160) || '없음'} · 핵심 메시지=${compact(hierarchy.keyMessage, 160) || '없음'}. 이 위계가 네이밍 1순위 앵커이며 참여 주체/브랜드명보다 우선한다.`
     : '';
   return `=== Concept Naming Anchor (PRIMARY 네이밍 소스. client/brand/entity name은 보조 수식어로만 사용) ===${p0}\n[Priority 1] ${p1}\n[Priority 2] ${p2}${pavilionFrame}\n[Priority 3] client/brand/entity name = 보조 수식어 한정. 모든 후보가 client/brand/entity name에 의존하면 안 된다.`;
+}
+
+// Concept Frame Synthesis: the step BEFORE naming that reframes the selected strategy into title territory so the model
+// produces a COMPRESSED concept title, not a description. coreMeaning + forbiddenDescriptiveWords are deterministic;
+// the other slots are filled internally by the model before naming. No example names, current-RFP-only.
+function buildConceptFrameSynthesis(body: { selectedDirection: ConceptCandidate }): string {
+  const dir = body.selectedDirection;
+  const sig = dir.signatureProofIdea;
+  const scene = (dir as { representativePersuasionScene?: string }).representativePersuasionScene || sig?.signatureScene || sig?.signatureContent || sig?.signatureSpatialMove || '';
+  const coreMeaning = compact(dir.oneLineStrategicBet || dir.winningThesisUse?.winningClaim || dir.whatThisDirectionEmphasizes, 180) || '선택한 전략 방향의 핵심 의미';
+  const forbidden = Array.from(directionLabelTokens(dir)).slice(0, 14).join(' / ') || '없음';
+  return [
+    '=== Concept Frame Synthesis (네이밍 직전 단계. 전략을 설명하지 말고 콘셉트 타이틀로 전환하기 위한 프레임) ===',
+    `coreMeaningToCarry(타이틀이 반드시 담아야 할 전략 의미): ${coreMeaning}`,
+    '다음 슬롯을 먼저 내부적으로 채운 뒤(슬롯 자체는 출력하지 말 것) 그 프레임에서 conceptName 타이틀을 만든다:',
+    '- symbolicFrame: coreMeaning을 타이틀로 바꿀 상징적 프레임 하나',
+    '- experientialImage: 관람객이 떠올리거나 기억할 한 장면/이미지',
+    '- narrativeMotion: 개념이 암시하는 움직임/변화',
+    '- audienceAfterimage: 관람 후 남는 인상',
+    `- spatialOrContentGesture: 공간/미디어/콘텐츠 행위 (대표 장면 참고: ${compact(scene, 140) || '없음'})`,
+    '- emotionalTone: 타이틀이 가져야 할 톤',
+    '- titleTerritory: 이 타이틀이 속할 네이밍 세계(현재 RFP 카테고리 기반)',
+    `forbiddenDescriptiveWords(타이틀의 주가 되면 안 되는 전략 설명어. 그대로 나열·반복 금지): ${forbidden}`,
+    'nameShouldFeelLike: 설명문이 아니라 의도된 콘셉트 타이틀. 슬로건이 설명하기 전에 단독으로 의미가 서고, 호기심을 만들되 모호하지 않다.',
+  ].join('\n');
 }
 
 function hasInternalMainCopy(option: ConceptNameOptionsResult['options'][number]) {
@@ -361,12 +417,21 @@ function buildFinalOptions(
   // drop names that use no current-RFP vocabulary. The grounding drop is the generic, bidirectional cross-RFP
   // contamination guard (a name importing another category's terms uses no current vocabulary, so it fails here).
   const vocabRich = currentRfpVocabularySet.length >= 6;
-  const quality = safe.filter((entry) => !isWeakConceptName(entry.option.conceptName || '', body.input) && (!vocabRich || entry.usesVocabulary));
+  const coverTitleFamily = isCoverTitleNamingFamily(body.input, body.selectedDirection);
+  let descriptiveDrops = 0;
+  const quality = safe.filter((entry) => {
+    const conceptName = entry.option.conceptName || '';
+    if (isWeakConceptName(conceptName, body.input)) return false;
+    if (vocabRich && !entry.usesVocabulary) return false;
+    // Cover-title types: drop names that read like a descriptive summary / strategy label / direction-label restatement
+    // (the title must be a compressed concept title, not an explanation). Drops feed the regenerate-once-then-error path.
+    if (coverTitleFamily && isDescriptiveOrStrategyLabelName(conceptName, body.selectedDirection)) { descriptiveDrops += 1; return false; }
+    return true;
+  });
   // Cross-option guard (cover-title types only): if EVERY surviving name is brand/client-name-centered, the set reads
   // like brand+noun labels rather than proposal-cover concept titles — drop the whole pool so the regenerate-once path
   // fires (and, if still all brand-centered, the existing 422 error). Requires >=2 so a single lone name is not zeroed.
   const brandTokens = brandTokensOf(body.input);
-  const coverTitleFamily = isCoverTitleNamingFamily(body.input, body.selectedDirection);
   const allBrandCentered = coverTitleFamily && quality.length >= 2 && quality.every((entry) => isBrandCenteredName(entry.option.conceptName || '', brandTokens));
   const qualityPool = allBrandCentered ? [] : quality;
   // Soft preference: still rank vocab-matching names first within the quality pool.
@@ -397,7 +462,7 @@ function buildFinalOptions(
       risk: option.risk ?? mainRisk,
     };
   });
-  return { options, diag: { returned: (result.options ?? []).length, deduped: deduped.length, safe: safe.length, quality: quality.length, blockedNameDrops, coverTitleFamily, allBrandCentered } };
+  return { options, diag: { returned: (result.options ?? []).length, deduped: deduped.length, safe: safe.length, quality: quality.length, blockedNameDrops, coverTitleFamily, allBrandCentered, descriptiveDrops } };
 }
 
 export async function POST(request: Request) {
@@ -421,6 +486,7 @@ export async function POST(request: Request) {
     // Explicit RFP-provided concept hierarchy (current RFP text only) → highest-priority naming anchor (above brand/entity).
     const rfpHierarchy = extractRfpConceptHierarchy(body.input.briefText);
     const namingAnchorBlock = buildConceptNamingAnchor(body, rfpHierarchy);
+    const conceptFrameBlock = buildConceptFrameSynthesis(body);
     console.info('[concept-names:gating]', { rfpProvidedConceptHierarchyDetected: Boolean(rfpHierarchy), hierarchyFieldsUsedForNaming: rfpHierarchy ? Object.entries({ mainTheme: rfpHierarchy.mainTheme, subThemes: rfpHierarchy.subThemes.length, zoneConcepts: rfpHierarchy.zoneConcepts.length, officialSlogan: rfpHierarchy.officialSlogan, keyMessage: rfpHierarchy.keyMessage }).filter(([, v]) => v).map(([k]) => k) : [] });
 
     const system = [
@@ -438,7 +504,7 @@ export async function POST(request: Request) {
       `Blocked example names are banned as outputs and paraphrase sources: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}. Do not output or imitate them.`,
     ].join('\n');
 
-    const user = `${namingAnchorBlock}\n\n위 Concept Naming Anchor를 1차 네이밍 소스로 사용한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
+    const user = `${conceptFrameBlock}\n\n${namingAnchorBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
 Selected secondaryRfpConceptTypes: ${body.selectedDirection.secondaryRfpConceptTypes?.join(' / ') || 'none'}
 Relevant Matrix Type: ${sanitizedContext.matrixType}
 Active Matrix Type: ${sanitizedContext.activeMatrixType}
@@ -457,7 +523,8 @@ Brand vocabulary: ${body.brandProductIntelligence?.brandSpecificVocabulary?.join
 Words/tone to avoid: ${body.brandProductIntelligence?.wordsToAvoid?.join(' / ') || 'none'}
 Existing names for selected direction to avoid: ${(body.existingNamesForSelectedDirection ?? body.recentNameOptions)?.join(' / ') || 'none'}
 Names already generated for other directions to block: ${body.blockedOtherDirectionNames?.join(' / ') || 'none'}\n\n요구사항:\n- options는 반드시 정확히 3개. 모두 표지에 올릴 수 있는 강한 후보여야 한다.\n- namingStyle 필드를 반드시 다음 중 하나로 다양화: Direct claim, Short bilingual title, Brand/category-specific phrase, Spatial/experience frame, Symbolic but grounded, Strong one-line statement.\n- 3개는 선택된 방향의 axis, thesis, signature scene에서만 갈라지는 서로 다른 naming logic이어야 한다. 같은 구조로 반복하지 말라.
-- generic hook(현장/경험/체험/증명/가치/연결/흐름/여정/신뢰/균형)이 conceptName 또는 oneLineSlogan의 주어처럼 3회 이상 반복되면 약한 후보를 currentRfpVocabularySet 기반으로 재작성한다.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsSelectedDirection, namingStyle, mainRisk만 출력한다. 점수, validation boolean 블록, expandableTo, 디버그/근거 필드는 출력하지 말라(서버가 코드로 처리한다).\n- conceptName은 전략 라벨/슬라이드 제목/제품 카테고리/분석 heading이 아니라 제안서 첫 페이지 제목처럼 winning claim을 표현해야 하며 브랜드 경험 콘셉트, 전시 콘셉트, 공간 경험 프레임으로 확장 가능해야 한다. 임시 전략 방향명/컨설팅 목차명/단순 제품명/랜덤 영어 명사 조합이 아니다.
+- generic hook(현장/경험/체험/증명/가치/연결/흐름/여정/신뢰/균형)이 conceptName 또는 oneLineSlogan의 주어처럼 3회 이상 반복되면 약한 후보를 currentRfpVocabularySet 기반으로 재작성한다.\n- 각 option은 conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsSelectedDirection, namingStyle, mainRisk만 출력한다. 점수, validation boolean 블록, expandableTo, 디버그/근거 필드는 출력하지 말라(서버가 코드로 처리한다).\n- conceptName은 전략을 "설명"하는 문장이 아니라 Concept Frame Synthesis에서 압축한 제안서 표지 콘셉트 타이틀이다. 전략 라벨/슬라이드 제목/제품 카테고리/분석 heading/방향 라벨 복사/서술형 요약이 아니며, 상징·이미지·움직임·긴장·장면 같은 프레임을 함축해야 한다. 슬로건이 풀어 설명하기 전에 단독으로 의도가 읽혀야 하고, 호기심을 만들되 모호하지 않게 한다. 임시 전략 방향명/컨설팅 목차명/단순 제품명/랜덤 영어 명사 조합이 아니다.
+- 필드 역할 분리: conceptName=압축 타이틀(설명/문장/요약 금지), oneLineSlogan=타이틀을 설명·날카롭게(타이틀보다 직접적이어도 됨), shortMeaning=타이틀이 왜 맞는지, whyItFitsRfp=RFP 근거. conceptName이 다른 필드의 역할을 대신하지 말라. forbiddenDescriptiveWords를 타이틀의 주 단어로 쓰지 말라.
 - 각 option의 oneLineSlogan은 conceptName이 주장하는 승리 논리를 1문장으로 설명한다. whyItFitsSelectedDirection은 선택한 전략 방향과 confirmed diagnosis의 coreWinningCondition, strategicTension, proofBurden, signatureProofIdea 중 최소 2개와 연결한다.
 - generic English word combinations, vague abstract nouns, consulting-style labels, literal RFP summaries, any-name-fits-any-exhibition 후보를 거부하고 재생성한다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- Generate names only for the selected strategic direction. The names must not be usable for the other two directions. If a name could fit another direction with no change, reject it. 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
 - Use the selected direction’s directionAxis and 대표 설득 장면 as the primary naming source.
@@ -486,8 +553,12 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
       built = buildFinalOptions(result, body, currentRfpVocabularySet);
     }
     if (!built.options.length) {
-      const { returned, deduped, safe, quality, blockedNameDrops } = built.diag;
-      return json(errorResponse(WEAK_NAMING_ERROR, `reason=weak_after_retry; returned=${returned}; deduped=${deduped}; safe=${safe}; quality=${quality}; blockedNameDrops=${blockedNameDrops}`), { status: 422 });
+      const { returned, deduped, safe, quality, blockedNameDrops, descriptiveDrops } = built.diag;
+      // When the model kept producing descriptive / strategy-label names that could not be turned into concept titles,
+      // surface the conversion-specific error; otherwise the generic weak-naming error.
+      const conversionFailure = descriptiveDrops > 0 && safe > 0;
+      const message = conversionFailure ? DESCRIPTIVE_NAMING_ERROR : WEAK_NAMING_ERROR;
+      return json(errorResponse(message, `reason=${conversionFailure ? 'descriptive_after_retry' : 'weak_after_retry'}; returned=${returned}; deduped=${deduped}; safe=${safe}; quality=${quality}; blockedNameDrops=${blockedNameDrops}; descriptiveDrops=${descriptiveDrops}`), { status: 422 });
     }
     return json(successResponse({ ...result, selectedDirectionId: body.selectedDirection.conceptId, options: built.options }));
   } catch (error) {
