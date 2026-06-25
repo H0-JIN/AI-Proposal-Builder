@@ -282,6 +282,34 @@ function buildConceptNamingAnchor(body: { input: ProjectInput; analysis: Analysi
   return `=== Concept Naming Anchor (PRIMARY 네이밍 소스. client/brand/entity name은 보조 수식어로만 사용) ===${p0}\n[Priority 1] ${p1}\n[Priority 2] ${p2}${pavilionFrame}\n[Priority 3] client/brand/entity name = 보조 수식어 한정. 모든 후보가 client/brand/entity name에 의존하면 안 된다.`;
 }
 
+// Brand/Theme Tone Anchor: the current RFP's distinct tone/world (category vocabulary, brand positioning, exhibition
+// theme, audience promise, proof scene). It exists so AT LEAST ONE candidate carries that tone and cannot fit unrelated
+// brands — WITHOUT placing the brand/client name in the title (the tone is reflected indirectly). All current-RFP only.
+function buildBrandThemeToneAnchor(body: { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence }, hierarchy: RfpProvidedConceptHierarchy | undefined, currentRfpVocabularySet: string[]): string {
+  const bpi = body.brandProductIntelligence;
+  const dir = body.selectedDirection;
+  const sig = dir.signatureProofIdea;
+  const scene = (dir as { representativePersuasionScene?: string }).representativePersuasionScene || sig?.signatureScene || sig?.signatureContent || sig?.signatureSpatialMove || '';
+  const v = (value?: string, max = 160) => compact(value, max) || '없음';
+  const theme = hierarchy?.mainTheme || hierarchy?.keyMessage || body.analysis.projectOverview;
+  // Tone vocabulary, but with the brand/client name tokens stripped so the "직접 활용" line never surfaces the brand
+  // name itself (the title must reflect the brand world via tone/vocabulary, not by placing the brand name in it).
+  const brandTokens = brandTokensOf(body.input);
+  const categoryVocab = (bpi?.brandSpecificVocabulary?.length ? bpi.brandSpecificVocabulary : currentRfpVocabularySet)
+    .filter((term) => term && !brandTokens.some((token) => term.toLowerCase().includes(token.toLowerCase())))
+    .slice(0, 12).join(' / ') || '없음';
+  return [
+    '=== Brand/Theme Tone Anchor (현재 RFP의 고유 톤·세계. 브랜드/클라이언트명을 직접 넣지 말고 톤·어휘·상징·콘텐츠 세계로 간접 반영) ===',
+    `카테고리/산업 세계: ${v(bpi?.categoryContext || bpi?.productOrServiceMeaning)}`,
+    `전시/프로젝트 테마: ${v(theme)}`,
+    `브랜드 톤·포지셔닝: ${v(bpi?.toneGuidance || bpi?.clientOrBrandRole)}`,
+    `카테고리 고유 어휘(직접 활용): ${categoryVocab}`,
+    `타깃 관객·약속: ${v(bpi?.audiencePerceptionGap || body.rfpDiagnosis?.hiddenNeed)}`,
+    `대표 증명/경험 장면: ${v(scene)}`,
+    '요구: 3개 중 최소 1개(주제형)는 위 톤·어휘·테마 세계를 담아 현재 RFP에 고유하게 들려야 하고, 무관한 브랜드/전시에는 그대로 쓸 수 없어야 한다. 단, 브랜드/클라이언트명을 conceptName에 직접 넣지 않는다(톤·어휘·상징으로 간접 반영).',
+  ].join('\n');
+}
+
 // Concept Frame Synthesis: the step BEFORE naming that reframes the selected strategy into title territory so the model
 // produces a COMPRESSED concept title, not a description. coreMeaning + forbiddenDescriptiveWords are deterministic;
 // the other slots are filled internally by the model before naming. No example names, current-RFP-only.
@@ -506,6 +534,7 @@ export async function POST(request: Request) {
     // Explicit RFP-provided concept hierarchy (current RFP text only) → highest-priority naming anchor (above brand/entity).
     const rfpHierarchy = extractRfpConceptHierarchy(body.input.briefText);
     const namingAnchorBlock = buildConceptNamingAnchor(body, rfpHierarchy);
+    const brandThemeToneBlock = buildBrandThemeToneAnchor(body, rfpHierarchy, currentRfpVocabularySet);
     const conceptFrameBlock = buildConceptFrameSynthesis(body);
     const conceptLanguage = decidePrimaryConceptLanguage(body);
     const languagePolicyBlock = [
@@ -536,7 +565,7 @@ export async function POST(request: Request) {
       `Blocked example names are banned as outputs and paraphrase sources: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}. Do not output or imitate them.`,
     ].join('\n');
 
-    const user = `${conceptFrameBlock}\n\n${namingAnchorBlock}\n\n${languagePolicyBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
+    const user = `${conceptFrameBlock}\n\n${namingAnchorBlock}\n\n${brandThemeToneBlock}\n\n${languagePolicyBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
 Selected secondaryRfpConceptTypes: ${body.selectedDirection.secondaryRfpConceptTypes?.join(' / ') || 'none'}
 Relevant Matrix Type: ${sanitizedContext.matrixType}
 Active Matrix Type: ${sanitizedContext.activeMatrixType}
@@ -554,7 +583,7 @@ currentRfpVocabularySet: ${currentRfpVocabularySet.join(' / ')}
 Brand vocabulary: ${body.brandProductIntelligence?.brandSpecificVocabulary?.join(' / ') || 'none'}
 Words/tone to avoid: ${body.brandProductIntelligence?.wordsToAvoid?.join(' / ') || 'none'}
 Existing names for selected direction to avoid: ${(body.existingNamesForSelectedDirection ?? body.recentNameOptions)?.join(' / ') || 'none'}
-Names already generated for other directions to block: ${body.blockedOtherDirectionNames?.join(' / ') || 'none'}\n\n요구사항:\n- options는 반드시 정확히 3개. 모두 표지에 올릴 수 있는 강한 후보여야 한다.\n- namingStyle 필드를 반드시 다음 중 하나로 다양화: Direct claim, Short bilingual title, Brand/category-specific phrase, Spatial/experience frame, Symbolic but grounded, Strong one-line statement.\n- 3개는 선택된 방향의 axis, thesis, signature scene에서만 갈라지는 서로 다른 naming logic이어야 한다. 같은 구조로 반복하지 말라.
+Names already generated for other directions to block: ${body.blockedOtherDirectionNames?.join(' / ') || 'none'}\n\n요구사항:\n- options는 반드시 정확히 3개. 모두 표지에 올릴 수 있는 강한 후보여야 한다.\n- namingStyle 필드를 반드시 다음 중 하나로 다양화: Direct claim, Short bilingual title, Brand/category-specific phrase, Spatial/experience frame, Symbolic but grounded, Strong one-line statement.\n- 3개 후보는 의도적으로 서로 다른 역할을 갖는다: (A) 주제형 — 위 Brand/Theme Tone Anchor의 현재 전시 테마·카테고리·브랜드 톤·프로젝트 세계를 담아 현재 RFP에 고유하게 들리고 무관한 브랜드/전시에는 그대로 쓸 수 없는 타이틀(브랜드/클라이언트명 직접 사용 금지, 톤·어휘·상징으로 간접 반영, namingStyle은 Brand/category-specific phrase). (B) 장면형 — 대표 관람 경험·장면·움직임·공간/콘텐츠 순간을 기억에 남는 이미지로 압축(namingStyle은 Spatial/experience frame). (C) 선언형 — 선택한 전략 방향을 표지 타이틀로 압축하되 전략 라벨이 되지 않게(namingStyle은 Direct claim 또는 Strong one-line statement). 세 후보는 톤·어휘·논리에서 명확히 달라야 하고, 셋 다 무관한 브랜드에 그대로 맞는 범용 영어/추상 명사 조합이면 거부하고 재생성한다. 단, 이 역할 분담이 Concept Frame Synthesis → 한국어 컨셉 시드 → (필요 시) 영어 trans-create 순서를 깨뜨리지 않는다.
 - generic hook(현장/경험/체험/증명/가치/연결/흐름/여정/신뢰/균형)이 conceptName 또는 oneLineSlogan의 주어처럼 3회 이상 반복되면 약한 후보를 currentRfpVocabularySet 기반으로 재작성한다.\n- 각 option은 먼저 koreanConceptSeed(Concept Frame Synthesis에서 만든 강한 한국어 컨셉 시드 타이틀)를 만들고, 그 시드에서 conceptName을 도출한다. 출력 필드: koreanConceptSeed, conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsSelectedDirection, namingStyle, mainRisk. 점수, validation boolean 블록, expandableTo, 디버그/근거 필드는 출력하지 말라(서버가 코드로 처리한다). english_default이면 conceptName은 koreanConceptSeed를 trans-create한 영어 타이틀이어야 하고(시드와 따로 새로 만든 범용 영어 라벨이 아님), koreanSubtitle는 koreanConceptSeed의 의미를 보존한다. korean_primary이면 conceptName은 koreanConceptSeed(또는 다듬은 버전)이다.\n- conceptName은 전략을 "설명"하는 문장이 아니라 Concept Frame Synthesis에서 압축한 제안서 표지 콘셉트 타이틀이다. 전략 라벨/슬라이드 제목/제품 카테고리/분석 heading/방향 라벨 복사/서술형 요약이 아니며, 상징·이미지·움직임·긴장·장면 같은 프레임을 함축해야 한다. 슬로건이 풀어 설명하기 전에 단독으로 의도가 읽혀야 하고, 호기심을 만들되 모호하지 않게 한다. 임시 전략 방향명/컨설팅 목차명/단순 제품명/랜덤 영어 명사 조합이 아니다.
 - 필드 역할 분리: conceptName=압축 타이틀(설명/문장/요약 금지), oneLineSlogan=타이틀을 설명·날카롭게(타이틀보다 직접적이어도 됨), shortMeaning=타이틀이 왜 맞는지, whyItFitsRfp=RFP 근거. conceptName이 다른 필드의 역할을 대신하지 말라. forbiddenDescriptiveWords를 타이틀의 주 단어로 쓰지 말라.
 - 각 option의 oneLineSlogan은 conceptName이 주장하는 승리 논리를 1문장으로 설명한다. whyItFitsSelectedDirection은 선택한 전략 방향과 confirmed diagnosis의 coreWinningCondition, strategicTension, proofBurden, signatureProofIdea 중 최소 2개와 연결한다.
