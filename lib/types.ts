@@ -931,6 +931,9 @@ export interface ProposalState {
   slides?: SlideContent[];
   designGuide?: DesignGuide;
   patternLearningSummary?: PatternLearningSummary;
+  // Winning/losing pattern learning applied during final concept naming (phase 3-2). Shown in the naming section's
+  // collapsed "수주 패턴 참고" chip. Project-scoped (cleared on a new RFP/project).
+  conceptPatternLearningSummary?: PatternLearningSummary;
   retrievalEvidence?: RetrievalEvidenceItem[];
   analysisBasis?: {
     type: 'full' | 'partial';

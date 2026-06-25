@@ -5,6 +5,7 @@ import { normalizeProposalType } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { getActiveMatrix, sanitizeConceptContextByRfpType } from '@/lib/conceptContextSanitizer';
 import { extractRfpConceptHierarchy, type RfpProvidedConceptHierarchy } from '@/lib/rfpConceptHierarchy';
+import { buildPatternLearningSummary, formatWinningPatternInfluenceForConceptNaming, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -515,7 +516,7 @@ function buildFinalOptions(
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; analysisSummary?: string; selectedDirection: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; activeMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; primaryRfpConceptType?: string; languageMode?: string; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[] };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; analysisSummary?: string; selectedDirection: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; activeMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; primaryRfpConceptType?: string; languageMode?: string; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[]; projectId?: string | null; documentIds?: string[] };
     if (!body.input || !body.analysis || (!body.selectedDirection && !body.selectedStrategicDirection)) return json(errorResponse('프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.'), { status: 400 });
     body.selectedDirection = normalizeSelectedDirectionForNaming(body) as ConceptCandidate;
 
@@ -536,6 +537,10 @@ export async function POST(request: Request) {
     const namingAnchorBlock = buildConceptNamingAnchor(body, rfpHierarchy);
     const brandThemeToneBlock = buildBrandThemeToneAnchor(body, rfpHierarchy, currentRfpVocabularySet);
     const conceptFrameBlock = buildConceptFrameSynthesis(body);
+    // Phase 3-2: safe, project-scoped winning/losing pattern learning (structure-only, Priority 4). Skips when no scope.
+    const learningGuidance = await retrieveProposalPatternsForOutline({ projectId: body.projectId ?? null, documentIds: body.documentIds ?? [], currentProposalType: normalizeProposalType(body.input.proposalType), limit: 12 });
+    const winningPatternInfluenceBlock = formatWinningPatternInfluenceForConceptNaming(learningGuidance.comparison);
+    const patternLearningSummary = buildPatternLearningSummary(learningGuidance.comparison);
     const conceptLanguage = decidePrimaryConceptLanguage(body);
     const languagePolicyBlock = [
       '=== Concept Name Language Policy (제목의 "언어"만 결정한다. 제목의 강도·구조·독창성은 위 Concept Frame Synthesis가 결정한다) ===',
@@ -558,6 +563,7 @@ export async function POST(request: Request) {
       'Names must be proposal-cover concepts that express the winning claim and can expand into space, content, media, and operation.',
       'Internally use coreWinningCondition, strategicTension, proofBurden, selectedStrategicDirection, and signatureProofIdea, but translate all visible copy into planner-friendly Korean: proof=설득 포인트/확인 장면/대표 설득 장면, evidence=근거, proof burden=설득 과제, required proof elements=필수 설득 요소, signature proof idea=대표 설득 장면.',
       'If the Concept Naming Anchor includes a [Priority 0 — RFP 제공 공식 컨셉 위계] line, that RFP-provided concept hierarchy (main theme / sub themes / zone concept / official slogan / key message) OUTRANKS everything below and is the primary naming source, ahead of the client/brand/entity name; for multi-entity pavilions, name from the pavilion-level theme, never from one participant.',
+      'A "Winning Pattern Influence (Priority 4)" block may be provided from the current project\'s OWN uploaded reference proposals. If present, use the won concept-LOGIC STRUCTURE (how the problem was reframed, how strategy became concept, how content followed, how proof was placed) so at least one candidate applies a proven win-rate logic pattern — but NEVER copy old concept names/slogans/page titles/copy/client or project names, and NEVER let it override Priority 1-3 (current RFP, selected direction, Concept Frame Synthesis) or the Korean-seed→transcreation order. Use losing patterns ONLY as risk warnings (avoid generic/abstract/weak logic); never as positive inspiration. If the block says "데이터 없음", do not assume or fabricate any winning pattern.',
       'Naming source priority (STRICT). Priority 1: the selected direction\'s strategic claim, the current RFP\'s strategic tension, the audience/evaluator perception shift, and the representative persuasion scene. Priority 2: category/industry/project-specific vocabulary, the spatial/media/content/UX mechanism, and the pavilion or exhibition-level narrative frame. Priority 3: client/brand/entity name. The client/brand/entity name may be used ONLY as a secondary modifier that adds strategic meaning, never as the default naming subject, and NOT in every candidate. Derive names from the Concept Naming Anchor block first; use currentRfpVocabularySet as supporting vocabulary, not as a brand-first source. Do not hardcode example vocabularies across RFPs.',
       'For multi-entity pavilion RFPs, name at pavilion / relationship / system / collective-experience level using the 파빌리온 프레임 anchor. Never make a single participant the title subject unless the RFP explicitly establishes it as the lead owner. Do NOT produce a name merely by deleting an entity name (that yields generic names) — replace it with a specific pavilion-level conceptual frame from the diagnosis.',
       'For exhibition/content/energy/technology RFPs, NOT all candidates may contain the client/brand name; use it only when the selected direction is explicitly about leadership/ownership/representative role, and even then keep it limited and meaning-adding. Default to the category/industry shift, the core audience understanding gap, the experience/content mechanism, current-reality-vs-future tension when present, and the intended post-viewing perception — not client/brand name + generic/exhibition/experience noun, and not a descriptive restatement of the RFP.',
@@ -565,7 +571,7 @@ export async function POST(request: Request) {
       `Blocked example names are banned as outputs and paraphrase sources: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}. Do not output or imitate them.`,
     ].join('\n');
 
-    const user = `${conceptFrameBlock}\n\n${namingAnchorBlock}\n\n${brandThemeToneBlock}\n\n${languagePolicyBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
+    const user = `${conceptFrameBlock}\n\n${namingAnchorBlock}\n\n${brandThemeToneBlock}\n\n${winningPatternInfluenceBlock}\n\n${languagePolicyBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
 Selected secondaryRfpConceptTypes: ${body.selectedDirection.secondaryRfpConceptTypes?.join(' / ') || 'none'}
 Relevant Matrix Type: ${sanitizedContext.matrixType}
 Active Matrix Type: ${sanitizedContext.activeMatrixType}
@@ -621,7 +627,7 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
       const message = conversionFailure ? DESCRIPTIVE_NAMING_ERROR : WEAK_NAMING_ERROR;
       return json(errorResponse(message, `reason=${conversionFailure ? 'descriptive_after_retry' : 'weak_after_retry'}; returned=${returned}; deduped=${deduped}; safe=${safe}; quality=${quality}; blockedNameDrops=${blockedNameDrops}; descriptiveDrops=${descriptiveDrops}`), { status: 422 });
     }
-    return json(successResponse({ ...result, selectedDirectionId: body.selectedDirection.conceptId, options: built.options }));
+    return json({ ...successResponse({ ...result, selectedDirectionId: body.selectedDirection.conceptId, options: built.options }), patternLearningSummary });
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
     return json(errorResponse(WEAK_NAMING_ERROR, `reason=${classifyServerError(message)}; ${message}`), { status: 502 });
