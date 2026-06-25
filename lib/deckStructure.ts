@@ -71,6 +71,8 @@ function isContentDetailSlide(slide: DeckSlideLike): boolean {
   return /detail|scenario|module|step|sequence|journey|상세|시나리오|모듈|단계|동선|순서|interaction|operating\s*logic/.test(t);
 }
 function isConceptStrategySlide(slide: DeckSlideLike): boolean {
+  // A concept REVEAL is never the strategy-elaboration slide — guard so a reveal can't be mislabeled conceptStrategy.
+  if (isConceptRevealSlide(slide)) return false;
   const t = norm(`${slide.slideTitle} ${slide.slideType} ${slide.slideRole}`);
   return slide.slidePurpose === 'Experience'
     || /strategy|principle|unfold|narrative|structure|전개|원칙|구조|경험\s*전략|spatial\s*strategy|콘텐츠\s*전략|proof\s*structure|증명\s*구조/.test(t);
@@ -179,6 +181,19 @@ export function applyDeckStructure<T extends DeckSlideLike>(
 
   // 2) Assign sections + layout to the body slides.
   let conceptIdx = body.findIndex((slide) => isConceptRevealSlide(slide));
+  // Fallback: a model-emitted concept declaration that carries BOTH the final concept name in its title AND a concept cue
+  // (컨셉/concept/선언/핵심) — and is not an approach/rationale/content/operation slide — IS the reveal. Banding it 'concept'
+  // here (before synthesis) stops it from falling through to conceptStrategy and avoids inserting a duplicate reveal.
+  if (conceptIdx === -1 && conceptTokens.length) {
+    conceptIdx = body.findIndex((slide) => {
+      const t = norm(`${slide.slideTitle} ${slide.slideType} ${slide.slideRole}`);
+      const hasConceptName = conceptTokens.some((token) => norm(slide.slideTitle).includes(token.toLowerCase()));
+      // Unambiguous reveal cues only — NOT the lone token 핵심 (ubiquitous in overview titles: 핵심 가치/메시지/과제); a real
+      // "핵심 콘셉트" still matches via 콘셉트. This stops an early overview slide from being grabbed as the reveal.
+      const hasConceptCue = /concept|컨셉|콘셉트|선언/.test(t);
+      return hasConceptName && hasConceptCue && !isApproachSlide(slide) && !isOperationSlide(slide) && !isContentDetailSlide(slide) && !isClosingSlide(slide);
+    });
+  }
   // 2a) GUARANTEE a dedicated Concept reveal slide. The required deck is Overview → Approach → CONCEPT → Concept Strategy
   // → Content; if the model never emitted a concept slide (conceptIdx === -1) we synthesize one deterministically and
   // place it right after the Approach/Overview band and before the first Concept Strategy / Content / Execution slide.

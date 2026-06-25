@@ -308,7 +308,8 @@ function buildBrandThemeToneAnchor(body: { input: ProjectInput; analysis: Analys
     `카테고리 고유 어휘(직접 활용): ${categoryVocab}`,
     `타깃 관객·약속: ${v(bpi?.audiencePerceptionGap || body.rfpDiagnosis?.hiddenNeed)}`,
     `대표 증명/경험 장면: ${v(scene)}`,
-    '요구: 3개 중 최소 1개(주제형)는 위 톤·어휘·테마 세계를 담아 현재 RFP에 고유하게 들려야 하고, 무관한 브랜드/전시에는 그대로 쓸 수 없어야 한다. 단, 브랜드/클라이언트명을 conceptName에 직접 넣지 않는다(톤·어휘·상징으로 간접 반영).',
+    '브랜드/제품 세계 차원(방문관·공장견학·쇼룸·브랜드 체험형에서 적극 활용): 브랜드 컬러·시그니처 색 / 제품 본질(성분·효능·진실) / 감각 단서 / 확인·증명 장면 / 방문 후 변화·전환 / 기억·잔상. 위 카테고리 고유 어휘와 현재 RFP가 뒷받침하는 한, 이 차원의 단어(예: 색·성분·공정·투명·균형 등 도메인 어휘)를 자유롭게 활용한다(과거 제안의 정확한 컨셉명/슬로건/페이지 제목 "구절"만 복사 금지이며, 개별 브랜드/카테고리 단어는 금지 대상이 아니다).',
+    '요구: 3개 중 최소 1개(주제형)는 위 톤·어휘·테마·브랜드/제품 세계를 담아 현재 RFP에 고유하게 들려야 하고, 무관한 브랜드/전시에는 그대로 쓸 수 없어야 한다. 공간·빛·기억·임팩트·설치만 말하는 범용 이름, 브랜드/제품 세계·제품 진실·증명 장치를 무시한 이름, 무관한 방문관에도 맞는 이름은 거부하고 재생성한다. 단, 브랜드/클라이언트명 자체를 conceptName에 직접 넣지 않는다(톤·어휘·상징으로 간접 반영).',
   ].join('\n');
 }
 
@@ -435,15 +436,33 @@ function decidePrimaryConceptLanguage(body: { input: ProjectInput; analysis: Ana
 
 function buildFinalOptions(
   result: ConceptNameOptionsResult,
-  body: { input: ProjectInput; selectedDirection: ConceptCandidate; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[] },
+  body: { input: ProjectInput; selectedDirection: ConceptCandidate; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[]; analysis?: AnalysisResult; brandProductIntelligence?: BrandProductIntelligence },
   currentRfpVocabularySet: string[],
   forbiddenCopyTerms: string[] = [],
 ) {
   const styles = ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] as const;
   const repeatedHooks = genericHookCounts(result.options ?? []);
   const blockedNameSet = new Set([...(body.recentNameOptions ?? []), ...(body.existingNamesForSelectedDirection ?? []), ...(body.blockedOtherDirectionNames ?? [])].map(normalizeName).filter(Boolean));
-  // Reference deny-list: drop any candidate that copies the reference proposal's OWN concept names/slogans/titles.
-  const forbiddenSet = forbiddenCopyTerms.map((term) => term.toLowerCase().trim()).filter((term) => term.length >= 2);
+  // Reference deny-list (§3-6): block EXACT / near-identical old concept NAMES / SLOGANS / PAGE TITLES (multi-word
+  // phrases), but DO NOT block individual brand/category SEMANTIC tokens that the current RFP / brand actually supports.
+  // The old substring-per-token match over-blocked words like "blue"/"proof"/"ion". A lone coined token is still blocked
+  // only when it is NOT supported by the current RFP / brand vocabulary (so a genuinely coined one-word old name stays
+  // forbidden). Copy protection is made phrase-accurate, not weakened.
+  const denyTokenize = (text: string) => text.toLowerCase().split(/[\s/·|,.\-—~()[\]"'`]+/).map((token) => token.replace(/[^가-힣a-z0-9]/g, '')).filter((token) => token.length >= 2);
+  const allowedTokenSet = new Set(denyTokenize([currentRfpVocabularySet.join(' '), (body.brandProductIntelligence?.brandSpecificVocabulary ?? []).join(' '), body.input.briefText ?? '', compact(body.analysis, 4000) ?? ''].join(' ')));
+  const forbiddenEntries = forbiddenCopyTerms.map((term) => term.toLowerCase().trim()).filter((term) => term.length >= 2).map((term) => ({ term, tokens: denyTokenize(term) }));
+  const forbiddenPhrases = forbiddenEntries.filter((entry) => entry.tokens.length >= 2);
+  const forbiddenLoneTokens = forbiddenEntries.filter((entry) => entry.tokens.length === 1 && Boolean(entry.tokens[0]) && !allowedTokenSet.has(entry.tokens[0]));
+  const copiesForbiddenReference = (option: { conceptName?: string; koreanSubtitle?: string; oneLineSlogan?: string }) => {
+    const fieldsText = `${option.conceptName || ''} ${option.koreanSubtitle || ''} ${option.oneLineSlogan || ''}`.toLowerCase();
+    const fieldTokens = new Set(denyTokenize(fieldsText));
+    // Exact or near-identical old name/slogan/title reuse: the full phrase appears, or >=80% of its tokens are present
+    // (catches a reordered/minor-word-change copy) — this is the "exact + near-identical phrase" block.
+    const phraseHit = forbiddenPhrases.some((phrase) => fieldsText.includes(phrase.term) || phrase.tokens.filter((token) => fieldTokens.has(token)).length >= Math.max(2, Math.ceil(phrase.tokens.length * 0.8)));
+    if (phraseHit) return true;
+    // A genuinely coined single-word old concept name (not current-RFP/brand vocab) → block by WHOLE-WORD match.
+    return forbiddenLoneTokens.some((entry) => fieldTokens.has(entry.tokens[0] as string));
+  };
   const seenNameSet = new Set<string>();
   const seenFingerprintSet = new Set<string>();
   let blockedNameDrops = 0;
@@ -452,10 +471,7 @@ function buildFinalOptions(
     const fingerprint = optionTextFingerprint(option);
     if (!nameKey) return false;
     if (blockedNameSet.has(nameKey)) { blockedNameDrops += 1; return false; }
-    if (forbiddenSet.length) {
-      const fields = `${option.conceptName || ''} ${option.koreanSubtitle || ''} ${option.oneLineSlogan || ''}`.toLowerCase();
-      if (forbiddenSet.some((term) => fields.includes(term))) { blockedNameDrops += 1; return false; }
-    }
+    if (forbiddenEntries.length && copiesForbiddenReference(option)) { blockedNameDrops += 1; return false; }
     if (seenNameSet.has(nameKey) || (fingerprint && seenFingerprintSet.has(fingerprint))) return false;
     seenNameSet.add(nameKey);
     if (fingerprint) seenFingerprintSet.add(fingerprint);
@@ -639,7 +655,7 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
 - 다음 형태는 컨셉명/슬로건의 주된 naming device로 쓰지 말라(현재 RFP에 맞게 구체적으로 변형된 경우만 예외): 가치 증명, 기억의 증명, 인식 전환, 경험 이해, 가치 체험, 실체화, 한눈에 보는 ___, ___ 중심, ___ 시그니처, ___ Core Experience, ___ Insight, ___ Panorama, ___ Signature, ___ Experience, ___ Journey, ___ Moment. 브랜드/클라이언트명 단독 + 일반 명사 조합도 거부한다.
 - Final naming source lock: selectedStrategicDirection, confirmed diagnosis, current RFP summary만 네이밍 근거로 사용하라. proposal_patterns, previous proposal names, old clients/categories/wording은 사용하지 말라. hardcoded direction presets는 사용하지 말라.
 - matrixType이 entityDifferentiationMatrix가 아니면 Entity Differentiation Matrix, 역할 구분, 통합+역할 차별화, 상징적 리더십을 네이밍 근거로 사용하지 말라.
-- single_brand_experience 또는 visitor_center_or_tour는 brand meaning, sensory cue, product value, process/확인 장면, visitor memory, transformation after visit에서 이름을 도출하고 multi-entity role separation, pavilion leadership, stakeholder integration으로 네이밍하지 말라.
+- single_brand_experience 또는 visitor_center_or_tour는 brand meaning, sensory cue, product value, process/확인 장면, visitor memory, transformation after visit에서 이름을 도출하고 multi-entity role separation, pavilion leadership, stakeholder integration으로 네이밍하지 말라. 이 유형에서는 최소 1개 후보가 브랜드 컬러·제품 본질(성분·효능·진실)·감각 단서·공정/증명 장면·방문 후 변화·기억 중 하나 이상의 브랜드/제품 세계 토큰을 반드시 담아야 한다(위 Brand/Theme Tone Anchor 기반). 공간·빛·기억·임팩트·설치만 말하고 브랜드/제품 세계·제품 진실·증명 장치를 무시한 범용 이름, 무관한 방문관에도 그대로 맞는 이름은 거부하고 재생성한다.
 - multi_entity_pavilion만 shared pavilion frame, entity/domain relationship, system logic, capability 확인 장면, symbolic presence 기반 네이밍을 허용한다.`;
 
     const generate = (userPrompt: string) => createStructuredJson<ConceptNameOptionsResult>({ schemaName: 'concept_name_options', schema: conceptNameOptionsJsonSchema, system, user: userPrompt, timeoutMs: 18_000, maxRetries: 1 });
