@@ -16,6 +16,9 @@ import { extractRfpConceptHierarchy, hierarchyThemeSeeds, formatRfpHierarchyAnch
 const DEFAULT_CONCEPT_COUNT = 3;
 const ALLOWED_DIRECTION_AXES = ['representative_position', 'audience_understanding', 'signature_scene', 'product_value_proof', 'process_trust', 'category_shift', 'system/ecosystem_proof', 'spatial_journey', 'brand_memory', 'operational_confidence', 'evaluator_clarity', 'emotional_affinity', 'technology_reality_proof'] as const;
 const CONCEPT_GENERATION_TIMEOUT_MS = Number(process.env.CONCEPT_GENERATION_TIMEOUT_MS ?? 18_000);
+const MAX_STRATEGY_GENERATION_ATTEMPTS = Number(process.env.MAX_STRATEGY_GENERATION_ATTEMPTS ?? 1);
+const MAX_DIRECTION_REPAIR_ATTEMPTS = Number(process.env.MAX_DIRECTION_REPAIR_ATTEMPTS ?? 1);
+const MAX_STRATEGY_GENERATION_TIME_MS = Number(process.env.MAX_STRATEGY_GENERATION_TIME_MS ?? 45_000);
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -33,6 +36,40 @@ function conceptsJson(body: unknown, init?: ResponseInit) {
       ...(init?.headers ?? {}),
     },
   });
+}
+
+
+function isTimeoutLike(message = '') {
+  return /timeout|timed out|ETIMEDOUT|ECONNRESET|aborted|abort|deadline|504|FUNCTION_INVOCATION_TIMEOUT/i.test(message);
+}
+
+function buildStageErrorDetails(params: {
+  failureStage: string;
+  endpointCalled?: string;
+  timeoutStage?: string;
+  missingInputs?: string[];
+  rejectedDirectionCount?: number;
+  repairAttempts?: number;
+  hardBlockerReasons?: string[];
+  repairableReasons?: string[];
+  responseShapeOk?: boolean;
+  errorMessageSource?: string;
+}) {
+  return {
+    failureStage: params.failureStage,
+    endpointCalled: params.endpointCalled ?? '/api/concepts',
+    timeoutStage: params.timeoutStage,
+    missingInputs: params.missingInputs ?? [],
+    rejectedDirectionCount: params.rejectedDirectionCount ?? 0,
+    repairAttempts: params.repairAttempts ?? 0,
+    hardBlockerReasons: params.hardBlockerReasons ?? [],
+    repairableReasons: params.repairableReasons ?? [],
+    responseShapeOk: params.responseShapeOk ?? false,
+    errorMessageSource: params.errorMessageSource ?? 'strategy_route',
+    maxStrategyGenerationAttempts: MAX_STRATEGY_GENERATION_ATTEMPTS,
+    maxDirectionRepairAttempts: MAX_DIRECTION_REPAIR_ATTEMPTS,
+    maxStrategyGenerationTimeMs: MAX_STRATEGY_GENERATION_TIME_MS,
+  };
 }
 
 function compactList(items: string[] = [], limit = 8, itemLimit = 160) {
@@ -1714,13 +1751,13 @@ export async function POST(request: Request) {
     };
 
     if (!body.input || !body.analysis) {
-      return conceptsJson({ error: '프로젝트 입력값과 분석 결과가 필요합니다.' }, { status: 400 });
+      return conceptsJson({ error: '프로젝트 입력값과 분석 결과가 필요합니다.', reason: 'missing_inputs', ...buildStageErrorDetails({ failureStage: 'strategic_direction_generation', missingInputs: ['input', 'analysis'], responseShapeOk: false, errorMessageSource: 'strategy_preflight' }) }, { status: 400 });
     }
     if (!body.rfpDiagnosis) {
-      return conceptsJson({ error: '제안 전략 진단 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
+      return conceptsJson({ error: '제안 전략 진단 확정 후 전략 방향을 생성할 수 있습니다.', reason: 'missing_inputs', ...buildStageErrorDetails({ failureStage: 'strategic_direction_generation', missingInputs: ['proposalStrategyDiagnosis'], responseShapeOk: false, errorMessageSource: 'strategy_preflight' }) }, { status: 400 });
     }
     if (!body.brandProductIntelligence) {
-      return conceptsJson({ error: '브랜드/제품 이해 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
+      return conceptsJson({ error: '브랜드/제품 이해 확정 후 전략 방향을 생성할 수 있습니다.', reason: 'missing_inputs', ...buildStageErrorDetails({ failureStage: 'strategic_direction_generation', missingInputs: ['brandProductIntelligence'], responseShapeOk: false, errorMessageSource: 'strategy_preflight' }) }, { status: 400 });
     }
     // Diagnosis must be COMPLETE ENOUGH (not just present) before final direction cards are generated, so shallow
     // diagnoses cannot drive weak directions. Lenient: a real /api/diagnosis result (strict schema) always passes.
@@ -1733,7 +1770,7 @@ export async function POST(request: Request) {
       && ((diag.requiredProofElements?.length ?? 0) > 0 || (diag.requiredPersuasionElements?.length ?? 0) > 0),
     );
     if (!diagnosisCompleteEnough) {
-      return conceptsJson({ error: '제안 전략 진단이 충분하지 않습니다. 전략 진단을 먼저 완료해 주세요.', reason: 'diagnosis_incomplete' }, { status: 400 });
+      return conceptsJson({ error: '제안 전략 진단이 충분하지 않습니다. 전략 진단을 먼저 완료해 주세요.', reason: 'diagnosis_incomplete', ...buildStageErrorDetails({ failureStage: 'strategic_direction_generation', missingInputs: ['completeProposalStrategyDiagnosis'], hardBlockerReasons: ['diagnosis_incomplete'], responseShapeOk: false, errorMessageSource: 'strategy_preflight' }) }, { status: 400 });
     }
 
     const metadata: ConceptGenerationMetadata = {
@@ -1944,6 +1981,8 @@ proposal_patterns direction usage: DISABLED for all RFP types. Do not use propos
 
 Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Option → Hidden Needs → Strategic Approach → Winning Thesis → Concept Leap → Signature Proof Idea → Entity/Content/Audience Differentiation if applicable → Strategic Direction Option → Winning Thesis → Concept Leap → Signature Proof Idea → Proposal Core Concept → Experience Principle → Visitor Journey → Content/Media Execution → Anti-pattern Validation. Do not generate Visitor Journey before Proposal Core Concept. Choose recommendation by best-fit strategic direction, RFP specificity, originality, whole-proposal organizing power, expandability to space/content/media/operation, evaluator clarity, and anti-pattern avoidance. recommendation.whyNotOthers must use neutral trade-off language and must explain what the other directions are useful for, not why they are bad.`;
 
+    const generationStartedAt = Date.now();
+    let repairAttempts = 0;
     try {
       const generated = await createStructuredJson<ConceptCandidatesResult>({
         schemaName: 'proposal_concept_candidates',
@@ -1951,13 +1990,17 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
         system: systemPrompt,
         user: userPrompt,
         timeoutMs: CONCEPT_GENERATION_TIMEOUT_MS,
-        maxRetries: 1,
+        maxRetries: Math.max(0, MAX_STRATEGY_GENERATION_ATTEMPTS - 1),
       });
+
+      if (Date.now() - generationStartedAt > MAX_STRATEGY_GENERATION_TIME_MS) throw new Error('strategy_generation_timeout: exceeded maxStrategyGenerationTimeMs');
 
       // §9: do NOT pad an under-generated result with hardcoded preset cards (fallbackCandidate). If the model returned
       // fewer than 3 directions, treat it as a generation failure → the catch returns a retry signal (no generic cards).
       if ((generated.concepts?.length ?? 0) < 3) throw new Error('under_generation: model returned fewer than 3 strategic directions');
 
+      if (repairAttempts >= MAX_DIRECTION_REPAIR_ATTEMPTS) throw new Error('direction_repair_limit_exceeded');
+      repairAttempts += 1;
       let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({
         ...generated,
         conceptPromptVersion,
@@ -1979,11 +2022,28 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       // return an explicit error instead; the client preserves the completed RFP analysis / diagnosis / brand understanding
       // and shows a retry CTA (regenerate from current-RFP evidence only). A generic fallback never reaches the user.
       const reason = error instanceof Error ? error.message : 'generation timeout';
+      const timedOut = isTimeoutLike(reason) || Date.now() - generationStartedAt > MAX_STRATEGY_GENERATION_TIME_MS;
+      const generatedCount = typeof (error as { generatedCount?: unknown })?.generatedCount === 'number' ? (error as { generatedCount: number }).generatedCount : 0;
+      const rejectedDirectionCount = reason.startsWith('under_generation') ? Math.max(0, DEFAULT_CONCEPT_COUNT - generatedCount) : 0;
       console.error(`[concepts] strategic direction generation failed — returning retry signal (no generic fallback): ${reason}`);
-      return conceptsJson({ error: '전략 방향 생성에 실패했습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.', reason: 'direction_generation_failed', conceptPromptVersion }, { status: 502 });
+      return conceptsJson({
+        error: timedOut ? '전략 방향 생성 시간이 초과되었습니다. RFP 분석과 브랜드/제품 이해 결과는 유지되며 전략 방향만 다시 생성할 수 있습니다.' : '전략 방향 생성에 실패했습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.',
+        reason: timedOut ? 'strategy_generation_timeout' : 'direction_generation_failed',
+        conceptPromptVersion,
+        ...buildStageErrorDetails({
+          failureStage: 'strategic_direction_generation',
+          timeoutStage: timedOut ? 'direction_generation' : undefined,
+          rejectedDirectionCount,
+          repairAttempts,
+          hardBlockerReasons: timedOut ? [] : [reason],
+          repairableReasons: reason.startsWith('under_generation') ? ['under_generated_directions'] : [],
+          responseShapeOk: false,
+          errorMessageSource: timedOut ? 'STRATEGIC_DIRECTION_TIMEOUT_MESSAGE' : 'strategy_route_error',
+        }),
+      }, { status: timedOut ? 504 : 502 });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.';
-    return conceptsJson({ error: message, conceptPromptVersion }, { status: 500 });
+    return conceptsJson({ error: message, reason: isTimeoutLike(message) ? 'strategy_generation_timeout' : 'strategy_route_unhandled', conceptPromptVersion, ...buildStageErrorDetails({ failureStage: 'strategic_direction_generation', timeoutStage: isTimeoutLike(message) ? 'strategy_route' : undefined, hardBlockerReasons: [message], responseShapeOk: false, errorMessageSource: isTimeoutLike(message) ? 'STRATEGIC_DIRECTION_TIMEOUT_MESSAGE' : 'strategy_route_unhandled' }) }, { status: isTimeoutLike(message) ? 504 : 500 });
   }
 }

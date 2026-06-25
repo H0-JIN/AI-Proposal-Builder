@@ -176,6 +176,37 @@ const STORAGE_KEY = 'ai-proposal-builder-state';
 // drops generated fields (analysis/diagnosis/brand/directions/concepts/outline) so stale/contaminated state can't persist.
 const STATE_SCHEMA_VERSION = 'rfp-specific-strategy-v1';
 
+const RFP_ANALYSIS_TIMEOUT_MESSAGE = 'RFP 분석 시간이 초과되었습니다. 업로드 자료는 유지되며 분석만 다시 시도할 수 있습니다.';
+const BRAND_PRODUCT_UNDERSTANDING_TIMEOUT_MESSAGE = '브랜드/제품 이해 생성 시간이 초과되었습니다. 분석 결과는 유지되며 이 단계만 다시 시도할 수 있습니다.';
+const STRATEGIC_DIRECTION_TIMEOUT_MESSAGE = '전략 방향 생성 시간이 초과되었습니다. RFP 분석과 브랜드/제품 이해 결과는 유지되며 전략 방향만 다시 생성할 수 있습니다.';
+const FINAL_CONCEPT_CANDIDATE_TIMEOUT_MESSAGE = '컨셉 후보 생성 시간이 초과되었습니다. 선택한 전략 방향은 유지되며 컨셉 후보만 다시 생성할 수 있습니다.';
+
+type DevelopmentErrorDetails = {
+  failureStage?: string;
+  endpointCalled?: string;
+  timeoutStage?: string;
+  missingInputs?: string[];
+  rejectedDirectionCount?: number;
+  repairAttempts?: number;
+  hardBlockerReasons?: string[];
+  repairableReasons?: string[];
+  responseShapeOk?: boolean;
+  errorMessageSource?: string;
+};
+
+class ApiRequestError extends Error {
+  status: number;
+  endpoint: string;
+  data: Record<string, unknown>;
+  constructor(message: string, status: number, endpoint: string, data: Record<string, unknown>) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    this.endpoint = endpoint;
+    this.data = data;
+  }
+}
+
 
 const diagnosisFieldAdapters = {
   coreProposalThesis: 'coreWinningCondition',
@@ -371,9 +402,9 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
 
-  const data = await parseJsonResponse<{ error?: string; message?: string }>(response, url);
+  const data = await parseJsonResponse<Record<string, unknown> & { error?: string; message?: string }>(response, url);
   if (!response.ok) {
-    throw new Error(data.error || data.message || '요청 처리 중 오류가 발생했습니다.');
+    throw new ApiRequestError(data.error || data.message || '요청 처리 중 오류가 발생했습니다.', response.status, url, data);
   }
 
   return data as T;
@@ -2319,6 +2350,7 @@ export default function Home() {
   const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [], dbUploadedDocuments: [] });
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [developmentErrorDetails, setDevelopmentErrorDetails] = useState<DevelopmentErrorDetails | null>(null);
   const conceptGenerationAttemptRef = useRef(0);
   const [conceptRetryVisible, setConceptRetryVisible] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
@@ -3682,7 +3714,7 @@ export default function Home() {
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : '제안 전략 진단/브랜드 이해 생성 중 오류가 발생했습니다.';
       setError(isTimeoutMessage(rawMessage)
-        ? 'RFP 분석은 완료되었습니다. 제안 전략 진단·브랜드 이해 생성 시간이 초과되어, 아래에서 해당 단계만 다시 생성할 수 있습니다.'
+        ? BRAND_PRODUCT_UNDERSTANDING_TIMEOUT_MESSAGE
         : `RFP 분석은 완료되었습니다. 다음 단계 생성 중 오류가 발생했습니다: ${rawMessage}`);
     }
   };
@@ -3709,7 +3741,7 @@ export default function Home() {
       const rawMessage = err instanceof Error ? err.message : '전략 진단 생성 중 오류가 발생했습니다.';
       // Diagnosis is REQUIRED for directions — do NOT fall back to shallow direction generation. Ask the user to retry.
       setError(isTimeoutMessage(rawMessage)
-        ? '전략 진단 생성이 지연되었습니다. 다시 시도해 주세요.'
+        ? BRAND_PRODUCT_UNDERSTANDING_TIMEOUT_MESSAGE
         : `전략 진단 생성이 지연되었습니다. 다시 시도해 주세요. (${rawMessage})`);
     } finally {
       setLoading('');
@@ -3748,7 +3780,7 @@ export default function Home() {
       } catch (liteErr) {
         const liteMessage = liteErr instanceof Error ? liteErr.message : '핵심 분석 중 오류가 발생했습니다.';
         setError(isTimeoutMessage(liteMessage)
-          ? '핵심 RFP 분석도 시간 초과되었습니다. 파일 크기 또는 텍스트 추출량을 줄인 뒤 다시 시도해 주세요.'
+          ? RFP_ANALYSIS_TIMEOUT_MESSAGE
           : liteMessage);
       }
     }
@@ -3830,10 +3862,12 @@ export default function Home() {
     // inputs for strategic directions. Never generate from a synthetic empty fallback — that removes the one input that
     // differentiates same-type RFPs and lets proposal-type presets dominate. Block (with a continuation CTA) if missing.
     if (!state.rfpDiagnosis) {
+      setDevelopmentErrorDetails({ failureStage: 'strategic_direction_generation', endpointCalled: 'not_called', missingInputs: ['proposalStrategyDiagnosis'], responseShapeOk: false, errorMessageSource: 'frontend_preflight' });
       setError('전략 방향 생성을 위해 제안 전략 진단을 먼저 생성해 주세요.');
       return;
     }
     if (!state.brandProductIntelligence) {
+      setDevelopmentErrorDetails({ failureStage: 'strategic_direction_generation', endpointCalled: 'not_called', missingInputs: ['brandProductIntelligence'], responseShapeOk: false, errorMessageSource: 'frontend_preflight' });
       setError('전략 방향 생성을 위해 브랜드/제품 이해를 먼저 생성해 주세요. (브랜드/제품 이해는 필수 분석입니다)');
       return;
     }
@@ -3844,6 +3878,7 @@ export default function Home() {
     const regenerationId = `${requestedAt}-${generationAttempt}-${crypto.randomUUID()}`;
 
     setError('');
+    setDevelopmentErrorDetails(null);
     setConceptRetryVisible(false);
     setStep('concepts');
     setLoading('새 후보 생성 중...');
@@ -3895,10 +3930,22 @@ export default function Home() {
     } catch (err) {
       setConceptRetryVisible(true);
       setStep('analysis');
-      const rawMessage = err instanceof Error ? err.message : '콘셉트 후보 생성 중 오류가 발생했습니다.';
-      const friendlyMessage = isTimeoutMessage(rawMessage)
-        ? '전략 방향 생성 시간이 초과되었습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.'
-        : rawMessage;
+      const rawMessage = err instanceof Error ? err.message : '전략 방향 생성 중 오류가 발생했습니다.';
+      const apiError = err instanceof ApiRequestError ? err : null;
+      const timeout = isTimeoutMessage(rawMessage) || apiError?.status === 504 || apiError?.data.reason === 'strategy_generation_timeout';
+      setDevelopmentErrorDetails({
+        failureStage: String(apiError?.data.failureStage || 'strategic_direction_generation'),
+        endpointCalled: String(apiError?.data.endpointCalled || apiError?.endpoint || '/api/concepts'),
+        timeoutStage: timeout ? String(apiError?.data.timeoutStage || 'strategic_direction_generation') : undefined,
+        missingInputs: Array.isArray(apiError?.data.missingInputs) ? apiError?.data.missingInputs as string[] : [],
+        rejectedDirectionCount: typeof apiError?.data.rejectedDirectionCount === 'number' ? apiError.data.rejectedDirectionCount : undefined,
+        repairAttempts: typeof apiError?.data.repairAttempts === 'number' ? apiError.data.repairAttempts : undefined,
+        hardBlockerReasons: Array.isArray(apiError?.data.hardBlockerReasons) ? apiError.data.hardBlockerReasons as string[] : [],
+        repairableReasons: Array.isArray(apiError?.data.repairableReasons) ? apiError.data.repairableReasons as string[] : [],
+        responseShapeOk: typeof apiError?.data.responseShapeOk === 'boolean' ? apiError.data.responseShapeOk : false,
+        errorMessageSource: timeout ? 'STRATEGIC_DIRECTION_TIMEOUT_MESSAGE' : 'strategy_api_error',
+      });
+      const friendlyMessage = timeout ? STRATEGIC_DIRECTION_TIMEOUT_MESSAGE : rawMessage;
       setError(friendlyMessage);
     } finally {
       setLoading('');
@@ -3933,6 +3980,7 @@ export default function Home() {
   const runConceptNames = async (options: { append?: boolean } = {}) => {
     if (!state.analysis || !selectedStrategicDirection) return;
     setError('');
+    setDevelopmentErrorDetails(null);
     setFinalNamingError('');
     // A new run supersedes any in-flight loop (its stale-guard checks this id).
     const myRunId = (namingRunIdRef.current += 1);
@@ -4030,7 +4078,7 @@ export default function Home() {
       if (namingRunIdRef.current !== myRunId) return; // superseded by a newer run — let it own the UI state
       const rawMessage = err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.';
       const message = isTimeoutMessage(rawMessage)
-        ? '컨셉명 생성 시간이 초과되었습니다. 선택한 전략 방향은 유지되며, 컨셉명만 다시 생성할 수 있습니다.'
+        ? FINAL_CONCEPT_CANDIDATE_TIMEOUT_MESSAGE
         : '선택한 전략 방향에 맞는 충분히 구체적인 컨셉명을 생성하지 못했습니다. 전략 방향을 다시 선택하거나 컨셉명을 다시 생성해 주세요.';
       setFinalNamingError(message);
       setFinalNamingDebug((current) => ({ ...current, responseErrorMessage: rawMessage }));
@@ -4292,7 +4340,15 @@ export default function Home() {
           </div>
         )}
 
-        {error && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 font-medium text-red-700">{error}</div>}
+        {error && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 font-medium text-red-700">
+          <p>{error}</p>
+          {developmentErrorDetails && (
+            <details className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-xs text-red-600">
+              <summary className="cursor-pointer font-black">개발 details</summary>
+              <pre className="mt-2 whitespace-pre-wrap break-words">{JSON.stringify(developmentErrorDetails, null, 2)}</pre>
+            </details>
+          )}
+        </div>}
 
         {step === 'home' && (
           <section className="rounded-[2rem] bg-gradient-to-br from-blue-600 to-slate-950 p-8 text-white shadow-2xl shadow-blue-900/20 md:p-12">
@@ -4406,7 +4462,7 @@ export default function Home() {
               )}
               {conceptRetryVisible && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-950">
-                  <p>컨셉 생성 시간이 초과되었습니다. 분석 결과는 유지됩니다.</p>
+                  <p>{STRATEGIC_DIRECTION_TIMEOUT_MESSAGE}</p>
                   <button onClick={() => runConcepts({ retryLight: true })} disabled={Boolean(loading)} className="mt-3 rounded-xl bg-amber-600 px-4 py-2 font-black text-white transition hover:bg-amber-700 disabled:opacity-50">가볍게 다시 생성</button>
                 </div>
               )}
