@@ -3,7 +3,7 @@ import 'server-only';
 import { createDocument, createProject, isSupabaseConfigured, saveChunks, saveProposalPatterns } from './ragStorage';
 import { extractProposalPatternsFromChunks } from './proposalPatternExtractor';
 import { inferUploadedDocumentRole } from './documentRoles';
-import { classifyFailureAreas, classifyOutcomeReason, getProposalPatternUsabilityFlags } from './outcomeReasonClassifier';
+import { buildPatternOutcomeFields } from './documentOutcomeMetadata';
 import type { JsonValue, ProposalPatternInput } from './dbTypes';
 import type { DocumentChunk } from './rag';
 import type { ProjectInput, UploadedDocument } from './types';
@@ -44,39 +44,24 @@ function logDocumentPersistenceError(operation: string, error: unknown) {
   console.error(`[documentPersistence] ${operation} failed: ${message}`);
 }
 
-function getMetadataString(metadata: JsonValue | null | undefined, key: string) {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
-  const value = metadata[key];
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function normalizeOutcome(value: string | null) {
-  if (value === 'won' || value === 'lost' || value === 'unknown') return value;
-  return value ? 'unknown' : null;
-}
-
 function applyOutcomeMetadata(patterns: ProposalPatternInput[], metadata: JsonValue | null | undefined) {
-  const outcome = normalizeOutcome(getMetadataString(metadata, 'outcome'));
-  const outcomeReason = getMetadataString(metadata, 'outcomeReason');
-  const explicitOutcomeReasonType = getMetadataString(metadata, 'outcomeReasonType');
-  const outcomeReasonType = classifyOutcomeReason(outcome, outcomeReason, explicitOutcomeReasonType);
-  const failureAreas = classifyFailureAreas(outcome, outcomeReason);
-  const usabilityFlags = getProposalPatternUsabilityFlags(failureAreas);
+  const fields = buildPatternOutcomeFields(metadata);
 
   return patterns.map((pattern) => ({
     ...pattern,
-    outcome,
-    outcome_reason: outcomeReason,
-    outcome_reason_type: outcomeReasonType,
-    failure_areas: failureAreas,
-    ...usabilityFlags,
+    outcome: fields.outcome,
+    outcome_reason: fields.outcome_reason,
+    outcome_reason_type: fields.outcome_reason_type,
+    failure_areas: fields.failure_areas,
+    ...fields.usabilityFlags,
     metadata: toJsonValue({
       ...(pattern.metadata && typeof pattern.metadata === 'object' && !Array.isArray(pattern.metadata) ? pattern.metadata : {}),
-      proposalOutcome: outcome,
-      proposalOutcomeReason: outcomeReason,
-      proposalOutcomeReasonType: outcomeReasonType,
-      outcomeReasonType,
-      failureAreas,
+      proposalOutcome: fields.outcome,
+      proposalOutcomeReason: fields.outcome_reason,
+      proposalOutcomeReasonType: fields.outcome_reason_type,
+      outcomeReasonType: fields.outcome_reason_type,
+      failureAreas: fields.failure_areas,
+      reference: fields.referenceContext,
     }),
   }));
 }
@@ -131,10 +116,9 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
 
     if (!project) return { status: 'failed', chunkCount: documentChunks.length, role, proposalPatternStatus: 'skipped', proposalPatternCount: 0 };
 
-    const normalizedOutcome = document.dbLibraryMetadata?.outcome;
-    const normalizedOutcomeReason = document.dbLibraryMetadata?.outcomeReason;
-    const outcomeReasonType = classifyOutcomeReason(normalizedOutcome, normalizedOutcomeReason, document.dbLibraryMetadata?.outcomeReasonType);
-    const failureAreas = classifyFailureAreas(normalizedOutcome, normalizedOutcomeReason);
+    // Derive the same outcome fields the patterns will get (lossReasonTags-aware) so documents.metadata stays consistent
+    // with proposal_patterns. Only stamped for the proposal role; reference/memo/rfp never receive an outcome.
+    const documentOutcomeFields = buildPatternOutcomeFields(toJsonValue(document.dbLibraryMetadata ?? {}));
 
     const documentRecord = await createDocument({
       projectId: project.id,
@@ -144,7 +128,7 @@ export async function persistUploadedDocumentToSupabase({ input, document, docum
       sourceType: document.visionUsed ? 'visionAnalysis' : 'textExtraction',
       metadata: toJsonValue({
         ...(document.dbLibraryMetadata ?? {}),
-        ...(role === 'proposal' ? { outcomeReasonType, failureAreas } : {}),
+        ...(role === 'proposal' ? { outcomeReasonType: documentOutcomeFields.outcome_reason_type, failureAreas: documentOutcomeFields.failure_areas } : {}),
         originalDocumentId: document.id,
         documentRole: role,
         documentType: document.documentType ?? null,
