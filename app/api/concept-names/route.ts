@@ -118,6 +118,50 @@ const SPEC_BANNED_NAME_PATTERNS: RegExp[] = [
 
 const BRAND_NOUN_GENERIC_TAILS = /^(experience|journey|moment|signature|insight|panorama|value|proof|hub|platform|zone|center|story|space|vision|future)$/i;
 
+// §3-7: generic spatial/installation-mood words. A title built ONLY on these (with ZERO project-specific brand/product
+// anchor token) describes spatial treatment, not the brand/product world — reject it. Allowed when paired with an anchor.
+const GENERIC_SPATIAL_SET = new Set(['transparent', 'light', 'process', 'window', 'pathway', 'continuum', 'radiance', 'harbor', 'gateway', 'horizon', 'threshold', 'passage', 'luminous', 'clarity', 'glow', 'flow', 'path', 'bridge', 'frame', 'lens', 'canvas', 'aura', 'prism', 'beam', 'ray', 'investment', '투명', '빛', '과정', '통로', '여백', '지평', '문', '경계', '잔상', '흐름', '길', '창', '빛결', '결', '문턱']);
+const TITLE_STOPWORDS = new Set(['of', 'the', 'a', 'an', 'and', 'to', 'in', 'for', 'with', 'on', 'by', 'is', 'be', '은', '는', '이', '가', '의', '와', '과', '을', '를', '로', '으로', '에']);
+const SECTION_HEADER_WORD = /^(overview|introduction|summary|agenda|appendix|conclusion|index|contents|background|objective|approach|phase|chapter|section)$/i;
+
+function nameTokensOf(name: string): string[] {
+  return (name || '').split(/[\s/·|,.\-—~()]+/).map((token) => token.replace(/[^가-힣a-z0-9]/gi, '').toLowerCase()).filter((token) => token.length >= 2);
+}
+// True when EVERY meaningful title token is a generic spatial/mood word AND the title carries ZERO anchor token. A title
+// that pairs a generic word with a project-specific anchor token (e.g. brand "blue" + "pathway") is NOT generic-only.
+function isGenericSpatialOnlyName(name: string, anchorTokenSet: Set<string>): boolean {
+  const tokens = nameTokensOf(name).filter((token) => !TITLE_STOPWORDS.has(token));
+  if (!tokens.length) return false;
+  if (tokens.some((token) => anchorTokenSet.has(token))) return false;
+  return tokens.every((token) => GENERIC_SPATIAL_SET.has(token));
+}
+function hasAnchorToken(name: string, anchorTokenSet: Set<string>): boolean {
+  return nameTokensOf(name).some((token) => anchorTokenSet.has(token));
+}
+// Conservative English-title quality: only obvious section-headers and 4+ chained-noun compounds with no connector.
+function isUnnaturalEnglishTitle(name: string): boolean {
+  const tokens = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return false;
+  if (tokens.length <= 2 && tokens.some((token) => SECTION_HEADER_WORD.test(token.replace(/[^a-z0-9]/gi, '')))) return true;
+  const latin = tokens.filter((token) => /[a-z]/i.test(token));
+  const connector = tokens.filter((token) => /^(of|the|a|an|and|to|in|for|with|on|by|&|·|—|-)$/i.test(token));
+  // 5+ chained Latin nouns with no connector reads as a broken compound; keep the bar conservative so legitimate
+  // 2-4 word bilingual cover titles are never bounced (the drop only feeds the regenerate-once path, not a hard fail).
+  return latin.length >= 5 && connector.length === 0;
+}
+
+const BRAND_WORLD_RFP_CONCEPT_TYPES = new Set<string>(['single_brand_experience', 'visitor_center_or_tour', 'product_experience_space', 'brand_experience']);
+
+// Deterministic per-RFP brand/product semantic anchor (no LLM, no schema change) — typed token buckets for the server
+// checks + a REQUIRED prompt block. forbidden-copy phrases / allowed tokens reuse the existing deny-list source.
+interface BrandProductSemanticAnchor {
+  preferredConceptVocabulary: string[];
+  brandProductTokenSet: Set<string>;
+  brandRequired: boolean;
+  summary: string;
+  promptBlock: string;
+}
+
 // True when the name is dominated by a banned abstract/consulting form or is just brand/client name + a generic noun.
 function isWeakConceptName(name: string, input: { clientName?: string; projectName?: string }) {
   const trimmed = (name || '').trim();
@@ -194,7 +238,7 @@ function isDescriptiveOrStrategyLabelName(name: string, dir: ConceptCandidate): 
 }
 
 // Stricter-filter instruction appended to the prompt for the single allowed regeneration when the first pass is all-weak.
-const STRICTER_RETRY_ADDENDUM = '\n\n[재생성 지시] 앞선 후보가 너무 일반적이거나 선택한 전략 방향과 약하게 연결되어 모두 거부되었다. 더 엄격하게 다시 생성하라: (1) 가치 증명/기억의 증명/인식 전환/경험 이해/가치 체험/실체화/한눈에 보는/___ 중심/___ 시그니처/Core Experience/Insight/Panorama/Signature/Experience/Journey/Moment 형태를 절대 쓰지 말 것. (2) 선택한 전략 방향의 directionAxis와 대표 설득 장면, 그리고 currentRfpVocabularySet의 실제 RFP 어휘에서 직접 도출할 것. (3) 브랜드/클라이언트명 단독 + 일반 명사 조합 금지. (4) 다른 RFP에도 그대로 쓸 수 있는 범용 이름 금지. (5) 표지 제목으로 바로 쓸 수 있는 짧고 구체적인 이름만. (6) 전시/콘텐츠/에너지/기술/쇼케이스 유형이면 모든 후보가 클라이언트·브랜드명 중심이 되지 않게 하고, 선택한 전략 방향의 관점·경험·전환·공간/콘텐츠 프레임을 표현하는 제안 표지 콘셉트 타이틀로 만든다. 후보마다 어휘와 논리를 다르게 한다. (7) 전략을 설명하는 서술형/전략 라벨/방향 라벨을 그대로 옮긴 이름, 슬로건이 있어야 의미가 생기는 이름은 거부한다. Concept Frame Synthesis의 symbolicFrame·experientialImage에서 압축한, 단독으로 서는 콘셉트 타이틀만 출력한다.';
+const STRICTER_RETRY_ADDENDUM = '\n\n[재생성 지시] 앞선 후보가 너무 일반적이거나 선택한 전략 방향과 약하게 연결되어 모두 거부되었다. 더 엄격하게 다시 생성하라: (1) 가치 증명/기억의 증명/인식 전환/경험 이해/가치 체험/실체화/한눈에 보는/___ 중심/___ 시그니처/Core Experience/Insight/Panorama/Signature/Experience/Journey/Moment 형태를 절대 쓰지 말 것. (2) 선택한 전략 방향의 directionAxis와 대표 설득 장면, 그리고 currentRfpVocabularySet의 실제 RFP 어휘에서 직접 도출할 것. (3) 브랜드/클라이언트명 단독 + 일반 명사 조합 금지. (4) 다른 RFP에도 그대로 쓸 수 있는 범용 이름 금지. (5) 표지 제목으로 바로 쓸 수 있는 짧고 구체적인 이름만. (6) 전시/콘텐츠/에너지/기술/쇼케이스 유형이면 모든 후보가 클라이언트·브랜드명 중심이 되지 않게 하고, 선택한 전략 방향의 관점·경험·전환·공간/콘텐츠 프레임을 표현하는 제안 표지 콘셉트 타이틀로 만든다. 후보마다 어휘와 논리를 다르게 한다. (7) 전략을 설명하는 서술형/전략 라벨/방향 라벨을 그대로 옮긴 이름, 슬로건이 있어야 의미가 생기는 이름은 거부한다. Concept Frame Synthesis의 symbolicFrame·experientialImage에서 압축한, 단독으로 서는 콘셉트 타이틀만 출력한다. (8) 후보가 transparent/light/process/window/pathway/continuum/radiance/harbor 같은 범용 공간·설치 무드 단어만으로 이루어졌거나 위 Brand/Product Semantic Anchor 의미장 토큰이 0개여서 거부되었다면, "브랜드 세계/제품 진실/감각/증명" 토큰을 conceptName에 직접 담아 다시 만든다(개별 의미 토큰 사용은 허용, 과거 컨셉명/슬로건 구절만 복사 금지).';
 
 function normalizeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9가-힣]/gi, '');
@@ -311,6 +355,56 @@ function buildBrandThemeToneAnchor(body: { input: ProjectInput; analysis: Analys
     '브랜드/제품 세계 차원(방문관·공장견학·쇼룸·브랜드 체험형에서 적극 활용): 브랜드 컬러·시그니처 색 / 제품 본질(성분·효능·진실) / 감각 단서 / 확인·증명 장면 / 방문 후 변화·전환 / 기억·잔상. 위 카테고리 고유 어휘와 현재 RFP가 뒷받침하는 한, 이 차원의 단어(예: 색·성분·공정·투명·균형 등 도메인 어휘)를 자유롭게 활용한다(과거 제안의 정확한 컨셉명/슬로건/페이지 제목 "구절"만 복사 금지이며, 개별 브랜드/카테고리 단어는 금지 대상이 아니다).',
     '요구: 3개 중 최소 1개(주제형)는 위 톤·어휘·테마·브랜드/제품 세계를 담아 현재 RFP에 고유하게 들려야 하고, 무관한 브랜드/전시에는 그대로 쓸 수 없어야 한다. 공간·빛·기억·임팩트·설치만 말하는 범용 이름, 브랜드/제품 세계·제품 진실·증명 장치를 무시한 이름, 무관한 방문관에도 맞는 이름은 거부하고 재생성한다. 단, 브랜드/클라이언트명 자체를 conceptName에 직접 넣지 않는다(톤·어휘·상징으로 간접 반영).',
   ].join('\n');
+}
+
+// §3-7: deterministic brand/product semantic anchor — typed token buckets from existing fields (brandProductIntelligence,
+// signatureProofIdea, rfpDiagnosis, reference brief) + a REQUIRED prompt block. No LLM, no schema change. The positive
+// counterpart to the deny-list: makes brand/product vocabulary REQUIRED, not just allowed.
+function buildBrandProductSemanticAnchor(
+  body: { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; primaryRfpConceptType?: string },
+  refBrief: WinningReferencePatternBrief | null,
+): BrandProductSemanticAnchor {
+  const bpi = body.brandProductIntelligence;
+  const dir = body.selectedDirection;
+  const sig = dir.signatureProofIdea;
+  const tok = (text?: string) => (text ? tokenizeKoreanNouns(text) : []);
+  const cap = (arr: string[], n = 10) => Array.from(new Set(arr.map((t) => t.trim()).filter((t) => t.length >= 2))).slice(0, n);
+
+  const brandWorldKeywords = cap([...(bpi?.brandSpecificVocabulary ?? []), ...tok(bpi?.clientOrBrandRole), ...(refBrief?.brandTonePattern ? tok(refBrief.brandTonePattern) : [])]);
+  const productTruthKeywords = cap([...tok(bpi?.productOrServiceMeaning), ...tok(bpi?.categoryContext)]);
+  const sensoryKeywords = cap([...tok(sig?.signatureContent), ...tok(sig?.signatureSpatialMove), ...tok(sig?.signatureMediaOrInteraction)]);
+  const proofKeywords = cap([...tok(sig?.signatureScene), ...tok((dir as { representativePersuasionScene?: string }).representativePersuasionScene), ...tok(body.rfpDiagnosis?.proofBurden)]);
+  const visitorTransformationKeywords = cap([...tok(bpi?.audiencePerceptionGap), ...tok(body.rfpDiagnosis?.hiddenNeed)]);
+  const processOrSystemKeywords = cap([...tok(bpi?.categoryContext), ...tok(sig?.signatureSpatialMove)]);
+
+  const preferredConceptVocabulary = cap([...brandWorldKeywords, ...productTruthKeywords, ...sensoryKeywords, ...proofKeywords, ...visitorTransformationKeywords], 20);
+  // Non-generic brand/product/sensory tokens for the server checks — a generic spatial word can never satisfy the anchor
+  // requirement, and a brand whose only vocab is generic yields an empty set that SOFT-DISABLES the gate (no over-drop).
+  const brandProductTokenSet = new Set([...brandWorldKeywords, ...productTruthKeywords, ...sensoryKeywords].map((t) => t.toLowerCase()).filter((t) => t.length >= 2 && !GENERIC_SPATIAL_SET.has(t)));
+
+  const rfpType = dir.rfpConceptType || body.primaryRfpConceptType || body.analysis.primaryRfpConceptType || '';
+  const ptype = normalizeProposalType(body.input.proposalType);
+  const isBrandWorldType = BRAND_WORLD_RFP_CONCEPT_TYPES.has(rfpType) || ptype === 'brand_experience' || ptype === 'visitor_center_tour';
+  const isMultiEntity = rfpType === 'multi_entity_pavilion';
+  const brandRequired = isBrandWorldType && !isMultiEntity && brandProductTokenSet.size > 0;
+
+  const line = (label: string, arr: string[]) => `${label}: ${arr.join(' / ') || '없음'}`;
+  const promptBlock = [
+    '=== Brand/Product Semantic Anchor (REQUIRED — 최소 1개 후보가 이 의미장에서 토큰을 직접 가져와야 함. 공간·빛·과정만 말하는 범용 이름 금지) ===',
+    line('브랜드 세계', brandWorldKeywords),
+    line('제품 진실', productTruthKeywords),
+    line('감각', sensoryKeywords),
+    line('증명', proofKeywords),
+    line('방문객 변화', visitorTransformationKeywords),
+    line('공정/시스템', processOrSystemKeywords),
+    line('우선 활용 어휘(positive pull)', preferredConceptVocabulary),
+    brandRequired
+      ? '요구: 최소 1개 후보(주제형)는 위 "브랜드 세계/제품 진실/감각" 토큰을 conceptName에 직접 담아 무관한 브랜드에는 그대로 쓸 수 없는 타이틀이어야 한다.'
+      : '요구: 위 의미장 토큰이 있으면 최소 1개 후보가 이를 conceptName에 담는다(다중 주체/공동관형은 파빌리온 프레임을 유지하고 브랜드 토큰을 강제하지 않는다).',
+    'transparent/light/process/window/pathway/continuum/radiance/harbor/투명/빛/과정/통로 같은 범용 공간·설치 무드 단어만으로 이루어진 이름(위 의미장 토큰 0개)은 거부하고 재생성한다. 단, 위 의미장 토큰과 결합하면 범용 단어도 허용한다. 개별 의미 토큰은 금지 대상이 아니다(정확한 과거 컨셉명/슬로건/페이지 제목 "구절"만 복사 금지). 현재 RFP가 지지하는 브랜드/카테고리/제품/증명/감각 어휘는 적극 사용하라.',
+  ].join('\n');
+
+  return { preferredConceptVocabulary, brandProductTokenSet, brandRequired, summary: preferredConceptVocabulary.slice(0, 8).join(', '), promptBlock };
 }
 
 // Concept Frame Synthesis: the step BEFORE naming that reframes the selected strategy into title territory so the model
@@ -436,9 +530,10 @@ function decidePrimaryConceptLanguage(body: { input: ProjectInput; analysis: Ana
 
 function buildFinalOptions(
   result: ConceptNameOptionsResult,
-  body: { input: ProjectInput; selectedDirection: ConceptCandidate; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[]; analysis?: AnalysisResult; brandProductIntelligence?: BrandProductIntelligence },
+  body: { input: ProjectInput; selectedDirection: ConceptCandidate; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[]; analysis?: AnalysisResult; brandProductIntelligence?: BrandProductIntelligence; candidateRole?: string },
   currentRfpVocabularySet: string[],
   forbiddenCopyTerms: string[] = [],
+  semanticAnchor?: BrandProductSemanticAnchor,
 ) {
   const styles = ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] as const;
   const repeatedHooks = genericHookCounts(result.options ?? []);
@@ -489,10 +584,21 @@ function buildFinalOptions(
   const vocabRich = currentRfpVocabularySet.length >= 6;
   const coverTitleFamily = isCoverTitleNamingFamily(body.input, body.selectedDirection);
   let descriptiveDrops = 0;
+  let genericSpatialDrops = 0;
+  let themeGateDrops = 0;
+  let englishQualityDrops = 0;
+  const anchorTokenSet = semanticAnchor?.brandProductTokenSet ?? new Set<string>();
   const quality = safe.filter((entry) => {
     const conceptName = entry.option.conceptName || '';
     if (isWeakConceptName(conceptName, body.input)) return false;
     if (vocabRich && !entry.usesVocabulary) return false;
+    // §3-7: reject a title built ONLY on generic spatial/mood words with ZERO brand/product anchor token (soft-disabled
+    // when the anchor set is empty, so an RFP with no brand intelligence still produces names). Allowed when paired.
+    if (anchorTokenSet.size && isGenericSpatialOnlyName(conceptName, anchorTokenSet)) { genericSpatialDrops += 1; return false; }
+    // §3-7: the 'theme' candidate (A) must carry a brand/product world token — gated to brand-world types via brandRequired.
+    if (semanticAnchor?.brandRequired && body.candidateRole === 'theme' && anchorTokenSet.size && !hasAnchorToken(conceptName, anchorTokenSet)) { themeGateDrops += 1; return false; }
+    // §3-7: drop unnatural English titles (section-header words / broken 4+ noun compounds) for Latin-dominant names.
+    if (isLatinDominantName(conceptName) && isUnnaturalEnglishTitle(conceptName)) { englishQualityDrops += 1; return false; }
     // Cover-title types: drop names that read like a descriptive summary / strategy label / direction-label restatement
     // (the title must be a compressed concept title, not an explanation). Drops feed the regenerate-once-then-error path.
     if (coverTitleFamily && isDescriptiveOrStrategyLabelName(conceptName, body.selectedDirection)) { descriptiveDrops += 1; return false; }
@@ -535,7 +641,7 @@ function buildFinalOptions(
       risk: option.risk ?? mainRisk,
     };
   });
-  return { options, diag: { returned: (result.options ?? []).length, deduped: deduped.length, safe: safe.length, quality: quality.length, blockedNameDrops, coverTitleFamily, allBrandCentered, descriptiveDrops } };
+  return { options, diag: { returned: (result.options ?? []).length, deduped: deduped.length, safe: safe.length, quality: quality.length, blockedNameDrops, coverTitleFamily, allBrandCentered, descriptiveDrops, genericSpatialDrops, themeGateDrops, englishQualityDrops } };
 }
 
 export async function POST(request: Request) {
@@ -573,6 +679,9 @@ export async function POST(request: Request) {
       learningGuidance.comparison.referenceBriefIsNeutral = learningGuidance.comparison.evidenceSource.wonCount === 0;
     }
     console.info('[concept-names:refBrief]', { hasReference: refBriefResult.hasReference, usable: refBriefResult.usable, forbiddenCount: refBriefResult.brief?.forbiddenCopyTerms?.length ?? 0, neutral: learningGuidance.comparison.referenceBriefIsNeutral ?? false });
+    // §3-7: required brand/product semantic anchor (deterministic) — the positive pull that makes brand vocabulary required.
+    const semanticAnchor = buildBrandProductSemanticAnchor(body, refBriefResult.brief);
+    console.info('[concept-names:semanticAnchor]', { brandRequired: semanticAnchor.brandRequired, anchorTokens: semanticAnchor.brandProductTokenSet.size, preferred: semanticAnchor.preferredConceptVocabulary.length });
     const winningPatternInfluenceBlock = formatWinningPatternInfluenceForConceptNaming(learningGuidance.comparison);
     const patternLearningSummary = buildPatternLearningSummary(learningGuidance.comparison);
     const conceptLanguage = decidePrimaryConceptLanguage(body);
@@ -593,9 +702,9 @@ export async function POST(request: Request) {
     // (theme/scene/declaration) carries the deliberate A/B/C variety across the client's per-candidate requests.
     const requestedCount = Math.max(1, Math.min(3, Math.floor(body.candidateCount ?? 3)));
     const roleHints: Record<string, string> = {
-      theme: '주제형 — 위 Brand/Theme Tone Anchor의 현재 전시 테마·카테고리·브랜드 톤·프로젝트 세계를 담아 현재 RFP에 고유하게 들리고 무관한 브랜드/전시에는 그대로 쓸 수 없는 타이틀(브랜드/클라이언트명 직접 사용 금지, 톤·어휘·상징으로 간접 반영, namingStyle은 Brand/category-specific phrase).',
-      scene: '장면형 — 대표 관람 경험·장면·움직임·공간/콘텐츠 순간을 기억에 남는 이미지로 압축(namingStyle은 Spatial/experience frame).',
-      declaration: '선언형 — 선택한 전략 방향을 표지 타이틀로 압축하되 전략 라벨이 되지 않게(namingStyle은 Direct claim 또는 Strong one-line statement).',
+      theme: '주제형(Brand/Product World Title) — 위 Brand/Product Semantic Anchor의 "브랜드 세계/제품 진실/감각" 토큰을 conceptName에 반드시 1개 이상 직접 담아, 현재 브랜드/제품 세계가 또렷이 드러나고 무관한 브랜드/방문관에는 그대로 쓸 수 없는 타이틀(브랜드/클라이언트명 자체는 직접 사용 금지, 톤·어휘·상징으로 반영, namingStyle은 Brand/category-specific phrase). transparent/light/process/window/pathway 같은 범용 공간·무드 단어만으로 만들지 말 것.',
+      scene: '장면형(Experience/Scene Title) — 대표 관람 경험·장면·움직임을 기억에 남는 이미지로 압축하되, 반드시 제품 진실 또는 증명 장치(위 Semantic Anchor의 제품 진실/증명 토큰)와 연결한다(namingStyle은 Spatial/experience frame). 공간 무드만 묘사하지 말 것.',
+      declaration: '선언형(Strategic/Proof Title) — 선택한 전략 방향을 표지 타이틀로 압축하되, 추상적 리더십/과정 라벨이 아니라 전략을 증명(위 Semantic Anchor의 증명 토큰)과 연결한다(namingStyle은 Direct claim 또는 Strong one-line statement).',
     };
     const requestedRole = typeof body.candidateRole === 'string' ? roleHints[body.candidateRole] : undefined;
     const namingStyleLine = '- namingStyle 필드를 반드시 다음 중 하나로 지정: Direct claim, Short bilingual title, Brand/category-specific phrase, Spatial/experience frame, Symbolic but grounded, Strong one-line statement.';
@@ -620,7 +729,7 @@ export async function POST(request: Request) {
       `Blocked example names are banned as outputs and paraphrase sources: ${BLOCKED_EXAMPLE_CONCEPT_NAMES.join(', ')}. Do not output or imitate them.`,
     ].join('\n');
 
-    const user = `${conceptFrameBlock}\n\n${namingAnchorBlock}\n\n${brandThemeToneBlock}\n\n${winningPatternInfluenceBlock}\n\n${languagePolicyBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
+    const user = `${conceptFrameBlock}\n\n${namingAnchorBlock}\n\n${brandThemeToneBlock}\n\n${semanticAnchor.promptBlock}\n\n${winningPatternInfluenceBlock}\n\n${languagePolicyBlock}\n\nconceptName은 위 Concept Frame Synthesis에서 압축한 콘셉트 타이틀이다. 전략을 설명하지 말고 타이틀로 전환하라: selectedStrategicDirectionLabel/oneLineSummary를 이름 템플릿으로 쓰지 말고, conceptName이 shortMeaning·oneLineSlogan·whyItFitsRfp가 할 일을 대신하지 않게 한다. 타이틀은 슬로건 없이도 단독으로 의미가 서야 하고 whyItFitsRfp를 압축한 문장이 아니어야 한다. 아래 RFP 맥락은 보조 정보이며, 프로젝트/클라이언트명은 보조 수식어로만 쓴다.\n프로젝트(맥락용): ${body.input.projectName}\n클라이언트(맥락용): ${body.input.clientName}\nRFP 분석 요약: ${compact(body.analysis, 5000)}\nSelected primaryRfpConceptType: ${body.selectedDirection.rfpConceptType || 'unknown'}
 Selected secondaryRfpConceptTypes: ${body.selectedDirection.secondaryRfpConceptTypes?.join(' / ') || 'none'}
 Relevant Matrix Type: ${sanitizedContext.matrixType}
 Active Matrix Type: ${sanitizedContext.activeMatrixType}
@@ -681,7 +790,7 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
       const attemptUser = `${user}${attempt === 0 ? '' : STRICTER_RETRY_ADDENDUM}${avoidLine}`;
       const attemptResult = await generate(attemptUser);
       if (attempt === 0) result = attemptResult;
-      const attemptBuilt = buildFinalOptions(attemptResult, attemptBody, currentRfpVocabularySet, forbiddenCopyTerms);
+      const attemptBuilt = buildFinalOptions(attemptResult, attemptBody, currentRfpVocabularySet, forbiddenCopyTerms, semanticAnchor);
       for (const option of attemptBuilt.options) {
         const key = normalizeName(option.conceptName || '');
         if (!key || acceptedNorm.has(key)) continue;
@@ -695,7 +804,7 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
     // requests and surfaces the final "couldn't reach 3" error — the server never blocks on reaching the full count.
     const finalOptions = accepted.slice(0, requestedCount).map((option, index) => ({ ...option, id: `${body.selectedDirection.conceptId || 'direction'}-${body.candidateRole || 'name'}-${index + 1}` }));
     console.info('[concept-names:incremental]', { requestedCount, returned: finalOptions.length, role: body.candidateRole ?? null });
-    return json({ ...successResponse({ ...(result ?? ({} as ConceptNameOptionsResult)), selectedDirectionId: body.selectedDirection.conceptId, options: finalOptions }), patternLearningSummary, winningReferenceBrief: refBriefResult.brief, requestedCount, returnedCount: finalOptions.length });
+    return json({ ...successResponse({ ...(result ?? ({} as ConceptNameOptionsResult)), selectedDirectionId: body.selectedDirection.conceptId, options: finalOptions }), patternLearningSummary, winningReferenceBrief: refBriefResult.brief, brandProductSemanticAnchorSummary: semanticAnchor.summary, requestedCount, returnedCount: finalOptions.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
     return json(errorResponse(WEAK_NAMING_ERROR, `reason=${classifyServerError(message)}; ${message}`), { status: 502 });

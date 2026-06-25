@@ -2331,6 +2331,8 @@ export default function Home() {
   // Incremental concept-candidate generation (§3-5): per-candidate progress + stale-guard refs so a direction/project
   // switch (or a new generation run) stops the in-flight loop instead of accumulating candidates for an abandoned scope.
   const [conceptGenProgress, setConceptGenProgress] = useState<{ current: number; total: number } | null>(null);
+  // §3-7: short read-only summary of the current RFP's brand/product semantic field, shown in the naming section.
+  const [conceptSemanticAnchorSummary, setConceptSemanticAnchorSummary] = useState('');
   const namingRunIdRef = useRef(0);
   const namingScopeRef = useRef({ directionKey: '', projectKey: '' });
 
@@ -3980,7 +3982,8 @@ export default function Home() {
         const payload = { ...basePayload, candidateCount: 1, candidateRole: role, generationNonce: (crypto.randomUUID ? crypto.randomUUID() : String(attempts)), recentNameOptions: blockNames, existingNamesForSelectedDirection: blockNames };
         const namingResponse = await fetch('/api/concept-names', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, cache: 'no-store', body: JSON.stringify(payload) });
         setFinalNamingDebug((current) => ({ ...current, responseStatus: namingResponse.status }));
-        const result = await parseJsonResponse<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string; patternLearningSummary?: PatternLearningSummary; winningReferenceBrief?: WinningReferencePatternBrief | null }>(namingResponse, '/api/concept-names');
+        const result = await parseJsonResponse<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string; patternLearningSummary?: PatternLearningSummary; winningReferenceBrief?: WinningReferencePatternBrief | null; brandProductSemanticAnchorSummary?: string }>(namingResponse, '/api/concept-names');
+        if (typeof result.brandProductSemanticAnchorSummary === 'string') setConceptSemanticAnchorSummary(result.brandProductSemanticAnchorSummary);
         if (!namingResponse.ok) throw new Error(result.details ? `${result.error || '컨셉명 생성 실패'} (${result.details})` : (result.error || '컨셉명 생성 중 오류가 발생했습니다.'));
         if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
         if (result.patternLearningSummary) cachedPatternSummary = result.patternLearningSummary;
@@ -4614,6 +4617,7 @@ export default function Home() {
                   <p className="font-bold text-slate-900">선택한 전략 방향 · {selectedStrategicDirectionLabel}</p>
                   <p className="mt-1 leading-6 text-slate-600">{shortText(getStrategicBet(selectedStrategicDirection!), 120)}</p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">이 방향의 핵심 논리를 컨셉명으로 압축한 후보입니다. 가장 잘 맞는 이름을 선택하세요.</p>
+                  {conceptSemanticAnchorSummary && <p className="mt-1 text-xs leading-5 text-slate-400">현재 RFP의 브랜드/제품 의미장: {conceptSemanticAnchorSummary}</p>}
                 </div>
                 {state.conceptPatternLearningSummary?.used && (
                   <details className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3">
