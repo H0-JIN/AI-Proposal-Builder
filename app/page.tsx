@@ -371,9 +371,18 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
 
-  const data = await parseJsonResponse<{ error?: string; message?: string }>(response, url);
+  const data = await parseJsonResponse<{ error?: string; message?: string; failureStage?: string; hardBlockerReasons?: string[]; repairableReasons?: string[]; repairAttempts?: string[]; missingInputs?: string[]; userActionNeeded?: string }>(response, url);
   if (!response.ok) {
-    throw new Error(data.error || data.message || '요청 처리 중 오류가 발생했습니다.');
+    const developmentDetail = [
+      data.failureStage ? `failureStage=${data.failureStage}` : '',
+      data.hardBlockerReasons?.length ? `hardBlockerReasons=${data.hardBlockerReasons.join(' / ')}` : '',
+      data.repairableReasons?.length ? `repairableReasons=${data.repairableReasons.join(' / ')}` : '',
+      data.repairAttempts?.length ? `repairAttempts=${data.repairAttempts.join(' → ')}` : '',
+      data.missingInputs?.length ? `missingInputs=${data.missingInputs.join(' / ')}` : '',
+      data.userActionNeeded ? `userActionNeeded=${data.userActionNeeded}` : '',
+    ].filter(Boolean).join('\n');
+    const baseMessage = data.error || data.message || '요청 처리 중 오류가 발생했습니다.';
+    throw new Error(developmentDetail ? `${baseMessage}\n\n개발 상세:\n${developmentDetail}` : baseMessage);
   }
 
   return data as T;

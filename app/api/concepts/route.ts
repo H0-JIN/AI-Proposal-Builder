@@ -16,6 +16,20 @@ import { extractRfpConceptHierarchy, hierarchyThemeSeeds, formatRfpHierarchyAnch
 const DEFAULT_CONCEPT_COUNT = 3;
 const ALLOWED_DIRECTION_AXES = ['representative_position', 'audience_understanding', 'signature_scene', 'product_value_proof', 'process_trust', 'category_shift', 'system/ecosystem_proof', 'spatial_journey', 'brand_memory', 'operational_confidence', 'evaluator_clarity', 'emotional_affinity', 'technology_reality_proof'] as const;
 const CONCEPT_GENERATION_TIMEOUT_MS = Number(process.env.CONCEPT_GENERATION_TIMEOUT_MS ?? 18_000);
+const STRATEGIC_DIRECTION_USER_ERROR = '전략 방향을 완성하지 못했습니다. 분석 결과는 유지됩니다. 진단 내용을 보완하거나 다시 생성해 주세요.';
+
+type DirectionFailureStage = 'llm_call_failure' | 'schema_parse_failure' | 'discovery_brief_failure' | 'under_generation' | 'all_directions_hard_blocked' | 'repair_path_failed' | 'final_validation_failed' | 'unknown';
+
+interface DirectionRepairDiagnostics {
+  failureStage?: DirectionFailureStage;
+  hardBlockerReasons: string[];
+  repairableReasons: string[];
+  warnings: string[];
+  repairAttempts: string[];
+  missingInputs: string[];
+  userActionNeeded: string;
+}
+
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -378,25 +392,36 @@ function isValidDirectionLabel(label: string, conceptType: RfpConceptType): bool
 }
 
 function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: StrategicDirectionPlanItem) {
-  const text = [
-    concept.strategicDirectionLabel,
-    concept.whatThisDirectionEmphasizes,
-    concept.whenToChooseThisDirection,
-    concept.winningThesisUse?.winningClaim,
-    concept.conceptLeap?.conceptLeap,
-    concept.signatureProofIdea?.whyThisProvesTheConcept,
-    concept.mainStrength,
-  ].filter(Boolean).join(' ');
-  const factLikeLabel = isRfpFactDirectionText(concept.strategicDirectionLabel || '');
+  const label = (concept.strategicDirectionLabel || '').trim();
+  const text = [label, concept.whatThisDirectionEmphasizes, concept.whenToChooseThisDirection, concept.winningThesisUse?.winningClaim, concept.conceptLeap?.conceptLeap, concept.signatureProofIdea?.whyThisProvesTheConcept, concept.mainStrength].filter(Boolean).join(' ');
+  const factLikeLabel = isRfpFactDirectionText(label);
   const isOnlyBasicRequirement = BASIC_DIRECTION_PATTERN.test(text) || factLikeLabel;
   const addressesCoreWinningCondition = Boolean(concept.winningThesisUse?.winningClaim || planItem.emphasis);
   const addressesStrategicTension = Boolean(concept.winningThesisUse?.audiencePerceptionGap || concept.winningThesisUse?.contextShift || concept.conceptLeap?.fromStatement || planItem.directionAxis);
   const addressesProofBurden = Boolean(concept.winningThesisUse?.whatMustBeProven || concept.signatureProofIdea?.whyThisProvesTheConcept || concept.requiredProofElementsAddressed?.length || planItem.rfpEvidence);
   const hasDistinctPointOfView = Boolean(concept.conceptLeap?.conceptLeap || concept.signatureProofIdea?.whyThisIsNotGeneric || planItem.directionAxis) && !isOnlyBasicRequirement;
-  const couldFitAnyRfp = !concept.directionSource?.rfpEvidence && !(concept.rfpGrounding?.length) || /^(전략 방향|브랜드 경험 방향|정보 전달|안정 운영|요구 충족|균형 구성|통합 관리|콘텐츠 정리)$/i.test((concept.strategicDirectionLabel || '').trim());
+  const couldFitAnyRfp = (!concept.directionSource?.rfpEvidence && !(concept.rfpGrounding?.length)) || /^(전략 방향|브랜드 경험 방향|정보 전달|안정 운영|요구 충족|균형 구성|통합 관리|콘텐츠 정리)$/i.test(label);
   const hasRepresentativePersuasionScene = Boolean(concept.signatureProofIdea?.signatureScene || concept.signatureProofIdea?.signatureContent || concept.signatureProofIdea?.whyThisProvesTheConcept);
   const directionAxisIsValid = Boolean((concept.directionAxis || planItem.directionAxis) && (ALLOWED_DIRECTION_AXES as readonly string[]).includes((concept.directionAxis || planItem.directionAxis) as typeof ALLOWED_DIRECTION_AXES[number]));
-  const isStrategicBet = !isOnlyBasicRequirement && addressesCoreWinningCondition && addressesProofBurden && hasDistinctPointOfView && !couldFitAnyRfp && hasRepresentativePersuasionScene && directionAxisIsValid;
+  const labelIsValid = isValidDirectionLabel(label, planItem.rfpConceptType);
+  const hardBlockerReasons = [
+    !label ? 'empty direction' : '',
+    isOnlyBasicRequirement ? 'proposal-type preset/basic requirement direction' : '',
+    couldFitAnyRfp ? 'missing current RFP evidence or generic fallback direction' : '',
+    !addressesCoreWinningCondition ? 'missing Proposal Strategy Diagnosis / core winning condition linkage' : '',
+    !addressesProofBurden ? 'missing current RFP evidence / proof burden linkage' : '',
+    !directionAxisIsValid ? 'no valid distinct strategic axis' : '',
+  ].filter(Boolean);
+  const repairableReasons = [
+    label && !labelIsValid ? 'weak or keyword-like strategicDirectionLabel' : '',
+    !concept.oneLineSummary && !(concept.oneLineStrategicBet || concept.whatThisDirectionEmphasizes) ? 'shallow one-line summary' : '',
+    !concept.conceptLeap?.conceptLeap ? 'missing conceptLeap' : '',
+    !hasRepresentativePersuasionScene ? 'weak signatureProofIdea' : '',
+    !addressesStrategicTension ? 'weak brand/product or tension evidence linkage' : '',
+    !hasDistinctPointOfView ? 'direction too similar or point of view unclear' : '',
+  ].filter(Boolean);
+  const warnings = [labelIsValid && label.split(/[\s/·|]+/).filter(Boolean).length <= 2 ? 'title could be stronger' : ''].filter(Boolean);
+  const isStrategicBet = hardBlockerReasons.length === 0 && repairableReasons.length === 0;
   return {
     isStrategicBet,
     isOnlyBasicRequirement,
@@ -405,17 +430,19 @@ function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: St
     addressesProofBurden,
     hasDistinctPointOfView,
     couldFitAnyRfp,
-    isStrategicChoice: isStrategicBet,
+    isStrategicChoice: hardBlockerReasons.length === 0,
     notRfpFactSummary: !factLikeLabel,
     notScheduleVenueScaleFact: !factLikeLabel,
     notRequirementList: !isOnlyBasicRequirement,
     directionAxisIsValid,
     hasRepresentativePersuasionScene,
     hasDistinctWinningLogic: hasDistinctPointOfView,
-    canGenerateUniqueConceptNames: isStrategicBet,
-    validationReason: isStrategicBet
-      ? '현재 RFP의 winning condition과 proof burden을 해결하는 선택지로 검증됨.'
-      : '기본 수행조건/범용 방향으로 감지되어 confirmed diagnosis 기반 전략적 베팅으로 수리 필요.',
+    canGenerateUniqueConceptNames: hardBlockerReasons.length === 0,
+    severity: (hardBlockerReasons.length ? 'hard' : repairableReasons.length ? 'repairable' : warnings.length ? 'warning' : 'passed') as 'hard' | 'repairable' | 'warning' | 'passed',
+    hardBlockerReasons,
+    repairableReasons,
+    warnings,
+    validationReason: hardBlockerReasons.length ? hardBlockerReasons.join(' / ') : repairableReasons.length ? repairableReasons.join(' / ') : warnings.length ? warnings.join(' / ') : '현재 RFP의 winning condition과 proof burden을 해결하는 선택지로 검증됨.',
   };
 }
 
@@ -1289,9 +1316,32 @@ function validateAndRepairDirectionCards(concepts: ConceptCandidate[], plan: Str
   });
 }
 
+function collectDirectionDiagnostics(concepts: ConceptCandidate[], missingInputs: string[] = [], failureStage?: DirectionFailureStage): DirectionRepairDiagnostics {
+  return {
+    failureStage,
+    hardBlockerReasons: concepts.flatMap((concept, index) => (concept.strategicDirectionQualityValidation?.hardBlockerReasons ?? []).map((reason) => `C${index + 1}: ${reason}`)),
+    repairableReasons: concepts.flatMap((concept, index) => (concept.strategicDirectionQualityValidation?.repairableReasons ?? []).map((reason) => `C${index + 1}: ${reason}`)),
+    warnings: concepts.flatMap((concept, index) => (concept.strategicDirectionQualityValidation?.warnings ?? []).map((reason) => `C${index + 1}: ${reason}`)),
+    repairAttempts: ['initial generation', 'severity classification', 'field-level repair', 'under-generated replacement from discovery brief', 'final validation'],
+    missingInputs,
+    userActionNeeded: '진단/브랜드 이해/RFP 근거를 보완한 뒤 전략 방향만 다시 생성해 주세요.',
+  };
+}
+
+function withDirectionQuality(concepts: ConceptCandidate[], plan: StrategicDirectionPlanItem[]): ConceptCandidate[] {
+  return concepts.map((concept, index) => {
+    const planItem = plan[index] ?? plan[0];
+    return { ...concept, strategicDirectionQualityValidation: buildDirectionQualityValidation(concept, planItem) };
+  });
+}
+
+function buildDiscoveryBriefReplacement(index: number, planItem: StrategicDirectionPlanItem, analysis: AnalysisResult, narrative: ProposalNarrative): ConceptCandidate {
+  return repairBasicStrategicDirection(fallbackCandidate(index + 1, '', analysis, narrative, planItem.rfpConceptType), planItem);
+}
+
 function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { primaryType: RfpConceptType; matrixType: MatrixType; plan: StrategicDirectionPlanItem[]; brandExperienceMatrix: BrandExperienceMatrixItem[]; entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix']; sanitizerApplied?: boolean; sanitizerReason?: string; rawMatrixType?: MatrixType; rawPrimaryRfpConceptType?: RfpConceptType; multiEntityEvidenceCount?: number; singleBrandVisitorRoomEvidenceCount?: number; subjects?: DirectionSubjects }): ConceptCandidatesResult {
   const activeMatrixSummary = summarizeActiveMatrix(params.matrixType, { entityCount: params.matrixType === 'entityDifferentiationMatrix' ? params.entityMatrix.length : 0, brandExperienceMatrix: params.brandExperienceMatrix });
-  const sourceConcepts = Array.from({ length: DEFAULT_CONCEPT_COUNT }, (_, index) => result.concepts[index] ?? fallbackCandidate(index + 1, '', { projectOverview: params.plan[index]?.rfpEvidence || params.plan[0]?.rfpEvidence || '', clientChallenge: params.plan[index]?.emphasis || params.plan[0]?.emphasis || '' } as AnalysisResult, { proposalThesis: params.plan[index]?.emphasis || params.plan[0]?.emphasis || '', strategicOpportunity: params.plan[index]?.chooseWhen || params.plan[0]?.chooseWhen || '', coreProblem: '', whyThisConcept: '', unifyingFrame: '', differentiationPrinciple: '' } as ProposalNarrative));
+  const sourceConcepts = Array.from({ length: DEFAULT_CONCEPT_COUNT }, (_, index) => result.concepts[index] ?? fallbackCandidate(index + 1, '', { projectOverview: params.plan[index]?.rfpEvidence || params.plan[0]?.rfpEvidence || '', clientChallenge: params.plan[index]?.emphasis || params.plan[0]?.emphasis || '', requiredScope: [params.plan[index]?.rfpEvidence || params.plan[0]?.rfpEvidence || ''] } as AnalysisResult, { proposalThesis: params.plan[index]?.emphasis || params.plan[0]?.emphasis || '', strategicOpportunity: params.plan[index]?.chooseWhen || params.plan[0]?.chooseWhen || '', coreProblem: '', whyThisConcept: '', unifyingFrame: '', differentiationPrinciple: '' } as ProposalNarrative, params.plan[index]?.rfpConceptType || params.plan[0]?.rfpConceptType));
   let concepts: ConceptCandidate[] = enforceDistinctDirectionAxes(sourceConcepts.map((concept, index) => enforceStrategicDirectionGate(concept, params.plan[index] ?? params.plan[0])), params.plan);
   let joined = concepts.map((concept) => [concept.strategicDirectionLabel, concept.whatThisDirectionEmphasizes, concept.whenToChooseThisDirection, concept.winningThesisUse?.winningClaim, concept.conceptLeap?.conceptLeap, concept.signatureProofIdea?.whyThisProvesTheConcept, concept.proposalCoreConceptName, concept.proposalCoreConceptSlogan, concept.proposalCoreConceptDefinition, concept.whyThisIsCoreConcept, concept.experiencePrinciple, concept.visitorJourney, concept.contentMediaImplication, concept.mainStrength, concept.mainRisk].filter(Boolean).join(' ')).join(' ');
   let blockedTerms = params.primaryType === 'multi_entity_pavilion' ? [] : BLOCKED_MULTI_ENTITY_TERMS.filter((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(joined));
@@ -1318,6 +1368,12 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
   }
   concepts = dedupeDirectionLabels(concepts);
   concepts = validateAndRepairDirectionCards(concepts, params.plan, params.subjects);
+  concepts = withDirectionQuality(concepts, params.plan);
+  const hardBlockedCount = concepts.filter((concept) => concept.strategicDirectionQualityValidation?.severity === 'hard').length;
+  if (hardBlockedCount === concepts.length) {
+    concepts = concepts.map((concept, index) => repairBasicStrategicDirection(concept, params.plan[index] ?? params.plan[0]));
+    concepts = withDirectionQuality(validateAndRepairDirectionCards(dedupeDirectionLabels(concepts), params.plan, params.subjects), params.plan);
+  }
   const contaminationCheckPassed = blockedTerms.length === 0;
   return {
     ...result,
@@ -1954,17 +2010,18 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
         maxRetries: 1,
       });
 
-      // §9: do NOT pad an under-generated result with hardcoded preset cards (fallbackCandidate). If the model returned
-      // fewer than 3 directions, treat it as a generation failure → the catch returns a retry signal (no generic cards).
-      if ((generated.concepts?.length ?? 0) < 3) throw new Error('under_generation: model returned fewer than 3 strategic directions');
+      const underGeneratedCount = generated.concepts?.length ?? 0;
+      const generatedWithReplacements = underGeneratedCount < 3
+        ? { ...generated, concepts: Array.from({ length: 3 }, (_, index) => generated.concepts?.[index] ?? buildDiscoveryBriefReplacement(index, strategicDirectionPlan[index] ?? strategicDirectionPlan[0], body.analysis, proposalNarrative)) }
+        : generated;
 
       let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({
-        ...generated,
+        ...generatedWithReplacements,
         conceptPromptVersion,
         regenerationId: metadata.regenerationId,
         generationAttempt: metadata.generationAttempt,
         generatedAt: metadata.generatedAt,
-        concepts: generated.concepts.slice(0, maxCandidates),
+        concepts: generatedWithReplacements.concepts.slice(0, maxCandidates),
       }, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount, subjects: directionSubjects })));
       result.rfpDiagnosis = body.rfpDiagnosis;
       result.brandProductIntelligence = body.brandProductIntelligence;
@@ -1972,7 +2029,11 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       result.currentRfpOnlyMode = true;
       result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: [] });
       result = repairEntityBalance(result, balancedEvidenceSummary);
-      return conceptsJson(attachGenerationMetadata(result, metadata));
+      const directionDiagnostics = collectDirectionDiagnostics(result.concepts, [], underGeneratedCount < 3 ? 'under_generation' : undefined);
+      if (result.concepts.every((concept) => concept.strategicDirectionQualityValidation?.severity === 'hard')) {
+        return conceptsJson({ error: STRATEGIC_DIRECTION_USER_ERROR, reason: 'direction_generation_failed', conceptPromptVersion, failureStage: 'all_directions_hard_blocked', ...directionDiagnostics }, { status: 502 });
+      }
+      return conceptsJson(attachGenerationMetadata({ ...result, directionRepairDiagnostics: directionDiagnostics }, metadata));
     } catch (error) {
       // REGRESSION FIX (§9): do NOT render the hardcoded 3-preset fallback cards as final strategic directions — those are
       // identical across RFPs and are the second source of the near-identical-directions bug. On any failure/timeout we
@@ -1980,7 +2041,7 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       // and shows a retry CTA (regenerate from current-RFP evidence only). A generic fallback never reaches the user.
       const reason = error instanceof Error ? error.message : 'generation timeout';
       console.error(`[concepts] strategic direction generation failed — returning retry signal (no generic fallback): ${reason}`);
-      return conceptsJson({ error: '전략 방향 생성에 실패했습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.', reason: 'direction_generation_failed', conceptPromptVersion }, { status: 502 });
+      return conceptsJson({ error: STRATEGIC_DIRECTION_USER_ERROR, reason: 'direction_generation_failed', conceptPromptVersion, failureStage: reason.includes('schema') || reason.includes('parse') ? 'schema_parse_failure' : reason.includes('timeout') ? 'llm_call_failure' : 'repair_path_failed', hardBlockerReasons: [], repairableReasons: [reason], repairAttempts: ['initial generation'], missingInputs: [], userActionNeeded: '진단 내용을 보완하거나 전략 방향만 다시 생성해 주세요.' }, { status: 502 });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.';
