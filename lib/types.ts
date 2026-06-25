@@ -686,7 +686,12 @@ export interface StrategicDirectionQualityValidation {
   hasDistinctWinningLogic?: boolean;
   canGenerateUniqueConceptNames?: boolean;
   validationReason: string;
+  severity?: 'hard' | 'repairable' | 'warning' | 'passed';
+  hardBlockerReasons?: string[];
+  repairableReasons?: string[];
+  warnings?: string[];
 }
+
 
 export interface ConceptCandidate {
   conceptId: string;
@@ -854,6 +859,15 @@ export interface ConceptCandidatesResult {
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
+  directionRepairDiagnostics?: {
+    failureStage?: string;
+    hardBlockerReasons: string[];
+    repairableReasons: string[];
+    warnings: string[];
+    repairAttempts: string[];
+    missingInputs: string[];
+    userActionNeeded: string;
+  };
   directionValidation?: {
     allDirectionsAreStrategicBets?: boolean;
     noBasicRequirementDirections?: boolean;
