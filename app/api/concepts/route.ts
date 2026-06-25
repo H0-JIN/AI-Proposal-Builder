@@ -115,7 +115,7 @@ function isAxisTranslationLabel(label: string): boolean {
 // The generic "[subject] + 인식 전환 / 경험 이해 / 가치 체험 / 가치 증명 / 실체화 / 한눈에 보는 / ___ 중심 / ___ 시그니처
 // / Core Experience / Insight / Panorama / Signature / 설득 / 이해 / 체감" template smell.
 // Matched ANYWHERE (not just end-of-string) so a trailing word can't smuggle it past, e.g. "견학룸 인식 전환 경험".
-const WEAK_DIRECTION_LABEL_PATTERN = /인식\s*전환|경험\s*이해|가치\s*체험|가치\s*체감|가치\s*증명|실체화|한눈에\s*보는|시그니처|중심(?=\s|$)|core\s*experience|\binsight\b|\bpanorama\b|\bsignature\b|(?:^|\s)(?:이해|체감|설득)(?=\s|$)/i;
+const WEAK_DIRECTION_LABEL_PATTERN = /인식\s*전환|경험\s*이해|가치\s*체험|가치\s*체감|가치\s*증명|실체화|한눈에\s*보는|시그니처|중심(?=\s|$)|core\s*experience|\binsight\b|\bpanorama\b|\bsignature\b|(?:^|\s)(?:이해|체감|설득)(?=\s|$)|관점\s*재정의|대표성\s*각인|실증\s*설계|신뢰\s*체험화|직관\s*설계|핵심\s*압축|정서\s*공감|운영\s*신뢰|기억화|현재화/i;
 
 // Facility/space words that make a label facility-centered when they anchor it (subject or object).
 // NOTE: process words like "공정" are deliberately NOT here — "공정 신뢰 체험화" is a valid strategic label.
@@ -187,6 +187,19 @@ function contextualDirectionLabel(canonicalAxis: string, contextNoun: string): s
   const ctx = (contextNoun || '브랜드').trim() || '브랜드';
   const template = AXIS_LABEL_TEMPLATES[canonicalAxis];
   return template ? template(ctx) : `${ctx} 전략 방향`;
+}
+
+// §2b/§10 deterministic LAST-RESORT label: an RFP-SPECIFIC noun phrase from THIS card's own evidence (subject + the most
+// distinctive non-generic evidence word) — never a noun-swap axis template, so two different RFPs get different fallback
+// labels even when the model label is rejected. The model's own RFP-grounded label is always preferred over this.
+const GENERIC_DIRECTION_LABEL_WORDS = new Set(['전략', '방향', '제안', '현재', '근거', '평가', '관람', '방문', '경험', '가치', '설득', '증명', '이해', '신뢰', '공간', '콘텐츠', '미디어', '운영', '실행', '브랜드', '제품', '대상', '핵심', '요구', '구조', '기준', '관점', '대표성', '시그니처']);
+function evidenceDerivedDirectionLabel(planItem: StrategicDirectionPlanItem): string {
+  const subject = (planItem.contextNoun || '').trim();
+  const evidence = `${planItem.rfpEvidence || ''} ${planItem.emphasis || ''}`.trim();
+  const words = evidence.split(/[\s,./·|—()[\]]+/u).map((word) => word.replace(/[^가-힣A-Za-z0-9]/g, '')).filter((word) => word.length >= 2);
+  const distinctive = words.find((word) => !GENERIC_DIRECTION_LABEL_WORDS.has(word) && word !== subject) || words.find((word) => word !== subject) || '';
+  const core = [subject, distinctive].filter(Boolean).join(' ').trim();
+  return compactText(core || subject || evidence, 18) || '현재 RFP 전략 방향';
 }
 
 // Content-format / deliverable / process words must never become the subject of a strategy label.
@@ -409,7 +422,7 @@ function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: St
 function repairBasicStrategicDirection(concept: ConceptCandidate, planItem: StrategicDirectionPlanItem): ConceptCandidate {
   const repaired = {
     ...concept,
-    strategicDirectionLabel: isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : planItem.label,
+    strategicDirectionLabel: isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : evidenceDerivedDirectionLabel(planItem),
     strategicDirectionType: planItem.type,
     directionAxis: planItem.directionAxis || planItem.type,
     whatThisDirectionEmphasizes: planItem.emphasis,
@@ -938,8 +951,11 @@ function buildStrategicDirectionDiscoveryBrief(analysis: AnalysisResult, narrati
     : (contextAxisSets[conceptType] ?? []);
   const leadAxes = contextSet.map((axisKey) => `${axisKey}: ${axisEvidence(axisKey)}`);
 
+  // REGRESSION FIX (§2): the directions must be derived from CURRENT-RFP EVIDENCE, not the proposal-type preset. baseAxes
+  // (each backed by firstEvidence from THIS RFP's analysis/diagnosis) therefore lead; the type-keyed contextSet (leadAxes)
+  // is demoted to a SUPPLEMENTARY guardrail that only fills remaining slots. Proposal type never prescribes the axis set.
   const seenAxisKeys = new Set<string>();
-  const possibleDirectionAxes = [...leadAxes, ...baseAxes].filter((axis) => {
+  const possibleDirectionAxes = [...baseAxes, ...leadAxes].filter((axis) => {
     const key = canonicalizeDirectionAxis(axis);
     if (seenAxisKeys.has(key)) return false;
     seenAxisKeys.add(key);
@@ -1037,7 +1053,7 @@ function formatStrategicDirectionPlanForPrompt(plan: StrategicDirectionPlanItem[
 - possibleDirectionAxes: ${brief.possibleDirectionAxes.join(' / ')}
 
 ` : '';
-  return `${briefText}${plan.map((item, index) => `C${index + 1}: ${item.label} (${item.type})
+  return `${briefText}${plan.map((item, index) => `C${index + 1} [내부 작업용 axis: ${item.type} — 라벨 템플릿이 아님] · strategicDirectionLabel은 아래 rfpEvidence와 Discovery Brief에서 현재 RFP 고유 라벨로 새로 작성하라(명사치환 템플릿 금지)
 - directionAxis: ${item.directionAxis || item.type}
 - primaryRfpConceptType: ${item.rfpConceptType}
 - secondaryRfpConceptTypes: ${item.secondaryRfpConceptTypes.join(' / ') || 'none'}
@@ -1061,7 +1077,8 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
   // Preserve the model's axis/label when valid; otherwise fall back to the canonical plan axis and a clean strategic label.
   const planAxis = canonicalizeDirectionAxis(planItem.directionAxis || planItem.type);
   const modelAxis = concept.directionAxis && (ALLOWED_DIRECTION_AXES as readonly string[]).includes(concept.directionAxis) ? concept.directionAxis : planAxis;
-  const planLabel = isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planAxis) : planItem.label;
+  // §2b: when the model's label is rejected, fall back to an RFP-SPECIFIC evidence-derived label, never the noun-swap axis template.
+  const planLabel = evidenceDerivedDirectionLabel(planItem);
   const chosenLabel = isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : planLabel;
   const gated: ConceptCandidate = {
     ...concept,
@@ -1083,7 +1100,7 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
   if (planItem.rfpConceptType !== 'multi_entity_pavilion') {
     const joined = [gated.strategicDirectionLabel, gated.whatThisDirectionEmphasizes, gated.whenToChooseThisDirection, gated.strategicApproach, gated.coreMessage, gated.proposalCoreConceptName, gated.proposalCoreConceptSlogan, gated.proposalCoreConceptDefinition, gated.whyThisIsCoreConcept, gated.experiencePrinciple, gated.visitorJourney, gated.contentMediaImplication, gated.mainStrength, gated.mainRisk, gated.conceptLeap?.conceptLeap, gated.conceptLeap?.corePromise, gated.winningThesisUse?.winningClaim, gated.signatureProofIdea?.signatureScene, gated.signatureProofIdea?.signatureContent, gated.signatureProofIdea?.whyThisProvesTheConcept].join(' ');
     if (MULTI_ENTITY_LEAKAGE_PATTERN.test(joined)) {
-      gated.strategicDirectionLabel = planItem.label;
+      gated.strategicDirectionLabel = evidenceDerivedDirectionLabel(planItem);
       gated.whatThisDirectionEmphasizes = planItem.emphasis;
       gated.whenToChooseThisDirection = planItem.chooseWhen;
       gated.winningThesisUse = fallbackThesis as ConceptCandidate['winningThesisUse'];
@@ -1219,9 +1236,10 @@ function validateAndRepairDirectionCards(concepts: ConceptCandidate[], plan: Str
     // Reject when blank/long/hero/generic, an exact duplicate, OR shares the same trailing token as another card
     // (so the 3 labels never read as one mechanical pattern).
     if (!label || !labelIsShort || !labelIsNotHeroGeneric || !labelIsContextual || seenLabel.has(label.toLowerCase()) || seenLabelTail.has(labelTailOf(label))) {
-      let next = contextualDirectionLabel(axis, ctx);
+      const base = evidenceDerivedDirectionLabel(planItem);
+      let next = base;
       let n = 2;
-      while (seenLabel.has(next.toLowerCase())) { next = `${contextualDirectionLabel(axis, ctx)} ${n}`; n += 1; }
+      while (seenLabel.has(next.toLowerCase())) { next = `${base} ${n}`; n += 1; }
       label = next;
     }
     // Brand-name guard: the brand name is only allowed on the leadership axis. Elsewhere, or when it is brand+generic,
@@ -1254,7 +1272,7 @@ function validateAndRepairDirectionCards(concepts: ConceptCandidate[], plan: Str
 
     // Cross-RFP contamination guard: drop category terms the current RFP does not support, then regenerate the
     // field from the RFP-derived subject (clean for non-matching RFPs, e.g. strips 수분/포카리 from a hydrogen card).
-    if (isCrossRfpContaminated(label, evidenceBlob)) label = contextualDirectionLabel(axis, ctx);
+    if (isCrossRfpContaminated(label, evidenceBlob)) label = evidenceDerivedDirectionLabel(planItem);
     if (isCrossRfpContaminated(bet, evidenceBlob)) bet = directionStrategicBet(axis, ctx, rfpEvidence);
     if (isCrossRfpContaminated(criterion, evidenceBlob)) criterion = directionSelectionCriterion(axis, ctx);
     if (isCrossRfpContaminated(scene, evidenceBlob)) scene = planItem.representativeScene || directionRepresentativeScene(axis, ctx);
@@ -1284,7 +1302,7 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
       return {
         ...concept,
         strategicDirectionType: planItem.type,
-        strategicDirectionLabel: isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : planItem.label,
+        strategicDirectionLabel: isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : evidenceDerivedDirectionLabel(planItem),
         whatThisDirectionEmphasizes: planItem.emphasis,
         whenToChooseThisDirection: planItem.chooseWhen,
         winningThesisUse: thesis as ConceptCandidate['winningThesisUse'],
@@ -1905,6 +1923,7 @@ Direction validation required before return:
 - output strategicDirectionQualityValidation for each direction with isStrategicBet, isOnlyBasicRequirement, addressesCoreWinningCondition, addressesStrategicTension, addressesProofBurden, hasDistinctPointOfView, couldFitAnyRfp, validationReason.
 - required pass values: isStrategicBet=true, isOnlyBasicRequirement=false, addressesCoreWinningCondition=true, addressesProofBurden=true, couldFitAnyRfp=false. If any fails, regenerate only that direction from Confirmed RFP-only Diagnosis and current RFP evidence.
 - reject basic execution directions: satisfying requirements, covering scope, organizing information, stable operation, balanced planning, basic feasibility, simple content delivery, general visitor understanding, generic brand communication. These may be proof details, not main direction cards.
+- 각 direction의 strategicDirectionLabel(과 emphasis/chooseWhen)은 위 Strategic Direction Discovery Brief의 구체 근거(coreRfpChallenge / whatMustBeProven / audiencePerceptionGap / clientUniquePosition / categoryShift)에서 직접 도출한 현재 RFP 고유 라벨이어야 한다. directionAxis는 분류용 내부 키일 뿐이며, 라벨을 axis에서 기계적으로 만들지 말라. "[주제명] + 관점 재정의 / 대표성 각인 / 실증 설계 / 신뢰 체험화 / 기억화 / 직관 설계 / 현재화" 같은 명사치환 템플릿, 또는 주제 명사만 바꾸면 다른 RFP에도 그대로 쓸 수 있는 일반 라벨은 출력 금지(거부하고 재생성). 3개 라벨은 구조·논리·어휘에서 서로 명확히 다르고, 같은 템플릿에 주제 명사만 바꾼 형태가 아니어야 한다. 제안서 유형(proposalType/rfpConceptType)은 가드레일일 뿐 라벨·축·주제를 규정하지 않는다.
 - each direction must explicitly connect to confirmed diagnosis: coreWinningCondition, strategicTension, proofBurden, genericProposalFailureReason
 - each direction must use brandProductIntelligence to keep category tone and vocabulary correct; avoid wordsToAvoid and wrong-category tone
 - classify directionAxis with one allowed value: representative_position, audience_understanding, signature_scene, product_value_proof, process_trust, category_shift, system/ecosystem_proof, spatial_journey, brand_memory, operational_confidence, evaluator_clarity, emotional_affinity, technology_reality_proof
@@ -1935,6 +1954,10 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
         maxRetries: 1,
       });
 
+      // §9: do NOT pad an under-generated result with hardcoded preset cards (fallbackCandidate). If the model returned
+      // fewer than 3 directions, treat it as a generation failure → the catch returns a retry signal (no generic cards).
+      if ((generated.concepts?.length ?? 0) < 3) throw new Error('under_generation: model returned fewer than 3 strategic directions');
+
       let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({
         ...generated,
         conceptPromptVersion,
@@ -1951,15 +1974,13 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       result = repairEntityBalance(result, balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(result, metadata));
     } catch (error) {
+      // REGRESSION FIX (§9): do NOT render the hardcoded 3-preset fallback cards as final strategic directions — those are
+      // identical across RFPs and are the second source of the near-identical-directions bug. On any failure/timeout we
+      // return an explicit error instead; the client preserves the completed RFP analysis / diagnosis / brand understanding
+      // and shows a retry CTA (regenerate from current-RFP evidence only). A generic fallback never reaches the user.
       const reason = error instanceof Error ? error.message : 'generation timeout';
-      const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata, selectedRfpConceptType);
-      const fallbackSeed = withNeutralDirectionRecommendation(enforceResultMatrixGate(fallbackBase, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount, subjects: directionSubjects }));
-      fallbackSeed.rfpDiagnosis = body.rfpDiagnosis;
-      fallbackSeed.brandProductIntelligence = body.brandProductIntelligence;
-      fallbackSeed.proposalPatternsUsedForDirections = false;
-      fallbackSeed.currentRfpOnlyMode = true;
-      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(fallbackSeed, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: [] }), balancedEvidenceSummary);
-      return conceptsJson(attachGenerationMetadata(fallback, metadata));
+      console.error(`[concepts] strategic direction generation failed — returning retry signal (no generic fallback): ${reason}`);
+      return conceptsJson({ error: '전략 방향 생성에 실패했습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.', reason: 'direction_generation_failed', conceptPromptVersion }, { status: 502 });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.';
