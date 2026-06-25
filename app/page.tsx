@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence, DesignGuide, PatternLearningSummary, WinningReferencePatternBrief, DbLibraryDocumentMetadata, ReferenceUsePolicy } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence, DesignGuide, PatternLearningSummary, WinningReferencePatternBrief, DbLibraryDocumentMetadata, ReferenceUsePolicy, StrategyGenerationDiagnostics } from '@/lib/types';
 import { normalizeProposalType, proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -342,6 +342,17 @@ function buildSupplementalInfoDrafts(analysis: AnalysisResult | undefined, quali
   });
 }
 
+
+class ApiRequestError extends Error {
+  diagnostics?: StrategyGenerationDiagnostics;
+
+  constructor(message: string, diagnostics?: StrategyGenerationDiagnostics) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.diagnostics = diagnostics;
+  }
+}
+
 const supplementalInfoMarker = '--- 보완 입력 정보 ---';
 const shortBriefGuidance = '입력 정보가 부족하면 제안서가 일반적으로 생성될 수 있습니다. 아래 정보를 추가하면 결과 품질이 개선됩니다.';
 
@@ -368,9 +379,9 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
 
-  const data = await parseJsonResponse<{ error?: string; message?: string }>(response, url);
+  const data = await parseJsonResponse<{ error?: string; message?: string; diagnostics?: StrategyGenerationDiagnostics }>(response, url);
   if (!response.ok) {
-    throw new Error(data.error || data.message || '요청 처리 중 오류가 발생했습니다.');
+    throw new ApiRequestError(data.error || data.message || '요청 처리 중 오류가 발생했습니다.', data.diagnostics);
   }
 
   return data as T;
@@ -2316,6 +2327,7 @@ export default function Home() {
   const [state, setState] = useState<ProposalState>({ input: initialInput, supplementalInfo: initialSupplementalInfo, uploadedDocuments: [], dbUploadedDocuments: [] });
   const [loading, setLoading] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [strategyFailureDiagnostics, setStrategyFailureDiagnostics] = useState<StrategyGenerationDiagnostics | undefined>();
   const conceptGenerationAttemptRef = useRef(0);
   const [conceptRetryVisible, setConceptRetryVisible] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
@@ -3827,9 +3839,12 @@ export default function Home() {
     const generationAttempt = conceptGenerationAttemptRef.current + 1;
     conceptGenerationAttemptRef.current = generationAttempt;
     const requestedAt = new Date().toISOString();
+    const handlerStart = performance.now();
+    console.info('[concepts:button-diagnostics]', { stage: 'start', startedAt: requestedAt, hasDiagnosis: Boolean(state.rfpDiagnosis), hasBrandProductIntelligence: Boolean(state.brandProductIntelligence), uploadedDocumentCount: state.uploadedDocuments?.length ?? 0 });
     const regenerationId = `${requestedAt}-${generationAttempt}-${crypto.randomUUID()}`;
 
     setError('');
+    setStrategyFailureDiagnostics(undefined);
     setConceptRetryVisible(false);
     setStep('concepts');
     setLoading('새 후보 생성 중...');
@@ -3851,8 +3866,11 @@ export default function Home() {
     }));
 
     try {
+      const narrativeStart = performance.now();
       const proposalNarrative = await postJson<ProposalNarrative>('/api/narrative', { input: analysisInput, analysis: state.analysis, uploadedDocuments: state.uploadedDocuments, documentChunks });
+      console.info('[concepts:button-diagnostics]', { stage: 'proposal-narrative-complete', narrativeMs: Math.round(performance.now() - narrativeStart), totalMs: Math.round(performance.now() - handlerStart) });
       setLoading(options.retryLight ? '가벼운 새 후보 생성 중...' : '새 후보 생성 중...');
+      const conceptsStart = performance.now();
       const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', {
         input: analysisInput,
         analysis: state.analysis,
@@ -3865,6 +3883,7 @@ export default function Home() {
         attempt: generationAttempt,
         options: { maxCandidates: 3, retryLight: options.retryLight },
       });
+      console.info('[concepts:button-diagnostics]', { stage: 'strategy-generation-complete', conceptsApiMs: Math.round(performance.now() - conceptsStart), totalMs: Math.round(performance.now() - handlerStart), diagnostics: conceptResult.diagnostics });
       setState((current) => ({
         ...current,
         proposalNarrative,
@@ -3885,7 +3904,9 @@ export default function Home() {
       const friendlyMessage = isTimeoutMessage(rawMessage)
         ? '전략 방향 생성 시간이 초과되었습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.'
         : rawMessage;
+      console.info('[concepts:button-diagnostics]', { stage: 'strategy-generation-failed', totalMs: Math.round(performance.now() - handlerStart), diagnostics: err instanceof ApiRequestError ? err.diagnostics : undefined });
       setError(friendlyMessage);
+      setStrategyFailureDiagnostics(err instanceof ApiRequestError ? err.diagnostics : undefined);
     } finally {
       setLoading('');
     }
@@ -4278,7 +4299,17 @@ export default function Home() {
           </div>
         )}
 
-        {error && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 font-medium text-red-700">{error}</div>}
+        {error && (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 font-medium text-red-700">
+            <p>{error}</p>
+            {strategyFailureDiagnostics && (
+              <details className="mt-3 rounded-xl border border-red-200 bg-white/70 p-3 text-xs text-slate-700">
+                <summary className="cursor-pointer font-bold text-slate-600">Development details</summary>
+                <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words">{JSON.stringify(strategyFailureDiagnostics, null, 2)}</pre>
+              </details>
+            )}
+          </div>
+        )}
 
         {step === 'home' && (
           <section className="rounded-[2rem] bg-gradient-to-br from-blue-600 to-slate-950 p-8 text-white shadow-2xl shadow-blue-900/20 md:p-12">

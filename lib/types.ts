@@ -820,11 +820,31 @@ export interface ConceptNamingGuardNotice {
   violations: string[];
 }
 
+
+export interface StrategyGenerationDiagnostics {
+  startedAt: string;
+  packetBuildMs: number;
+  bpiLookupMs: number;
+  diagnosisLookupMs: number;
+  referenceHintMs: number;
+  modelCallMs: number;
+  validationMs: number;
+  repairMs: number;
+  totalMs: number;
+  strategyInputPacketSize: number;
+  numberOfModelCalls: number;
+  usedFullRfpText: boolean;
+  usedFullReferenceText: boolean;
+  repairPassRan: boolean;
+  timeoutStage?: string;
+}
+
 export interface ConceptCandidatesResult {
   conceptPromptVersion?: string;
   regenerationId?: string;
   generationAttempt?: number;
   generatedAt?: string;
+  diagnostics?: StrategyGenerationDiagnostics;
   hiddenNeeds: HiddenNeedsLayer;
   strategicApproach: StrategicApproachLayer;
   matrixType?: MatrixType;

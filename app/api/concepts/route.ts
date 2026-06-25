@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { conceptCandidatesJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDirectionScore, ProjectInput, ProposalNarrative, ProposalType, RfpConceptType, MatrixType, BrandExperienceMatrixItem, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDirectionScore, ProjectInput, ProposalNarrative, ProposalType, RfpConceptType, MatrixType, BrandExperienceMatrixItem, RfpDiagnosis, BrandProductIntelligence, StrategyGenerationDiagnostics } from '@/lib/types';
 import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -24,6 +24,27 @@ const NO_STORE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
   Pragma: 'no-cache',
 };
+
+
+function elapsedMs(start: number) {
+  return Math.max(0, Math.round(performance.now() - start));
+}
+
+function estimateJsonSize(value: unknown) {
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).length;
+  } catch {
+    return 0;
+  }
+}
+
+function hasFullReferenceText(value: string) {
+  return /reference proposal|previous proposal|proposal_patterns|Uploaded reference|Reference Proposal Full Text/i.test(value);
+}
+
+function logStrategyDiagnostics(stage: string, diagnostics: StrategyGenerationDiagnostics) {
+  console.info('[concepts:strategy-diagnostics]', { stage, ...diagnostics });
+}
 
 function conceptsJson(body: unknown, init?: ResponseInit) {
   return NextResponse.json(body, {
@@ -1679,6 +1700,23 @@ function attachGenerationMetadata(result: ConceptCandidatesResult, metadata: Con
 }
 
 export async function POST(request: Request) {
+  const routeStart = performance.now();
+  const diagnostics: StrategyGenerationDiagnostics = {
+    startedAt: new Date().toISOString(),
+    packetBuildMs: 0,
+    bpiLookupMs: 0,
+    diagnosisLookupMs: 0,
+    referenceHintMs: 0,
+    modelCallMs: 0,
+    validationMs: 0,
+    repairMs: 0,
+    totalMs: 0,
+    strategyInputPacketSize: 0,
+    numberOfModelCalls: 0,
+    usedFullRfpText: false,
+    usedFullReferenceText: false,
+    repairPassRan: false,
+  };
   try {
     const body = (await request.json()) as {
       input: ProjectInput;
@@ -1698,12 +1736,28 @@ export async function POST(request: Request) {
     if (!body.input || !body.analysis) {
       return conceptsJson({ error: '프로젝트 입력값과 분석 결과가 필요합니다.' }, { status: 400 });
     }
+    const diagnosisLookupStart = performance.now();
     if (!body.rfpDiagnosis) {
-      return conceptsJson({ error: '제안 전략 진단 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
+      diagnostics.diagnosisLookupMs = elapsedMs(diagnosisLookupStart);
+      diagnostics.timeoutStage = 'diagnosis_lookup';
+      diagnostics.totalMs = elapsedMs(routeStart);
+      logStrategyDiagnostics('missing-diagnosis', diagnostics);
+      return conceptsJson({ error: '제안 전략 진단 확정 후 전략 방향을 생성할 수 있습니다.', diagnostics }, { status: 400 });
     }
+    diagnostics.diagnosisLookupMs = elapsedMs(diagnosisLookupStart);
+
+    const bpiLookupStart = performance.now();
     if (!body.brandProductIntelligence) {
-      return conceptsJson({ error: '브랜드/제품 이해 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
+      diagnostics.bpiLookupMs = elapsedMs(bpiLookupStart);
+      diagnostics.timeoutStage = 'bpi_lookup';
+      diagnostics.totalMs = elapsedMs(routeStart);
+      logStrategyDiagnostics('missing-bpi', diagnostics);
+      return conceptsJson({ error: '브랜드/제품 이해 확정 후 전략 방향을 생성할 수 있습니다.', diagnostics }, { status: 400 });
     }
+    diagnostics.bpiLookupMs = elapsedMs(bpiLookupStart);
+    const referenceHintStart = performance.now();
+    // Strategy generation intentionally does not retrieve reference proposal hints or proposal_patterns.
+    diagnostics.referenceHintMs = elapsedMs(referenceHintStart);
     // Diagnosis must be COMPLETE ENOUGH (not just present) before final direction cards are generated, so shallow
     // diagnoses cannot drive weak directions. Lenient: a real /api/diagnosis result (strict schema) always passes.
     const diag = body.rfpDiagnosis;
@@ -1734,6 +1788,7 @@ export async function POST(request: Request) {
       }, { status: 409 });
     }
 
+    const packetBuildStart = performance.now();
     const inputQuality = assessInputQuality(body.input, body.analysis);
     // User-selected proposalType is the PRIMARY guardrail; inferredProposalType is only secondary context.
     const userSelectedProposalType = body.input.proposalType;
@@ -1925,7 +1980,17 @@ proposal_patterns direction usage: DISABLED for all RFP types. Do not use propos
 
 Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Option → Hidden Needs → Strategic Approach → Winning Thesis → Concept Leap → Signature Proof Idea → Entity/Content/Audience Differentiation if applicable → Strategic Direction Option → Winning Thesis → Concept Leap → Signature Proof Idea → Proposal Core Concept → Experience Principle → Visitor Journey → Content/Media Execution → Anti-pattern Validation. Do not generate Visitor Journey before Proposal Core Concept. Choose recommendation by best-fit strategic direction, RFP specificity, originality, whole-proposal organizing power, expandability to space/content/media/operation, evaluator clarity, and anti-pattern avoidance. recommendation.whyNotOthers must use neutral trade-off language and must explain what the other directions are useful for, not why they are bad.`;
 
+    const strategyInputPacket = { systemPrompt, userPrompt, compactAnalysis, separatedEvidenceLevels, balancedEvidenceSummary, rfpDiagnosis: body.rfpDiagnosis, brandProductIntelligence: body.brandProductIntelligence };
+    diagnostics.packetBuildMs = elapsedMs(packetBuildStart);
+    diagnostics.strategyInputPacketSize = estimateJsonSize(strategyInputPacket);
+    diagnostics.usedFullRfpText = userPrompt.includes(body.input.briefText || '') && Boolean(body.input.briefText?.trim());
+    diagnostics.usedFullReferenceText = hasFullReferenceText(userPrompt);
+    logStrategyDiagnostics('packet-built', diagnostics);
+
+    let modelStart = 0;
     try {
+      modelStart = performance.now();
+      diagnostics.numberOfModelCalls = 1;
       const generated = await createStructuredJson<ConceptCandidatesResult>({
         schemaName: 'proposal_concept_candidates',
         schema: conceptCandidatesJsonSchema,
@@ -1935,6 +2000,8 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
         maxRetries: 1,
       });
 
+      diagnostics.modelCallMs = elapsedMs(modelStart);
+      const validationStart = performance.now();
       let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({
         ...generated,
         conceptPromptVersion,
@@ -1947,10 +2014,18 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       result.brandProductIntelligence = body.brandProductIntelligence;
       result.proposalPatternsUsedForDirections = false;
       result.currentRfpOnlyMode = true;
+      diagnostics.validationMs = elapsedMs(validationStart);
+      const repairStart = performance.now();
       result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: [] });
       result = repairEntityBalance(result, balancedEvidenceSummary);
-      return conceptsJson(attachGenerationMetadata(result, metadata));
+      diagnostics.repairMs = elapsedMs(repairStart);
+      diagnostics.repairPassRan = diagnostics.repairMs > 0;
+      diagnostics.totalMs = elapsedMs(routeStart);
+      logStrategyDiagnostics('success', diagnostics);
+      return conceptsJson(attachGenerationMetadata({ ...result, diagnostics }, metadata));
     } catch (error) {
+      diagnostics.modelCallMs ||= elapsedMs(modelStart);
+      diagnostics.timeoutStage = diagnostics.modelCallMs >= CONCEPT_GENERATION_TIMEOUT_MS ? 'model_call' : 'model_or_post_model';
       const reason = error instanceof Error ? error.message : 'generation timeout';
       const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata, selectedRfpConceptType);
       const fallbackSeed = withNeutralDirectionRecommendation(enforceResultMatrixGate(fallbackBase, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount, subjects: directionSubjects }));
@@ -1958,11 +2033,19 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       fallbackSeed.brandProductIntelligence = body.brandProductIntelligence;
       fallbackSeed.proposalPatternsUsedForDirections = false;
       fallbackSeed.currentRfpOnlyMode = true;
+      const repairStart = performance.now();
       const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(fallbackSeed, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: [] }), balancedEvidenceSummary);
-      return conceptsJson(attachGenerationMetadata(fallback, metadata));
+      diagnostics.repairMs = elapsedMs(repairStart);
+      diagnostics.repairPassRan = true;
+      diagnostics.totalMs = elapsedMs(routeStart);
+      logStrategyDiagnostics('fallback-after-error', diagnostics);
+      return conceptsJson(attachGenerationMetadata({ ...fallback, diagnostics }, metadata));
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.';
-    return conceptsJson({ error: message, conceptPromptVersion }, { status: 500 });
+    diagnostics.timeoutStage ||= 'route';
+    diagnostics.totalMs = elapsedMs(routeStart);
+    logStrategyDiagnostics('route-error', diagnostics);
+    return conceptsJson({ error: message, conceptPromptVersion, diagnostics }, { status: 500 });
   }
 }
