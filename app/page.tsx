@@ -2321,6 +2321,7 @@ export default function Home() {
   const [error, setError] = useState<string>('');
   const conceptGenerationAttemptRef = useRef(0);
   const [conceptRetryVisible, setConceptRetryVisible] = useState(false);
+  const [conceptFailureDetails, setConceptFailureDetails] = useState<string>('');
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
   const [dbSaveStatus, setDbSaveStatus] = useState<DbSaveStatus>('idle');
   const [dbUploadRole, setDbUploadRole] = useState<'rfp' | 'proposal' | 'reference' | 'memo'>('proposal');
@@ -3844,6 +3845,7 @@ export default function Home() {
     const regenerationId = `${requestedAt}-${generationAttempt}-${crypto.randomUUID()}`;
 
     setError('');
+    setConceptFailureDetails('');
     setConceptRetryVisible(false);
     setStep('concepts');
     setLoading('새 후보 생성 중...');
@@ -3867,18 +3869,28 @@ export default function Home() {
     try {
       const proposalNarrative = await postJson<ProposalNarrative>('/api/narrative', { input: analysisInput, analysis: state.analysis, uploadedDocuments: state.uploadedDocuments, documentChunks });
       setLoading(options.retryLight ? '가벼운 새 후보 생성 중...' : '새 후보 생성 중...');
-      const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', {
-        input: analysisInput,
-        analysis: state.analysis,
-        proposalNarrative,
-        rfpDiagnosis: state.rfpDiagnosis,
-        brandProductIntelligence: effectiveBrand,
-        conceptPromptVersion,
-        regenerationId,
-        timestamp: requestedAt,
-        attempt: generationAttempt,
-        options: { maxCandidates: 3, retryLight: options.retryLight },
+      const conceptResponse = await fetch('/api/concepts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          input: analysisInput,
+          analysis: state.analysis,
+          proposalNarrative,
+          rfpDiagnosis: state.rfpDiagnosis,
+          brandProductIntelligence: effectiveBrand,
+          conceptPromptVersion,
+          regenerationId,
+          timestamp: requestedAt,
+          attempt: generationAttempt,
+          options: { maxCandidates: 3, retryLight: options.retryLight },
+        }),
       });
+      const conceptResult = await parseJsonResponse<ConceptCandidatesResult & { error?: string; message?: string; details?: unknown }>(conceptResponse, '/api/concepts');
+      if (!conceptResponse.ok) {
+        if (conceptResult.details) setConceptFailureDetails(JSON.stringify(conceptResult.details, null, 2));
+        throw new Error(conceptResult.error || conceptResult.message || '전략 방향 생성 중 오류가 발생했습니다.');
+      }
       setState((current) => ({
         ...current,
         proposalNarrative,
@@ -4406,8 +4418,14 @@ export default function Home() {
               )}
               {conceptRetryVisible && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-950">
-                  <p>컨셉 생성 시간이 초과되었습니다. 분석 결과는 유지됩니다.</p>
-                  <button onClick={() => runConcepts({ retryLight: true })} disabled={Boolean(loading)} className="mt-3 rounded-xl bg-amber-600 px-4 py-2 font-black text-white transition hover:bg-amber-700 disabled:opacity-50">가볍게 다시 생성</button>
+                  <p>전략 방향 생성에 실패했습니다. RFP 분석 결과와 브랜드/제품 이해는 유지되며, 전략 방향만 다시 생성할 수 있습니다.</p>
+                  {conceptFailureDetails && (
+                    <details className="mt-3 rounded-xl border border-amber-200 bg-white/70 px-3 py-2 text-xs font-mono font-semibold text-amber-950">
+                      <summary className="cursor-pointer font-black">개발 상세 보기</summary>
+                      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap">{conceptFailureDetails}</pre>
+                    </details>
+                  )}
+                  <button onClick={() => runConcepts({ retryLight: true })} disabled={Boolean(loading)} className="mt-3 rounded-xl bg-amber-600 px-4 py-2 font-black text-white transition hover:bg-amber-700 disabled:opacity-50">전략 방향만 다시 생성</button>
                 </div>
               )}
               <details className="rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3">
