@@ -522,6 +522,10 @@ export interface ConceptNameOption {
   projectKey?: string;
   directionKey?: string;
   generationBatchId?: string;
+  // Globally-unique per-candidate key = projectKey::directionKey::generationBatchId::indexInBatch. The server `id`
+  // restarts at name-1/2/3 every batch and therefore COLLIDES across "추가 컨셉 보기" batches; selection/highlight must
+  // key off candidateKey so exactly one card is selected.
+  candidateKey?: string;
   // Internal Korean concept seed: the strong Korean title built from the frame BEFORE the (often English) conceptName is
   // transcreated from it. Not shown in the main UI; available for collapsed dev/debug only.
   koreanConceptSeed?: string;
@@ -920,6 +924,9 @@ export interface ProposalState {
   conceptNameOptions?: ConceptNameOption[];
   conceptNameOptionsByDirection?: Record<string, ConceptNameOption[]>;
   selectedFinalConceptNameOption?: ConceptNameOption;
+  // The exact selected candidate's candidateKey. A card is highlighted ONLY when its candidateKey equals this — so
+  // exactly one card is ever selected (no id-collision multi-highlight across appended batches).
+  selectedFinalConceptCandidateKey?: string;
   outline?: SlideOutline[];
   slides?: SlideContent[];
   designGuide?: DesignGuide;

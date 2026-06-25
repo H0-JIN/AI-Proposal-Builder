@@ -1722,6 +1722,7 @@ const CLEARED_PROJECT_GENERATED_STATE = {
   conceptNameOptions: undefined,
   conceptNameOptionsByDirection: undefined,
   selectedFinalConceptNameOption: undefined,
+  selectedFinalConceptCandidateKey: undefined,
   outline: undefined,
   slides: undefined,
 } satisfies Partial<ProposalState>;
@@ -1738,12 +1739,13 @@ function appendUploadedDocument(document: UploadedDocument) {
 function conceptRoleBadge(namingStyle?: string): string | null {
   const s = (namingStyle || '').toLowerCase();
   if (!s) return null;
-  if (/global|bilingual|english/.test(s)) return '글로벌형';
+  // Order matters (first match wins): brand/category → 주제형 before spatial → 장면형 before direct → 선언형.
+  if (/brand|category|theme/.test(s)) return '주제형';
   if (/spatial|experience|scene|system/.test(s)) return '장면형';
-  if (/brand|category|sensory|sense/.test(s)) return '감각형';
-  if (/symbolic/.test(s)) return '선언형';
+  if (/direct|claim|statement|strong/.test(s)) return '선언형';
   if (/strateg/.test(s)) return '전략형';
-  if (/direct|claim|statement|strong/.test(s)) return '직관형';
+  if (/symbolic|sensory|sense/.test(s)) return '감각형';
+  if (/global|bilingual|english/.test(s)) return '글로벌형';
   return null;
 }
 
@@ -3556,6 +3558,7 @@ export default function Home() {
       conceptNameOptions: undefined,
       conceptNameOptionsByDirection: undefined,
       selectedFinalConceptNameOption: undefined,
+      selectedFinalConceptCandidateKey: undefined,
       outline: undefined,
       slides: undefined,
     }));
@@ -3620,6 +3623,7 @@ export default function Home() {
       },
       conceptNameOptions: current.conceptNameOptionsByDirection?.[getDirectionCacheKey(index, selectedDirection)] ?? undefined,
       selectedFinalConceptNameOption: undefined,
+      selectedFinalConceptCandidateKey: undefined,
       outline: undefined,
       slides: undefined,
     }));
@@ -3661,7 +3665,7 @@ export default function Home() {
       // Stamp every candidate with its project + direction provenance so the render filter can never show it under a
       // different project/direction, even if it lands in state after the user has moved on.
       const nameOptions = uniqueConceptNameOptions(result.nameOptions ?? result.options ?? [], blockedOptions)
-        .map((option) => ({ ...option, projectKey: requestProjectKey, directionKey, generationBatchId }));
+        .map((option, index) => ({ ...option, projectKey: requestProjectKey, directionKey, generationBatchId, candidateKey: `${requestProjectKey}::${directionKey}::${generationBatchId}::${index}` }));
       if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
       if (!nameOptions.length) throw new Error('컨셉명 후보가 비어 있습니다.');
       if (result.warning) setFinalNamingError(`컨셉명 생성 경고: ${result.warning}`);
@@ -3674,7 +3678,7 @@ export default function Home() {
         // Stale response (direction/project changed while in flight): keep the captured direction's bucket up to date for
         // when the user returns, but do NOT overwrite the currently visible candidates or final selection.
         if (!stillCurrent) return { ...current, conceptNameOptionsByDirection: nextByDirection };
-        return { ...current, conceptNameOptions: nextOptions, conceptNameOptionsByDirection: nextByDirection, selectedFinalConceptNameOption: options.append ? current.selectedFinalConceptNameOption : undefined, outline: undefined, slides: undefined };
+        return { ...current, conceptNameOptions: nextOptions, conceptNameOptionsByDirection: nextByDirection, selectedFinalConceptNameOption: options.append ? current.selectedFinalConceptNameOption : undefined, selectedFinalConceptCandidateKey: options.append ? current.selectedFinalConceptCandidateKey : undefined, outline: undefined, slides: undefined };
       });
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.';
@@ -3700,6 +3704,7 @@ export default function Home() {
         selectedDirection: current.selectedStrategicDirection ?? current.selectedConcept.selectedDirection ?? current.selectedConcept,
       },
       selectedFinalConceptNameOption: option,
+      selectedFinalConceptCandidateKey: option.candidateKey,
       outline: undefined,
       slides: undefined,
     }) : current);
@@ -4325,10 +4330,10 @@ export default function Home() {
                   <>
                   <div className="mt-5 grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {directionConceptNameOptions.map((option) => {
-                      const optionSelected = state.selectedFinalConceptNameOption?.id ? state.selectedFinalConceptNameOption.id === option.id : state.selectedConcept?.finalConceptName === option.conceptName;
+                      const optionSelected = option.candidateKey ? state.selectedFinalConceptCandidateKey === option.candidateKey : (Boolean(state.selectedFinalConceptNameOption?.id) && state.selectedFinalConceptNameOption?.id === option.id);
                       const roleBadge = conceptRoleBadge(option.namingStyle);
                       return (
-                        <article key={option.id || option.conceptName} className={`flex h-full flex-col rounded-2xl border p-5 text-left transition ${optionSelected ? 'border-blue-500 bg-blue-50/40 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                        <article key={option.candidateKey || option.id || option.conceptName} className={`flex h-full flex-col rounded-2xl border p-5 text-left transition ${optionSelected ? 'border-blue-500 bg-blue-50/40 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                           {(roleBadge || optionSelected) && (
                             <div className="flex items-center justify-between gap-2">
                               {roleBadge ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">{roleBadge}</span> : <span />}
