@@ -853,6 +853,10 @@ export interface ConceptCandidatesResult {
   brandProductIntelligence?: BrandProductIntelligence;
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
+  strategicDirections?: ConceptCandidate[];
+  strategyDiscoveryBrief?: unknown;
+  validationSummary?: ConceptCandidatesResult['directionValidation'];
+  warningSummary?: { warnings?: string[]; strategicDirectionsCount?: number };
   recommendation: ConceptRecommendation;
   directionValidation?: {
     allDirectionsAreStrategicBets?: boolean;
