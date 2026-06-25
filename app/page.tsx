@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence, DesignGuide, PatternLearningSummary, WinningReferencePatternBrief } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence, DesignGuide, PatternLearningSummary, WinningReferencePatternBrief, DbLibraryDocumentMetadata, ReferenceUsePolicy } from '@/lib/types';
 import { normalizeProposalType, proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -715,13 +715,197 @@ function UploadedDocumentsList({
 }
 
 
+const DB_PROPOSAL_TYPE_OPTIONS = ['공동관', '전시/콘텐츠', '브랜드관/쇼룸', '방문룸/팩토리투어', '팝업/리테일', 'MICE/행사', '기타'] as const;
+const DB_CONTENT_TAG_OPTIONS = ['미디어', '로보틱스', '인터랙션', '키네틱', '실물 전시', '몰입형 영상', 'AR/VR', '운영/도슨트', '공간 연출', '기타'] as const;
+const DB_REFERENCE_POLICY_DIMENSIONS: { label: string; keys: (keyof ReferenceUsePolicy)[] }[] = [
+  { label: '전략 참고 가능', keys: ['canUseForStrategy'] },
+  { label: '컨셉 참고 가능', keys: ['canUseForConcept'] },
+  { label: '구조 참고 가능', keys: ['canUseForStructure'] },
+  { label: '콘텐츠 참고 가능', keys: ['canUseForContent'] },
+  { label: '디자인 참고 가능', keys: ['canUseForDesign'] },
+  { label: '실행/운영 참고 가능', keys: ['canUseForExecution', 'canUseForOperation'] },
+];
+
+interface ProposalTagFieldsValue {
+  outcome: ProposalOutcome;
+  outcomeReason: string;
+  outcomeReasonType: OutcomeReasonType;
+  proposalType: string;
+  projectName: string;
+  clientName: string;
+  industry: string;
+  contentTypeTags: string[];
+  referenceUsePolicy: ReferenceUsePolicy;
+}
+
+const EMPTY_PROPOSAL_TAGS: ProposalTagFieldsValue = {
+  outcome: 'unknown', outcomeReason: '', outcomeReasonType: 'unknown',
+  proposalType: '', projectName: '', clientName: '', industry: '',
+  contentTypeTags: [], referenceUsePolicy: {},
+};
+
+function metadataToTagValue(meta?: DbLibraryDocumentMetadata): ProposalTagFieldsValue {
+  return {
+    outcome: meta?.outcome ?? 'unknown',
+    outcomeReason: meta?.outcomeReason ?? '',
+    outcomeReasonType: meta?.outcomeReasonType ?? 'unknown',
+    proposalType: meta?.proposalType ?? '',
+    projectName: meta?.projectName ?? '',
+    clientName: meta?.clientName ?? '',
+    industry: meta?.industry ?? '',
+    contentTypeTags: meta?.contentTypeTags ?? [],
+    referenceUsePolicy: meta?.referenceUsePolicy ?? {},
+  };
+}
+
+// Convert UI tag values into the stored DbLibraryDocumentMetadata. Outcome is emitted ONLY for the proposal role (never
+// defaulted to 'won' for others); referenceUsePolicy applies to proposal + reference roles. The common editable fields
+// are ALWAYS emitted (even when blank → ''/[]) so an edit can CLEAR a previously-set value through the route's shallow
+// merge; an empty value reads back as "absent" (getDbLibraryMetadata trims '' to undefined and ignores empty arrays).
+function tagValueToDbMetadata(value: ProposalTagFieldsValue, role: string): DbLibraryDocumentMetadata {
+  const trimmed = (text: string) => text.trim();
+  const isProposal = role === 'proposal';
+  const allowsPolicy = isProposal || role === 'reference';
+  return {
+    ...(isProposal
+      ? { outcome: value.outcome, outcomeLabel: proposalOutcomeLabels[value.outcome], outcomeReason: trimmed(value.outcomeReason), ...(value.outcome === 'lost' ? { outcomeReasonType: value.outcomeReasonType } : {}) }
+      : {}),
+    proposalType: trimmed(value.proposalType),
+    projectName: trimmed(value.projectName),
+    clientName: trimmed(value.clientName),
+    industry: trimmed(value.industry),
+    contentTypeTags: value.contentTypeTags,
+    ...(allowsPolicy ? { referenceUsePolicy: value.referenceUsePolicy } : {}),
+  };
+}
+
+// Shared proposal tagging fields — used by both the DB upload form and the per-row edit editor. Simple, non-technical
+// Korean labels. Outcome shows only for proposals; common tags show for every role.
+function ProposalTagFields({ role, value, onChange }: { role: 'rfp' | 'proposal' | 'reference' | 'memo'; value: ProposalTagFieldsValue; onChange: (next: ProposalTagFieldsValue) => void }) {
+  const set = (patch: Partial<ProposalTagFieldsValue>) => onChange({ ...value, ...patch });
+  const toggleContentTag = (tag: string) => set({ contentTypeTags: value.contentTypeTags.includes(tag) ? value.contentTypeTags.filter((item) => item !== tag) : [...value.contentTypeTags, tag] });
+  const policyChecked = (keys: (keyof ReferenceUsePolicy)[]) => keys.every((key) => value.referenceUsePolicy[key] ?? true);
+  const togglePolicy = (keys: (keyof ReferenceUsePolicy)[]) => {
+    const next = !policyChecked(keys);
+    const updated = { ...value.referenceUsePolicy };
+    for (const key of keys) updated[key] = next;
+    set({ referenceUsePolicy: updated });
+  };
+  const labelClass = 'mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700';
+  const inputClass = 'w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500';
+  const allowsPolicy = role === 'proposal' || role === 'reference';
+
+  return (
+    <div className="space-y-5">
+      {role === 'proposal' && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block">
+            <span className={labelClass}>수주 여부</span>
+            <select value={value.outcome} onChange={(event) => set({ outcome: event.target.value as ProposalOutcome })} className={inputClass}>
+              <option value="won">수주</option>
+              <option value="lost">미수주</option>
+              <option value="unknown">모름</option>
+            </select>
+          </label>
+          {value.outcome === 'lost' && (
+            <label className="block">
+              <span className={labelClass}>미수주 사유 유형 <span className="text-slate-400">(선택)</span></span>
+              <select value={value.outcomeReasonType} onChange={(event) => set({ outcomeReasonType: event.target.value as OutcomeReasonType })} className={inputClass}>
+                <option value="external">예산/외부 요인</option>
+                <option value="quality">제안 품질 요인</option>
+                <option value="mixed">복합 요인</option>
+                <option value="unknown">모르겠음</option>
+              </select>
+            </label>
+          )}
+          <label className="block md:col-span-2">
+            <span className={labelClass}>수주/미수주 이유 <span className="text-slate-400">(선택, 권장)</span></span>
+            <textarea value={value.outcomeReason} onChange={(event) => set({ outcomeReason: event.target.value })} rows={3} placeholder="예: 기술 연출 차별성, 예산 적합성, 클라이언트 니즈 부합, 제안 범위 차이 등" className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold leading-6 text-slate-700 outline-none focus:border-emerald-500" />
+          </label>
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="block">
+          <span className={labelClass}>제안서 유형</span>
+          <select value={value.proposalType} onChange={(event) => set({ proposalType: event.target.value })} className={inputClass}>
+            <option value="">선택 안 함</option>
+            {DB_PROPOSAL_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className={labelClass}>산업/카테고리</span>
+          <input value={value.industry} onChange={(event) => set({ industry: event.target.value })} placeholder="예: 식음료, 모빌리티, 공공, 패션" className={inputClass} />
+        </label>
+        <label className="block">
+          <span className={labelClass}>프로젝트명</span>
+          <input value={value.projectName} onChange={(event) => set({ projectName: event.target.value })} placeholder="예: 포카리 팩토리 방문룸" className={inputClass} />
+        </label>
+        <label className="block">
+          <span className={labelClass}>클라이언트명</span>
+          <input value={value.clientName} onChange={(event) => set({ clientName: event.target.value })} placeholder="예: 동아오츠카" className={inputClass} />
+        </label>
+      </div>
+
+      <div>
+        <span className={labelClass}>주요 콘텐츠 방식 <span className="text-slate-400">(선택, 복수 가능)</span></span>
+        <div className="flex flex-wrap gap-2">
+          {DB_CONTENT_TAG_OPTIONS.map((tag) => {
+            const active = value.contentTypeTags.includes(tag);
+            return (
+              <button key={tag} type="button" onClick={() => toggleContentTag(tag)} className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${active ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50'}`}>
+                {tag}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {allowsPolicy && (
+        <div>
+          <span className={labelClass}>참고 범위 <span className="text-slate-400">(선택 · 이 제안을 어디까지 참고할지)</span></span>
+          <div className="flex flex-wrap gap-2">
+            {DB_REFERENCE_POLICY_DIMENSIONS.map((dimension) => {
+              const checked = policyChecked(dimension.keys);
+              return (
+                <button key={dimension.label} type="button" onClick={() => togglePolicy(dimension.keys)} className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${checked ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-400 line-through'}`}>
+                  {dimension.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DbLibraryRowEditor({ document, onSave, onCancel, saving }: { document: UploadedDocument; onSave: (patch: DbLibraryDocumentMetadata) => void; onCancel: () => void; saving: boolean }) {
+  const role = (document.documentRole ?? inferUploadedDocumentRole(document.fileName, document.documentAnalysisText || document.extractedText)) as 'rfp' | 'proposal' | 'reference' | 'memo';
+  const [value, setValue] = useState<ProposalTagFieldsValue>(() => metadataToTagValue(document.dbLibraryMetadata));
+  return (
+    <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+      <ProposalTagFields role={role} value={value} onChange={setValue} />
+      <div className="mt-4 flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={saving} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:opacity-50">취소</button>
+        <button type="button" onClick={() => onSave(tagValueToDbMetadata(value, role))} disabled={saving} className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white transition hover:bg-emerald-700 disabled:opacity-50">{saving ? '저장 중' : '저장 후 패턴 추출'}</button>
+      </div>
+    </div>
+  );
+}
+
 function DbLibraryUploadedDocumentsList({
   documents,
   onBackfillDocument,
+  onUpdateMetadata,
+  updatingDocumentId,
 }: {
   documents: UploadedDocument[];
   onBackfillDocument?: (document: UploadedDocument, force: boolean) => void;
+  onUpdateMetadata?: (document: UploadedDocument, patch: DbLibraryDocumentMetadata) => void | Promise<void>;
+  updatingDocumentId?: string | null;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
   const statusTone: Record<ExtractionStatus, string> = {
     '텍스트 추출 중': 'bg-blue-50 text-blue-700 ring-blue-200',
     '텍스트 추출 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -776,7 +960,8 @@ function DbLibraryUploadedDocumentsList({
           const dbStatus = getDocumentDbSaveStatusLabel(document.dbSaveStatus);
 
           return (
-            <div key={document.id || `${document.fileName}-${index}`} className="grid grid-cols-12 gap-3 px-4 py-4 text-sm text-slate-700">
+            <div key={document.id || `${document.fileName}-${index}`} className="px-4 py-4">
+              <div className="grid grid-cols-12 gap-3 text-sm text-slate-700">
               <div className="col-span-12 font-bold text-slate-950 md:col-span-3">{document.fileName}</div>
               <div className="col-span-4 text-xs font-bold md:col-span-2">{dbDocumentRoleLabels[role as 'rfp' | 'proposal' | 'reference' | 'memo'] ?? role}</div>
               <div className="col-span-3 text-xs font-bold md:col-span-1">{outcome ? proposalOutcomeLabels[outcome] : '-'}</div>
@@ -820,6 +1005,29 @@ function DbLibraryUploadedDocumentsList({
                   );
                 })()}
               </div>
+              </div>
+              {onUpdateMetadata && document.dbDocumentId ? (
+                <div className="mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(editingId === document.id ? null : document.id)}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 transition hover:bg-slate-50"
+                  >
+                    {editingId === document.id ? '편집 닫기' : '메타데이터 수정'}
+                  </button>
+                </div>
+              ) : null}
+              {editingId === document.id && onUpdateMetadata ? (
+                <DbLibraryRowEditor
+                  document={document}
+                  saving={updatingDocumentId === document.id}
+                  onCancel={() => setEditingId(null)}
+                  onSave={async (patch) => {
+                    await onUpdateMetadata(document, patch);
+                    setEditingId(null);
+                  }}
+                />
+              ) : null}
             </div>
           );
         })}
@@ -2079,9 +2287,8 @@ export default function Home() {
   const [dbSaveStatus, setDbSaveStatus] = useState<DbSaveStatus>('idle');
   const [dbUploadRole, setDbUploadRole] = useState<'rfp' | 'proposal' | 'reference' | 'memo'>('proposal');
   const [dbUploadFile, setDbUploadFile] = useState<File | null>(null);
-  const [dbUploadOutcome, setDbUploadOutcome] = useState<ProposalOutcome>('unknown');
-  const [dbUploadOutcomeReason, setDbUploadOutcomeReason] = useState('');
-  const [dbUploadOutcomeReasonType, setDbUploadOutcomeReasonType] = useState<OutcomeReasonType>('unknown');
+  const [dbUploadTags, setDbUploadTags] = useState<ProposalTagFieldsValue>(EMPTY_PROPOSAL_TAGS);
+  const [updatingDbDocumentId, setUpdatingDbDocumentId] = useState<string | null>(null);
   const [dbUploadNotice, setDbUploadNotice] = useState<UploadNotice | null>(null);
   const [isDbUploadModalOpen, setIsDbUploadModalOpen] = useState(false);
   const [finalNamingError, setFinalNamingError] = useState('');
@@ -2324,6 +2531,34 @@ export default function Home() {
       console.error('Proposal pattern backfill failed.', err);
       updateDbUploadedDocument(document.id, { proposalPatternStatus: 'failed', errorMessage: getUploadErrorMessage(err, '패턴 추출 실패') });
       setDbUploadNotice({ type: 'error', message: '패턴 추출 실패' });
+    }
+  };
+
+  const handleUpdateDbDocumentMetadata = async (document: UploadedDocument, patch: DbLibraryDocumentMetadata) => {
+    if (!document.dbDocumentId) {
+      setDbUploadNotice({ type: 'warning', message: 'DB에 저장된 문서만 수정할 수 있습니다.' });
+      return;
+    }
+
+    setUpdatingDbDocumentId(document.id);
+    setDbUploadNotice({ type: 'warning', message: '메타데이터 저장 중' });
+
+    try {
+      const response = await postJson<{ ok: boolean; metadata?: DbLibraryDocumentMetadata; patternResult?: BackfillProposalPatternsResponse | null }>('/api/db-library/update-metadata', {
+        documentId: document.dbDocumentId,
+        patch,
+        rerunPatterns: true,
+      });
+      // Reflect the merged tags in local state (server-merged metadata wins when available).
+      updateDbUploadedDocument(document.id, { dbLibraryMetadata: response.metadata ?? { ...(document.dbLibraryMetadata ?? {}), ...patch } });
+      if (response.patternResult?.results?.length) applyBackfillResultsToDbDocuments(response.patternResult.results);
+      const extracted = response.patternResult?.results?.find((item) => item.documentId === document.dbDocumentId);
+      setDbUploadNotice({ type: 'success', message: `메타데이터 저장 완료${extracted && extracted.status === 'extracted' ? ` · 패턴 ${extracted.proposalPatternCount}개 갱신` : ''}` });
+    } catch (err) {
+      console.error('DB metadata update failed.', err);
+      setDbUploadNotice({ type: 'error', message: getUploadErrorMessage(err, '메타데이터 저장 실패') });
+    } finally {
+      setUpdatingDbDocumentId(null);
     }
   };
 
@@ -2984,11 +3219,17 @@ export default function Home() {
     file.size > DB_STORAGE_UPLOAD_THRESHOLD_BYTES && ['pdf', 'pptx', 'docx'].includes(extension)
   );
 
-  const buildDbLibraryMetadata = (file: File): UploadedDocument['dbLibraryMetadata'] => ({
-    ...(dbUploadRole === 'proposal' ? { outcome: dbUploadOutcome, outcomeReason: dbUploadOutcomeReason.trim(), ...(dbUploadOutcome === 'lost' ? { outcomeReasonType: dbUploadOutcomeReasonType } : {}) } : {}),
-    originalFileName: file.name,
-    uploadedVia: 'db_library_upload',
-  });
+  const buildDbLibraryMetadata = (file: File): UploadedDocument['dbLibraryMetadata'] => {
+    const now = new Date().toISOString();
+    return {
+      ...tagValueToDbMetadata(dbUploadTags, dbUploadRole),
+      confidence: 'user_confirmed',
+      originalFileName: file.name,
+      uploadedVia: 'db_library_upload',
+      createdAt: now,
+      updatedAt: now,
+    };
+  };
 
   const uploadDbFileThroughStorage = async (file: File, extension: string, dbLibraryMetadata: UploadedDocument['dbLibraryMetadata']) => {
     setLoading('업로드 중');
@@ -3888,47 +4129,7 @@ export default function Home() {
                   </select>
                 </label>
 
-                {dbUploadRole === 'proposal' && (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">결과</span>
-                      <select
-                        value={dbUploadOutcome}
-                        onChange={(event) => setDbUploadOutcome(event.target.value as ProposalOutcome)}
-                        className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
-                      >
-                        <option value="won">수주</option>
-                        <option value="lost">미수주</option>
-                        <option value="unknown">결과 모름</option>
-                      </select>
-                    </label>
-                    {dbUploadOutcome === 'lost' && (
-                      <label className="block">
-                        <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">미수주 사유 유형 <span className="text-slate-400">(선택)</span></span>
-                        <select
-                          value={dbUploadOutcomeReasonType}
-                          onChange={(event) => setDbUploadOutcomeReasonType(event.target.value as OutcomeReasonType)}
-                          className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500"
-                        >
-                          <option value="external">예산/외부 요인</option>
-                          <option value="quality">제안 품질 요인</option>
-                          <option value="mixed">복합 요인</option>
-                          <option value="unknown">모르겠음</option>
-                        </select>
-                      </label>
-                    )}
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-emerald-700">수주/미수주 이유 <span className="text-slate-400">(선택, 권장)</span></span>
-                      <textarea
-                        value={dbUploadOutcomeReason}
-                        onChange={(event) => setDbUploadOutcomeReason(event.target.value)}
-                        rows={3}
-                        placeholder="예: 기술 연출 차별성, 예산 적합성, 클라이언트 니즈 부합, 레퍼런스 신뢰도, 제안 범위 차이 등"
-                        className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold leading-6 text-slate-700 outline-none focus:border-emerald-500"
-                      />
-                    </label>
-                  </div>
-                )}
+                <ProposalTagFields role={dbUploadRole} value={dbUploadTags} onChange={setDbUploadTags} />
 
                 <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
@@ -3976,7 +4177,7 @@ export default function Home() {
                 )}
               </div>
 
-              <DbLibraryUploadedDocumentsList documents={dbUploadedDocuments} onBackfillDocument={handleBackfillProposalPatternsForDocument} />
+              <DbLibraryUploadedDocumentsList documents={dbUploadedDocuments} onBackfillDocument={handleBackfillProposalPatternsForDocument} onUpdateMetadata={handleUpdateDbDocumentMetadata} updatingDocumentId={updatingDbDocumentId} />
               {dbUploadNotice && (
                 <div
                   className={`mt-4 rounded-2xl border p-4 text-sm font-semibold leading-6 ${

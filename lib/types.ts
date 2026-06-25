@@ -88,11 +88,42 @@ export type ProposalOutcome = 'won' | 'lost' | 'unknown';
 export type OutcomeReasonType = 'external' | 'quality' | 'mixed' | 'unknown';
 export type FailureArea = 'concept' | 'strategy' | 'structure' | 'content' | 'design' | 'execution' | 'operation' | 'differentiation' | 'budget_external' | 'schedule_external' | 'procurement_external' | 'unknown';
 
+// Which dimensions of a reference proposal the user allows to be reused. Mirrors proposal_patterns.can_use_for_*. A
+// dimension can only RESTRICT (turn off) what failure-area analysis already permits — it never re-enables a failed one.
+export interface ReferenceUsePolicy {
+  canUseForStrategy?: boolean;
+  canUseForConcept?: boolean;
+  canUseForStructure?: boolean;
+  canUseForContent?: boolean;
+  canUseForDesign?: boolean;
+  canUseForExecution?: boolean;
+  canUseForOperation?: boolean;
+}
+
+// Document-level outcome/tagging metadata for a Supabase reference-library upload. Stored in documents.metadata (jsonb,
+// no schema change). ALL fields optional — partial tagging is valid. `outcome` is NEVER defaulted to 'won'; an untagged
+// proposal stays neutral. `outcomeReason` is the win/loss reason memo (the key the outcome classifiers already read).
 export interface DbLibraryDocumentMetadata {
   outcome?: ProposalOutcome;
+  outcomeLabel?: string;
   outcomeReason?: string;
   outcomeReasonType?: OutcomeReasonType;
   failureAreas?: FailureArea[];
+  proposalType?: string;
+  projectCategory?: string;
+  clientName?: string;
+  industry?: string;
+  projectName?: string;
+  proposalYear?: string;
+  confidence?: 'user_confirmed' | 'inferred' | 'unknown';
+  winReasonTags?: string[];
+  lossReasonTags?: string[];
+  contentTypeTags?: string[];
+  technologyTags?: string[];
+  experienceFormatTags?: string[];
+  referenceUsePolicy?: ReferenceUsePolicy;
+  createdAt?: string;
+  updatedAt?: string;
   originalFileName?: string;
   uploadedVia?: 'db_library_upload';
 }

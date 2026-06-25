@@ -11,7 +11,7 @@ import {
   updateProposalPatternOutcomeMetadataByDocument,
 } from './ragStorage';
 import { extractProposalPatternsFromChunks } from './proposalPatternExtractor';
-import { classifyFailureAreas, classifyOutcomeReason, getProposalPatternUsabilityFlags } from './outcomeReasonClassifier';
+import { buildPatternOutcomeFields } from './documentOutcomeMetadata';
 import type { JsonValue, ProposalPatternInput } from './dbTypes';
 
 export interface BackfillProposalPatternsInput {
@@ -58,65 +58,46 @@ function getMetadataString(metadata: JsonValue | null | undefined, key: string) 
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-function normalizeOutcome(value: string | null) {
-  if (value === 'won' || value === 'lost' || value === 'unknown') return value;
-  return value ? 'unknown' : null;
-}
-
 function getJsonObject(value: JsonValue | null | undefined): Record<string, JsonValue | undefined> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
-function getOutcomeReasonType(metadata: JsonValue | null | undefined) {
-  const outcome = normalizeOutcome(getMetadataString(metadata, 'outcome'));
-  const outcomeReason = getMetadataString(metadata, 'outcomeReason');
-  const explicitOutcomeReasonType = getMetadataString(metadata, 'outcomeReasonType');
-  return classifyOutcomeReason(outcome, outcomeReason, explicitOutcomeReasonType);
-}
-
 function applyOutcomeMetadata(patterns: ProposalPatternInput[], metadata: JsonValue | null | undefined) {
-  const outcome = normalizeOutcome(getMetadataString(metadata, 'outcome'));
-  const outcomeReason = getMetadataString(metadata, 'outcomeReason');
-  const outcomeReasonType = getOutcomeReasonType(metadata);
-  const failureAreas = classifyFailureAreas(outcome, outcomeReason);
-  const usabilityFlags = getProposalPatternUsabilityFlags(failureAreas);
+  const fields = buildPatternOutcomeFields(metadata);
 
   return patterns.map((pattern) => ({
     ...pattern,
-    outcome,
-    outcome_reason: outcomeReason,
-    outcome_reason_type: outcomeReasonType,
-    failure_areas: failureAreas,
-    ...usabilityFlags,
+    outcome: fields.outcome,
+    outcome_reason: fields.outcome_reason,
+    outcome_reason_type: fields.outcome_reason_type,
+    failure_areas: fields.failure_areas,
+    ...fields.usabilityFlags,
     metadata: toJsonValue({
       ...(pattern.metadata && typeof pattern.metadata === 'object' && !Array.isArray(pattern.metadata) ? pattern.metadata : {}),
-      proposalOutcome: outcome,
-      proposalOutcomeReason: outcomeReason,
-      proposalOutcomeReasonType: outcomeReasonType,
-      outcomeReasonType,
-      failureAreas,
+      proposalOutcome: fields.outcome,
+      proposalOutcomeReason: fields.outcome_reason,
+      proposalOutcomeReasonType: fields.outcome_reason_type,
+      outcomeReasonType: fields.outcome_reason_type,
+      failureAreas: fields.failure_areas,
+      reference: fields.referenceContext,
       extractionMethod: 'proposal_pattern_backfill_v1',
     }),
   }));
 }
 
 async function backfillOutcomeMetadata(documentId: string, metadata: JsonValue | null | undefined) {
-  const outcome = normalizeOutcome(getMetadataString(metadata, 'outcome'));
-  const outcomeReason = getMetadataString(metadata, 'outcomeReason');
-  const outcomeReasonType = getOutcomeReasonType(metadata);
-  const failureAreas = classifyFailureAreas(outcome, outcomeReason);
-  const usabilityFlags = getProposalPatternUsabilityFlags(failureAreas);
+  const fields = buildPatternOutcomeFields(metadata);
   const currentMetadataType = getMetadataString(metadata, 'outcomeReasonType');
   const currentFailureAreas = getJsonObject(metadata).failureAreas;
   const nextMetadata = toJsonValue({
     ...getJsonObject(metadata),
-    outcomeReasonType,
-    failureAreas,
+    outcomeReasonType: fields.outcome_reason_type,
+    failureAreas: fields.failure_areas,
   });
 
-  const metadataChanged = currentMetadataType !== outcomeReasonType || JSON.stringify(currentFailureAreas ?? null) !== JSON.stringify(failureAreas);
+  const metadataChanged = currentMetadataType !== fields.outcome_reason_type || JSON.stringify(currentFailureAreas ?? null) !== JSON.stringify(fields.failure_areas);
   const documentUpdated = metadataChanged ? await updateDocumentMetadata(documentId, nextMetadata) : true;
-  const patternsUpdated = await updateProposalPatternOutcomeMetadataByDocument(documentId, { outcomeReasonType, failureAreas, usabilityFlags });
+  const patternsUpdated = await updateProposalPatternOutcomeMetadataByDocument(documentId, { outcomeReasonType: fields.outcome_reason_type, failureAreas: fields.failure_areas, usabilityFlags: fields.usabilityFlags });
 
   return { metadata: nextMetadata, documentUpdated, patternsUpdated };
 }

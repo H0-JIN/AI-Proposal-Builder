@@ -334,6 +334,30 @@ export async function saveProposalPatterns(input: SaveProposalPatternsInput): Pr
   }
 }
 
+export async function getDocumentRecordById(documentId: string): Promise<{ id: string; role: string | null; metadata: JsonValue | null } | null> {
+  const { client } = getSupabaseConfigState();
+
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('documents')
+      .select('id, role, metadata')
+      .eq('id', documentId)
+      .maybeSingle();
+
+    if (error) {
+      logRagStorageError('getDocumentRecordById', error);
+      return null;
+    }
+
+    return data ? { id: data.id, role: data.role ?? null, metadata: (data.metadata ?? null) as JsonValue | null } : null;
+  } catch (error) {
+    logRagStorageError('getDocumentRecordById', error);
+    return null;
+  }
+}
+
 export async function updateDocumentMetadata(documentId: string, metadata: JsonValue | null): Promise<boolean> {
   const { client } = getSupabaseConfigState();
 
