@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { conceptCandidatesJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProjectInput, ProposalNarrative, ProposalType, RfpConceptType, MatrixType, BrandExperienceMatrixItem, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDirectionScore, ProjectInput, ProposalNarrative, ProposalType, RfpConceptType, MatrixType, BrandExperienceMatrixItem, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
 import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -1602,14 +1602,52 @@ interface ConceptGenerationMetadata {
 }
 
 
+// §3: weighted scoring over each direction's evaluationScores. RFP fit + differentiation (the eval-criteria-aligned axes)
+// carry the most weight, then target fit, feasibility, and reach. The recommended direction is the ARGMAX — never index 0.
+const RECOMMENDATION_WEIGHTS = { rfpFitScore: 0.28, differentiationScore: 0.22, targetFitScore: 0.16, operationFeasibilityScore: 0.14, spatialFeasibilityScore: 0.1, viralPotentialScore: 0.1 } as const;
+const RECOMMENDATION_AXIS_LABELS: Record<keyof typeof RECOMMENDATION_WEIGHTS, string> = { rfpFitScore: 'RFP 부합', differentiationScore: '차별성', targetFitScore: '타깃 적합', operationFeasibilityScore: '실행/운영', spatialFeasibilityScore: '공간 실현', viralPotentialScore: '확산력' };
+
+function scoreConceptDirection(concept: ConceptCandidate): ConceptDirectionScore {
+  const e = concept.evaluationScores ?? { rfpFitScore: 0, targetFitScore: 0, differentiationScore: 0, spatialFeasibilityScore: 0, viralPotentialScore: 0, operationFeasibilityScore: 0 };
+  const total = (Object.keys(RECOMMENDATION_WEIGHTS) as (keyof typeof RECOMMENDATION_WEIGHTS)[]).reduce((sum, key) => sum + (e[key] ?? 0) * RECOMMENDATION_WEIGHTS[key], 0);
+  return {
+    conceptId: concept.conceptId, directionLabel: concept.strategicDirectionLabel, total: Math.round(total * 100) / 100,
+    rfpFitScore: e.rfpFitScore, differentiationScore: e.differentiationScore, targetFitScore: e.targetFitScore,
+    spatialFeasibilityScore: e.spatialFeasibilityScore, viralPotentialScore: e.viralPotentialScore, operationFeasibilityScore: e.operationFeasibilityScore,
+  };
+}
+
+function pickRecommendedConcept(concepts: ConceptCandidate[]): { recommendedConceptId: string; recommendationScore: number; scoreBreakdown: ConceptDirectionScore[]; recommendationReason: string; whyNotOthers: string } | null {
+  if (!concepts.length) return null;
+  const scoreBreakdown = concepts.map(scoreConceptDirection);
+  const order = new Map(concepts.map((concept, index) => [concept.conceptId, index]));
+  const ranked = [...scoreBreakdown].sort((a, b) =>
+    b.total - a.total || b.rfpFitScore - a.rfpFitScore || b.differentiationScore - a.differentiationScore || b.targetFitScore - a.targetFitScore || ((order.get(a.conceptId) ?? 0) - (order.get(b.conceptId) ?? 0)));
+  const best = ranked[0];
+  const runnerUp = ranked[1];
+  const bestConcept = concepts.find((concept) => concept.conceptId === best.conceptId);
+  const topAxes = (Object.keys(RECOMMENDATION_WEIGHTS) as (keyof typeof RECOMMENDATION_WEIGHTS)[])
+    .map((key) => ({ key, value: best[key] }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 2);
+  const axisText = topAxes.map((axis) => `${RECOMMENDATION_AXIS_LABELS[axis.key]} ${axis.value}/5`).join(' · ');
+  const close = runnerUp ? Math.abs(best.total - runnerUp.total) < 0.2 : false;
+  const reason = `${best.directionLabel || best.conceptId} 방향이 ${axisText}로 가장 높은 종합 점수(${best.total})를 받아 추천합니다${bestConcept?.oneLineSummary ? ` — ${compactText(bestConcept.oneLineSummary, 90)}` : ''}.${close && runnerUp ? ` ${runnerUp.directionLabel || runnerUp.conceptId}(${runnerUp.total})와 근소하지만 ${RECOMMENDATION_AXIS_LABELS[topAxes[0].key]}에서 앞섭니다.` : ''}`;
+  const whyNotOthers = ranked.slice(1).map((row) => `${row.directionLabel || row.conceptId}: 종합 ${row.total}`).join(' · ') || '다른 방향은 종합 점수가 더 낮습니다.';
+  return { recommendedConceptId: best.conceptId, recommendationScore: best.total, scoreBreakdown, recommendationReason: reason, whyNotOthers };
+}
+
 function withNeutralDirectionRecommendation(result: ConceptCandidatesResult): ConceptCandidatesResult {
-  const recommended = result.concepts.find((concept) => concept.conceptId === result.recommendation.recommendedConceptId) ?? result.concepts[0];
+  // §3: pick the recommended direction by score (argmax over evaluationScores), not by the model's pick or index 0.
+  const scored = pickRecommendedConcept(result.concepts);
+  const recommendedId = scored?.recommendedConceptId || result.recommendation.recommendedConceptId || result.concepts[0]?.conceptId || 'C1';
+  const recommended = result.concepts.find((concept) => concept.conceptId === recommendedId) ?? result.concepts[0];
   const otherDirections = result.concepts
     .filter((concept) => concept.conceptId !== recommended?.conceptId)
     .map((concept) => `${concept.conceptId} ${concept.strategicDirectionLabel}: ${concept.whenToChooseThisDirection}`)
     .join(' / ');
   const negativeComparisonPattern = /bad|not good|wrong|나쁘|별로|부적합|틀렸|실패|낮[다은]|부족/i;
-  const existingOtherUse = result.recommendation.otherDirectionsUsefulness || result.recommendation.whyNotOthers || '';
+  const existingOtherUse = result.recommendation.otherDirectionsUsefulness || '';
   const safeOtherUsefulness = existingOtherUse && !negativeComparisonPattern.test(existingOtherUse)
     ? existingOtherUse
     : (otherDirections || '다른 방향은 평가 우선순위가 달라질 때 유용한 대안입니다.');
@@ -1618,11 +1656,14 @@ function withNeutralDirectionRecommendation(result: ConceptCandidatesResult): Co
     ...result,
     recommendation: {
       ...result.recommendation,
-      recommendedConceptId: result.recommendation.recommendedConceptId || recommended?.conceptId || 'C1',
-      recommendedDirectionLabel: result.recommendation.recommendedDirectionLabel || recommended?.strategicDirectionLabel || '전략 방향',
+      recommendedConceptId: recommendedId,
+      recommendedDirectionLabel: recommended?.strategicDirectionLabel || result.recommendation.recommendedDirectionLabel || '전략 방향',
+      recommendationReason: scored?.recommendationReason || result.recommendation.recommendationReason,
+      recommendationScore: scored?.recommendationScore,
+      scoreBreakdown: scored?.scoreBreakdown,
       otherDirectionsUsefulness: safeOtherUsefulness,
       tradeOffSummary: result.recommendation.tradeOffSummary || '각 후보는 우열이 아니라 통합감, 구분성, 임팩트, 참여, 운영 신뢰 등 서로 다른 우선순위의 선택지입니다.',
-      whyNotOthers: safeOtherUsefulness,
+      whyNotOthers: scored?.whyNotOthers || safeOtherUsefulness,
     },
   };
 }

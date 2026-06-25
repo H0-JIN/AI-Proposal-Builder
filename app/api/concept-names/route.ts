@@ -169,6 +169,7 @@ const STRATEGY_DESCRIPTOR_WORDS = new Set(['전략', '방향', '설득', '증명
 const EXPLANATORY_NAME_TAIL = /(합니다|입니다|하는|되는|위한|통해|중심으로|기반으로|전략|방향|방안|솔루션|구조|구현|제시|설계)\s*$/u;
 // Exact user-facing error when the strategy could not be turned into a concept-level title even after one regeneration.
 const DESCRIPTIVE_NAMING_ERROR = '선택한 전략 방향을 컨셉명으로 충분히 전환하지 못했습니다. 컨셉명을 다시 생성해 주세요.';
+const INCOMPLETE_CANDIDATES_ERROR = '유효한 컨셉명 후보 3개를 채우지 못했습니다. 잠시 후 다시 시도하거나 전략 방향을 다시 선택해 주세요.';
 
 function directionLabelTokens(dir: ConceptCandidate): Set<string> {
   return new Set([dir.strategicDirectionLabel, dir.oneLineStrategicBet, dir.whatThisDirectionEmphasizes, (dir as { oneLineSummary?: string }).oneLineSummary]
@@ -631,23 +632,53 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
     const generate = (userPrompt: string) => createStructuredJson<ConceptNameOptionsResult>({ schemaName: 'concept_name_options', schema: conceptNameOptionsJsonSchema, system, user: userPrompt, timeoutMs: 18_000, maxRetries: 1 });
 
     const forbiddenCopyTerms = refBriefResult.brief?.forbiddenCopyTerms ?? [];
-    let result = await generate(user);
-    let built = buildFinalOptions(result, body, currentRfpVocabularySet, forbiddenCopyTerms);
-    // Spec: if the first pass produces zero sufficiently-specific options (all weak/ungrounded/duplicate),
-    // regenerate ONCE with stricter anti-pattern filtering before failing. Never show weak fallback names.
-    if (!built.options.length) {
-      result = await generate(user + STRICTER_RETRY_ADDENDUM);
-      built = buildFinalOptions(result, body, currentRfpVocabularySet, forbiddenCopyTerms);
+    // §2: GUARANTEE exactly three valid primary candidates for the selected direction. Accumulate SURVIVING options across
+    // up to 3 passes, feeding the already-accepted names back into both the prompt (avoid line) and buildFinalOptions'
+    // blocked set so each pass yields net-new, direction-scoped candidates. Rejected candidates are replaced, never
+    // silently dropped; only a true hard failure (fewer than 3 after all passes) returns an explicit error.
+    type BuiltOption = ReturnType<typeof buildFinalOptions>['options'][number];
+    const accepted: BuiltOption[] = [];
+    const acceptedNorm = new Set<string>();
+    const acceptedNames: string[] = [];
+    let result: ConceptNameOptionsResult | undefined;
+    let lastDiag: ReturnType<typeof buildFinalOptions>['diag'] | undefined;
+    const MAX_PASSES = 3;
+    for (let pass = 0; pass < MAX_PASSES && accepted.length < 3; pass++) {
+      const passBody = {
+        ...body,
+        recentNameOptions: [...(body.recentNameOptions ?? []), ...acceptedNames],
+        existingNamesForSelectedDirection: [...(body.existingNamesForSelectedDirection ?? []), ...acceptedNames],
+      };
+      const avoidLine = acceptedNames.length ? `\n\n[이미 생성됨 — 반드시 회피하고 새 후보만 생성] ${acceptedNames.join(' / ')}` : '';
+      const passUser = `${user}${pass === 0 ? '' : STRICTER_RETRY_ADDENDUM}${avoidLine}`;
+      const passResult = await generate(passUser);
+      if (pass === 0) result = passResult;
+      const passBuilt = buildFinalOptions(passResult, passBody, currentRfpVocabularySet, forbiddenCopyTerms);
+      lastDiag = passBuilt.diag;
+      for (const option of passBuilt.options) {
+        const key = normalizeName(option.conceptName || '');
+        if (!key || acceptedNorm.has(key)) continue;
+        accepted.push(option);
+        acceptedNorm.add(key);
+        acceptedNames.push(option.conceptName || '');
+        if (accepted.length >= 3) break;
+      }
     }
-    if (!built.options.length) {
-      const { returned, deduped, safe, quality, blockedNameDrops, descriptiveDrops } = built.diag;
+    if (!accepted.length) {
+      const d = lastDiag ?? { returned: 0, deduped: 0, safe: 0, quality: 0, blockedNameDrops: 0, descriptiveDrops: 0 };
       // When the model kept producing descriptive / strategy-label names that could not be turned into concept titles,
       // surface the conversion-specific error; otherwise the generic weak-naming error.
-      const conversionFailure = descriptiveDrops > 0 && safe > 0;
+      const conversionFailure = d.descriptiveDrops > 0 && d.safe > 0;
       const message = conversionFailure ? DESCRIPTIVE_NAMING_ERROR : WEAK_NAMING_ERROR;
-      return json(errorResponse(message, `reason=${conversionFailure ? 'descriptive_after_retry' : 'weak_after_retry'}; returned=${returned}; deduped=${deduped}; safe=${safe}; quality=${quality}; blockedNameDrops=${blockedNameDrops}; descriptiveDrops=${descriptiveDrops}`), { status: 422 });
+      return json(errorResponse(message, `reason=${conversionFailure ? 'descriptive_after_retry' : 'weak_after_retry'}; returned=${d.returned}; deduped=${d.deduped}; safe=${d.safe}; quality=${d.quality}; blockedNameDrops=${d.blockedNameDrops}; descriptiveDrops=${d.descriptiveDrops}`), { status: 422 });
     }
-    return json({ ...successResponse({ ...result, selectedDirectionId: body.selectedDirection.conceptId, options: built.options }), patternLearningSummary, winningReferenceBrief: refBriefResult.brief });
+    if (accepted.length < 3) {
+      // 1-2 survivors after all passes → explicit error rather than showing incomplete candidates (§2).
+      return json(errorResponse(INCOMPLETE_CANDIDATES_ERROR, `reason=only_${accepted.length}_valid_after_${MAX_PASSES}_passes`), { status: 422 });
+    }
+    const finalOptions = accepted.slice(0, 3).map((option, index) => ({ ...option, id: `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}` }));
+    console.info('[concept-names:count]', { requested: 3, returned: finalOptions.length, accepted: accepted.length });
+    return json({ ...successResponse({ ...(result ?? ({} as ConceptNameOptionsResult)), selectedDirectionId: body.selectedDirection.conceptId, options: finalOptions }), patternLearningSummary, winningReferenceBrief: refBriefResult.brief });
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
     return json(errorResponse(WEAK_NAMING_ERROR, `reason=${classifyServerError(message)}; ${message}`), { status: 502 });

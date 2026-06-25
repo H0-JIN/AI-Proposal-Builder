@@ -43,8 +43,14 @@ export interface DeckSlideSeed {
 
 const norm = (value?: string) => (value || '').toLowerCase();
 
+const SYNTHESIZED_CONCEPT_SLIDE_TYPE = 'Concept Reveal';
 function isConceptRevealSlide(slide: DeckSlideLike): boolean {
   const t = norm(`${slide.slideTitle} ${slide.slideType} ${slide.slideRole}`);
+  // The deterministically synthesized reveal carries a dedicated 'Concept Reveal' marker so a re-run ALWAYS re-detects it
+  // (idempotent — no duplicate) regardless of how the concept name reads. Checked first.
+  if (/concept\s*reveal/.test(t)) return true;
+  // 'Concept Rationale' / 후보 도출 etc. are NOT the concept reveal even when their slidePurpose is 'Concept' — the
+  // exclusion must run before the purpose signal so the structure guard's rationale slide is never taken as the reveal.
   if (/rationale|도출|후보|candidate|approach|전략\s*방향|opportunity/.test(t)) return false;
   return slide.slidePurpose === 'Concept' || /core\s*concept|핵심\s*콘셉트|컨셉\s*선언|concept\s*declaration|메인\s*컨셉/.test(t);
 }
@@ -153,6 +159,13 @@ export function applyDeckStructure<T extends DeckSlideLike>(
     clientName: string;
     proposalTypeLabel: string;
     makeSlide: (seed: DeckSlideSeed) => T;
+    // Optional concept-page content used only when a dedicated Concept reveal slide must be synthesized (LLM omitted it).
+    conceptKoreanSubtitle?: string;
+    conceptMeaning?: string;
+    conceptWhyThisDirection?: string;
+    conceptReframe?: string;
+    conceptReferenceInfluence?: string;
+    conceptVisualDirection?: string;
   },
 ): T[] {
   const conceptTokens = tokenizeConcept(opts.finalConceptName);
@@ -165,7 +178,36 @@ export function applyDeckStructure<T extends DeckSlideLike>(
   });
 
   // 2) Assign sections + layout to the body slides.
-  const conceptIdx = body.findIndex((slide) => isConceptRevealSlide(slide));
+  let conceptIdx = body.findIndex((slide) => isConceptRevealSlide(slide));
+  // 2a) GUARANTEE a dedicated Concept reveal slide. The required deck is Overview → Approach → CONCEPT → Concept Strategy
+  // → Content; if the model never emitted a concept slide (conceptIdx === -1) we synthesize one deterministically and
+  // place it right after the Approach/Overview band and before the first Concept Strategy / Content / Execution slide.
+  // Idempotent: a re-run detects it via isConceptRevealSlide (slidePurpose 'Concept') and does not insert a duplicate.
+  if (conceptIdx === -1 && body.length) {
+    // Insert at the before-band / after-band boundary — the SAME 35% split deriveSection uses — so every slide before it
+    // bands as overview/approach and every slide after bands as conceptStrategy/content. Keeps Concept strictly after
+    // Approach and before Concept Strategy / Content without relying on broad keyword heuristics that can misfire early.
+    const insertAt = Math.min(Math.max(1, Math.floor(body.length * 0.35)) + 1, body.length);
+    const meaningLines = [
+      opts.conceptKoreanSubtitle,
+      opts.conceptMeaning && `의미: ${opts.conceptMeaning}`,
+      opts.conceptWhyThisDirection && `선택한 전략 방향에 답하는 이유: ${opts.conceptWhyThisDirection}`,
+      opts.conceptReframe && `RFP 재해석: ${opts.conceptReframe}`,
+      opts.conceptReferenceInfluence && `참고 구조 반영: ${opts.conceptReferenceInfluence}`,
+      opts.conceptVisualDirection && `비주얼 디렉션: ${opts.conceptVisualDirection}`,
+    ].filter((line): line is string => Boolean(line));
+    const conceptSlide = opts.makeSlide({
+      slideNumber: insertAt + 1,
+      slideType: SYNTHESIZED_CONCEPT_SLIDE_TYPE,
+      slideTitle: opts.finalConceptName || '핵심 콘셉트',
+      slidePurpose: 'Concept',
+      keyMessage: [opts.finalConceptName, opts.finalConceptSlogan].filter(Boolean).join(' — ') || opts.finalConceptName,
+      mainCopy: meaningLines.length ? meaningLines.join('\n') : (opts.finalConceptSlogan || opts.finalConceptName),
+      slideSection: 'concept',
+    });
+    body.splice(insertAt, 0, conceptSlide);
+    conceptIdx = insertAt;
+  }
   const sectioned = body.map((slide, index) => {
     const section = deriveSection(slide, index, conceptIdx, body.length);
     const layout = SECTION_LAYOUT[section];
