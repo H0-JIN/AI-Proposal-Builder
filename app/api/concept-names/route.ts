@@ -104,6 +104,10 @@ const WEAK_NAMING_ERROR = '선택한 전략 방향에 맞는 충분히 구체적
 // Anti-pattern naming forms (generic, no hardcoded brands). A concept name is rejected when it is dominated by one
 // of these, UNLESS it is transformed into a specific RFP-grounded idea (grounding is enforced separately by vocabulary).
 const SPEC_BANNED_NAME_PATTERNS: RegExp[] = [
+  /^현장(?:증명|응답|연결)$/u,
+  /^실제연결$/u,
+  /^Presence$/i,
+  /^현장감$/u,
   /가치\s*증명/u,
   /기억\s*의?\s*증명/u,
   /인식\s*전환/u,
@@ -164,7 +168,7 @@ function isCoverTitleNamingFamily(input: ProjectInput, selectedDirection: Concep
 }
 
 // Strategy-descriptor words that signal a name is EXPLAINING the direction rather than being a concept title.
-const STRATEGY_DESCRIPTOR_WORDS = new Set(['전략', '방향', '설득', '증명', '강화', '전환', '이해', '체험', '경험', '가치', '관점', '연결', '통합', '구조', '방안', '계획', '접근', '솔루션', '강조', '확장', '구현', '제시', '형성', '설계', '방식', '제고', '확보']);
+const STRATEGY_DESCRIPTOR_WORDS = new Set(['전략', '방향', '설득', '현장', '응답', '증명', '강화', '전환', '이해', '체험', '경험', '가치', '관점', '연결', '통합', '구조', '방안', '계획', '접근', '솔루션', '강조', '확장', '구현', '제시', '형성', '설계', '방식', '제고', '확보']);
 // Explanatory / sentence-like tail: a concept TITLE must not end like a strategy sentence.
 const EXPLANATORY_NAME_TAIL = /(합니다|입니다|하는|되는|위한|통해|중심으로|기반으로|전략|방향|방안|솔루션|구조|구현|제시|설계)\s*$/u;
 // Exact user-facing error when the strategy could not be turned into a concept-level title even after one regeneration.
@@ -691,11 +695,20 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
         if (accepted.length >= requestedCount) break;
       }
     }
-    // Return whatever valid candidates this light request produced (0..requestedCount). The client accumulates across
-    // requests and surfaces the final "couldn't reach 3" error — the server never blocks on reaching the full count.
     const finalOptions = accepted.slice(0, requestedCount).map((option, index) => ({ ...option, id: `${body.selectedDirection.conceptId || 'direction'}-${body.candidateRole || 'name'}-${index + 1}` }));
-    console.info('[concept-names:incremental]', { requestedCount, returned: finalOptions.length, role: body.candidateRole ?? null });
-    return json({ ...successResponse({ ...(result ?? ({} as ConceptNameOptionsResult)), selectedDirectionId: body.selectedDirection.conceptId, options: finalOptions }), patternLearningSummary, winningReferenceBrief: refBriefResult.brief, requestedCount, returnedCount: finalOptions.length });
+    const partialFailure = finalOptions.length < requestedCount;
+    console.info('[concept-names:incremental]', { requestedCount, returned: finalOptions.length, role: body.candidateRole ?? null, partialFailure });
+    return json({
+      ...successResponse({ ...(result ?? ({} as ConceptNameOptionsResult)), selectedDirectionId: body.selectedDirection.conceptId, options: finalOptions }),
+      patternLearningSummary,
+      winningReferenceBrief: refBriefResult.brief,
+      requestedCount,
+      returnedCount: finalOptions.length,
+      status: partialFailure ? 'partial_failure_retry_required' : 'complete',
+      retryState: partialFailure ? { missingSlots: requestedCount - finalOptions.length, preserveValidCandidates: true, retryAllowed: true } : { missingSlots: 0, preserveValidCandidates: true, retryAllowed: false },
+      canGenerateProposalStructure: !partialFailure && finalOptions.length === 3,
+      completionClaimed: !partialFailure,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
     return json(errorResponse(WEAK_NAMING_ERROR, `reason=${classifyServerError(message)}; ${message}`), { status: 502 });

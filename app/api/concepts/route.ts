@@ -137,6 +137,26 @@ function isAxisTranslationLabel(label: string): boolean {
 // / Core Experience / Insight / Panorama / Signature / 설득 / 이해 / 체감" template smell.
 // Matched ANYWHERE (not just end-of-string) so a trailing word can't smuggle it past, e.g. "견학룸 인식 전환 경험".
 const WEAK_DIRECTION_LABEL_PATTERN = /인식\s*전환|경험\s*이해|가치\s*체험|가치\s*체감|가치\s*증명|실체화|한눈에\s*보는|시그니처|중심(?=\s|$)|core\s*experience|\binsight\b|\bpanorama\b|\bsignature\b|(?:^|\s)(?:이해|체감|설득)(?=\s|$)/i;
+const TEMPLATE_LIKE_DIRECTION_LABEL_PATTERNS: RegExp[] = [/^.+현재화/u, /^.+대표성.+/u, /^통합.+생태계/u, /^.+현장$/u, /^.+증명$/u, /^.+응답$/u];
+
+function templateLikeDirectionReasons(label = '') {
+  const value = label.trim();
+  return TEMPLATE_LIKE_DIRECTION_LABEL_PATTERNS.filter((pattern) => pattern.test(value)).map((pattern) => pattern.source);
+}
+
+function isTemplateLikeDirectionLabel(label = '') {
+  return templateLikeDirectionReasons(label).length > 0;
+}
+
+function assertNoTemplateDirectionSet(concepts: ConceptCandidate[], stage: string) {
+  const rejected = concepts
+    .map((concept, index) => ({ index, label: concept.strategicDirectionLabel || '', reasons: templateLikeDirectionReasons(concept.strategicDirectionLabel || '') }))
+    .filter((item) => item.reasons.length);
+  if (rejected.length >= 2) {
+    const detail = rejected.map((item) => `C${item.index + 1}:${item.label}(${item.reasons.join('|')})`).join('; ');
+    throw new Error(`strategy_generation_rejected_template_like_labels stage=${stage}; ${detail}`);
+  }
+}
 
 // Facility/space words that make a label facility-centered when they anchor it (subject or object).
 // NOTE: process words like "공정" are deliberately NOT here — "공정 신뢰 체험화" is a valid strategic label.
@@ -147,7 +167,7 @@ const FACILITY_LABEL_TOKENS = new Set(['공장', 'factory', 'plant', '시설', '
 function isGenericDirectionLabel(label: string): boolean {
   const value = (label || '').trim();
   if (!value) return true;
-  if (isAxisTranslationLabel(value) || WEAK_DIRECTION_LABEL_PATTERN.test(value)) return true;
+  if (isAxisTranslationLabel(value) || WEAK_DIRECTION_LABEL_PATTERN.test(value) || isTemplateLikeDirectionLabel(value)) return true;
   const tokens = value.split(/[\s/·|]+/).filter(Boolean);
   if (CONTEXT_NOUN_BLOCKLIST.test(tokens[0] || '')) return true;
   // Facility-anchored anywhere (subject, object, or embedded token, incl. compounds like 공장견학) → facility-centered.
@@ -184,31 +204,14 @@ function canonicalizeDirectionAxis(axis?: string, fallbackIndex = 0): (typeof AL
   return DIRECTION_AXIS_CANONICAL_MAP[key] || ALLOWED_DIRECTION_AXES[Math.abs(fallbackIndex) % ALLOWED_DIRECTION_AXES.length];
 }
 
-// User-facing direction title = current-RFP context noun + axis intent, so the card shows a planner-readable
-// phrase (e.g. "브랜드 인식 전환", "수소 인식 전환") instead of the internal axis label ("카테고리 전환 설득").
-// Strong, structurally varied strategic nominalizations. NEVER the weak "[subject] + 인식 전환/경험 이해/가치 체험"
-// triad — those are blocked by isWeakDirectionLabel. The model's own label is always preferred over these fallbacks.
-const AXIS_LABEL_TEMPLATES: Record<string, (ctx: string) => string> = {
-  category_shift: (c) => `${c} 관점 재정의`,
-  audience_understanding: (c) => `${c} 직관 설계`,
-  representative_position: (c) => `${c} 대표성 각인`,
-  product_value_proof: (c) => `${c} 실증 설계`,
-  process_trust: (c) => `${c} 신뢰 체험화`,
-  signature_scene: (c) => `${c} 대표 장면`,
-  'system/ecosystem_proof': (c) => `통합 ${c} 생태계`,
-  spatial_journey: (c) => `${c}의 여정`,
-  brand_memory: (c) => `${c} 기억화`,
-  operational_confidence: (c) => `${c} 운영 신뢰`,
-  evaluator_clarity: (c) => `${c} 핵심 압축`,
-  emotional_affinity: (c) => `${c} 정서 공감`,
-  technology_reality_proof: (c) => `${c} 현재화`,
-};
-
+// Fallback/repair code must not synthesize labels as subject + generic suffix.
+// If the model omits a usable label, return a neutral failure marker; the set-level gate rejects it instead of rendering weak cards.
 function contextualDirectionLabel(canonicalAxis: string, contextNoun: string): string {
-  const ctx = (contextNoun || '브랜드').trim() || '브랜드';
-  const template = AXIS_LABEL_TEMPLATES[canonicalAxis];
-  return template ? template(ctx) : `${ctx} 전략 방향`;
+  const axis = directionAxisLabel(canonicalAxis);
+  const subject = (contextNoun || '').trim();
+  return compactText([axis, subject].filter(Boolean).join(' · '), 60) || '전략 방향 생성 실패';
 }
+
 
 // Content-format / deliverable / process words must never become the subject of a strategy label.
 // "Hero" is a content format (a hero zone/scene), not a strategic direction.
@@ -1082,7 +1085,7 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
   // Preserve the model's axis/label when valid; otherwise fall back to the canonical plan axis and a clean strategic label.
   const planAxis = canonicalizeDirectionAxis(planItem.directionAxis || planItem.type);
   const modelAxis = concept.directionAxis && (ALLOWED_DIRECTION_AXES as readonly string[]).includes(concept.directionAxis) ? concept.directionAxis : planAxis;
-  const planLabel = isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planAxis) : planItem.label;
+  const planLabel = isRfpFactDirectionText(planItem.label) || isTemplateLikeDirectionLabel(planItem.label) ? '' : planItem.label;
   const chosenLabel = isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : planLabel;
   const gated: ConceptCandidate = {
     ...concept,
@@ -1091,7 +1094,7 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
     strategicDirectionType: planItem.type,
     directionAxis: modelAxis,
     whyThisDirectionExists: concept.whyThisDirectionExists || planItem.emphasis,
-    strategicDirectionLabel: chosenLabel,
+    strategicDirectionLabel: chosenLabel || '전략 방향 생성 실패',
     directionSource: { rfpEvidence: planItem.rfpEvidence, proposalPatternLearning: planItem.patternLearning, lostPatternAvoidance: planItem.lostAvoidance },
     failurePatternAvoided: concept.failurePatternAvoided || planItem.lostAvoidance,
     winningPatternUsed: concept.winningPatternUsed || planItem.patternLearning,
@@ -1294,6 +1297,7 @@ function validateAndRepairDirectionCards(concepts: ConceptCandidate[], plan: Str
 
 function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { primaryType: RfpConceptType; matrixType: MatrixType; plan: StrategicDirectionPlanItem[]; brandExperienceMatrix: BrandExperienceMatrixItem[]; entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix']; sanitizerApplied?: boolean; sanitizerReason?: string; rawMatrixType?: MatrixType; rawPrimaryRfpConceptType?: RfpConceptType; multiEntityEvidenceCount?: number; singleBrandVisitorRoomEvidenceCount?: number; subjects?: DirectionSubjects }): ConceptCandidatesResult {
   const activeMatrixSummary = summarizeActiveMatrix(params.matrixType, { entityCount: params.matrixType === 'entityDifferentiationMatrix' ? params.entityMatrix.length : 0, brandExperienceMatrix: params.brandExperienceMatrix });
+  if ((result.concepts ?? []).length !== DEFAULT_CONCEPT_COUNT) throw new Error(`strategy_generation_incomplete count=${result.concepts?.length ?? 0}; expected=${DEFAULT_CONCEPT_COUNT}`);
   const sourceConcepts = Array.from({ length: DEFAULT_CONCEPT_COUNT }, (_, index) => result.concepts[index] ?? fallbackCandidate(index + 1, '', { projectOverview: params.plan[index]?.rfpEvidence || params.plan[0]?.rfpEvidence || '', clientChallenge: params.plan[index]?.emphasis || params.plan[0]?.emphasis || '' } as AnalysisResult, { proposalThesis: params.plan[index]?.emphasis || params.plan[0]?.emphasis || '', strategicOpportunity: params.plan[index]?.chooseWhen || params.plan[0]?.chooseWhen || '', coreProblem: '', whyThisConcept: '', unifyingFrame: '', differentiationPrinciple: '' } as ProposalNarrative));
   let concepts: ConceptCandidate[] = enforceDistinctDirectionAxes(sourceConcepts.map((concept, index) => enforceStrategicDirectionGate(concept, params.plan[index] ?? params.plan[0])), params.plan);
   let joined = concepts.map((concept) => [concept.strategicDirectionLabel, concept.whatThisDirectionEmphasizes, concept.whenToChooseThisDirection, concept.winningThesisUse?.winningClaim, concept.conceptLeap?.conceptLeap, concept.signatureProofIdea?.whyThisProvesTheConcept, concept.proposalCoreConceptName, concept.proposalCoreConceptSlogan, concept.proposalCoreConceptDefinition, concept.whyThisIsCoreConcept, concept.experiencePrinciple, concept.visitorJourney, concept.contentMediaImplication, concept.mainStrength, concept.mainRisk].filter(Boolean).join(' ')).join(' ');
@@ -1320,7 +1324,9 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
     blockedTerms = BLOCKED_MULTI_ENTITY_TERMS.filter((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(joined));
   }
   concepts = dedupeDirectionLabels(concepts);
+  assertNoTemplateDirectionSet(concepts, 'post-gate-pre-repair');
   concepts = validateAndRepairDirectionCards(concepts, params.plan, params.subjects);
+  assertNoTemplateDirectionSet(concepts, 'post-repair');
   const contaminationCheckPassed = blockedTerms.length === 0;
   return {
     ...result,
@@ -2027,19 +2033,18 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       diagnostics.modelCallMs ||= elapsedMs(modelStart);
       diagnostics.timeoutStage = diagnostics.modelCallMs >= CONCEPT_GENERATION_TIMEOUT_MS ? 'model_call' : 'model_or_post_model';
       const reason = error instanceof Error ? error.message : 'generation timeout';
-      const fallbackBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata, selectedRfpConceptType);
-      const fallbackSeed = withNeutralDirectionRecommendation(enforceResultMatrixGate(fallbackBase, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount, subjects: directionSubjects }));
-      fallbackSeed.rfpDiagnosis = body.rfpDiagnosis;
-      fallbackSeed.brandProductIntelligence = body.brandProductIntelligence;
-      fallbackSeed.proposalPatternsUsedForDirections = false;
-      fallbackSeed.currentRfpOnlyMode = true;
-      const repairStart = performance.now();
-      const fallback = repairEntityBalance(applyNonBlockingConceptNamingGuard(fallbackSeed, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: [] }), balancedEvidenceSummary);
-      diagnostics.repairMs = elapsedMs(repairStart);
-      diagnostics.repairPassRan = true;
       diagnostics.totalMs = elapsedMs(routeStart);
-      logStrategyDiagnostics('fallback-after-error', diagnostics);
-      return conceptsJson(attachGenerationMetadata({ ...fallback, diagnostics }, metadata));
+      diagnostics.repairPassRan = false;
+      logStrategyDiagnostics('generation-failed-no-fallback-cards', diagnostics);
+      return conceptsJson({
+        ok: false,
+        error: '전략 방향 생성에 실패했습니다. 약한 fallback 카드는 렌더링하지 않습니다. 다시 생성해 주세요.',
+        reason: 'strategy_generation_failed_no_fallback_cards',
+        rejectionReasons: [reason],
+        conceptPromptVersion,
+        diagnostics,
+        ...metadata,
+      }, { status: 422 });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.';
