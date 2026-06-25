@@ -321,6 +321,8 @@ export interface PatternLearningSummary {
   recommendedPatternRole: string | null;
   referenceBriefSummary?: string | null;
   referenceBriefIsNeutral?: boolean;
+  referenceConfidenceReason?: string | null;
+  referenceInfluenceLevel?: 'structural' | 'neutral-hint';
 }
 
 // Deck-level design guide (deterministic, themed by proposal type). Applied to the PPTX (fonts, colors, before/after-
@@ -787,6 +789,18 @@ export interface ConceptCandidate {
 
 
 
+export interface ConceptDirectionScore {
+  conceptId: string;
+  directionLabel?: string;
+  total: number;
+  rfpFitScore: number;
+  differentiationScore: number;
+  targetFitScore: number;
+  spatialFeasibilityScore: number;
+  viralPotentialScore: number;
+  operationFeasibilityScore: number;
+}
+
 export interface ConceptRecommendation {
   recommendedConceptId: string;
   recommendedDirectionLabel?: string;
@@ -794,6 +808,9 @@ export interface ConceptRecommendation {
   otherDirectionsUsefulness?: string;
   tradeOffSummary?: string;
   whyNotOthers: string;
+  // §3: the recommended direction is the highest-scoring one (argmax over evaluationScores), not index 0.
+  recommendationScore?: number;
+  scoreBreakdown?: ConceptDirectionScore[];
 }
 
 export interface ConceptNamingGuardNotice {

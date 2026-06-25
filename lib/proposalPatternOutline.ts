@@ -401,6 +401,26 @@ function forbiddenCopyLine(comparison: ProposalSuccessPatternComparison): string
   return terms.length ? `복사 절대 금지(deny-list — conceptName/koreanSubtitle/oneLineSlogan/slideTitle에 그대로 출력 금지): ${terms.join(' / ')}` : null;
 }
 
+// §4: scale reference influence by confidence. A confirmed-winner reference (non-neutral + medium/high confidence) is a
+// STRUCTURAL source; a low-confidence / untagged (neutral) reference is a WEAK HINT only and must never override the RFP.
+function referenceInfluenceLevel(comparison: ProposalSuccessPatternComparison): 'structural' | 'neutral-hint' {
+  if (!hasMeaningfulBrief(comparison)) return 'neutral-hint';
+  if (comparison.referenceBriefIsNeutral === false && (comparison.confidence === 'high' || comparison.confidence === 'medium')) return 'structural';
+  return 'neutral-hint';
+}
+function referenceStrengthLine(comparison: ProposalSuccessPatternComparison): string {
+  return referenceInfluenceLevel(comparison) === 'structural'
+    ? '적용 강도 — STRUCTURAL(수주 확인 · 신뢰도 medium/high): 아래 구조 논리를 Approach·Concept·Concept Strategy·Content·Content Detail·Execution에 적극 반영한다. 단 현재 RFP·선택 전략 방향과 충돌하면 RFP가 우선한다.'
+    : '적용 강도 — WEAK HINT(결과 미태깅/중립 · 신뢰도 낮음): 아래는 약한 참고 힌트일 뿐이다. 현재 RFP·선택 전략 방향·진단을 절대 덮어쓰지 말고, 충돌하거나 애매하면 무시한다. 강한 긍정 패턴으로 취급하지 말 것.';
+}
+// UI-facing one-liner explaining WHY the reference confidence is what it is.
+function referenceConfidenceReason(comparison: ProposalSuccessPatternComparison): string | null {
+  if (!hasMeaningfulBrief(comparison)) return null;
+  if (comparison.referenceBriefIsNeutral) return '결과(수주/미수주) 미태깅 레퍼런스라 신뢰도 낮음 · 구조 힌트로만 약하게 반영(현재 RFP 우선). 수주로 태깅하면 더 강하게 반영됩니다.';
+  const { wonCount, typeMatchedCount } = comparison.evidenceSource;
+  return `수주 확인 사례 ${wonCount}건${typeMatchedCount ? ` · 유형 일치 ${typeMatchedCount}건` : ''} → 구조를 더 적극 반영`;
+}
+
 export function formatProposalSuccessPatternComparisonForPrompt(comparison: ProposalSuccessPatternComparison): string {
   if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length && !hasMeaningfulBrief(comparison)) {
     return '수주 패턴 비교 데이터 없음 — 현재 RFP/선택 전략 방향/최종 컨셉 근거만 사용한다.';
@@ -416,6 +436,7 @@ export function formatProposalSuccessPatternComparisonForPrompt(comparison: Prop
   if (hasMeaningfulBrief(comparison)) {
     const b = comparison.winningReferencePatternBrief!;
     lines.push(`[${referenceBriefHeader(comparison)}] 논리 구조만 적용(원문 복사 금지):`);
+    lines.push(referenceStrengthLine(comparison));
     for (const [label, value] of [['덱 섹션 순서 로직', b.deckStructurePattern], ['콘텐츠 아키텍처', b.contentArchitecturePattern], ['미디어/인터랙션 구성', b.mediaAndInteractionPattern], ['공간 여정', b.spatialJourneyPattern], ['운영/실행 증명', b.operationProofPattern], ['증명 구조', b.proofPattern], ['시그니처 경험', b.signatureExperiencePattern]] as const) {
       const v = briefVal(value);
       if (v) lines.push(`- ${label}: ${v}`);
@@ -444,6 +465,7 @@ export function formatWinningPatternInfluenceForConceptNaming(comparison: Propos
   if (hasMeaningfulBrief(comparison)) {
     const b = comparison.winningReferencePatternBrief!;
     lines.push(`[${referenceBriefHeader(comparison)}] 컨셉 로직 구조만 적용(원문 복사 금지):`);
+    lines.push(referenceStrengthLine(comparison));
     for (const [label, value] of [['문제 재정의 방식', b.strategicReframingPattern], ['전략 → 컨셉 전환 로직', b.conceptEmergencePattern], ['관객 질문과 답', b.audienceQuestionPattern], ['브랜드 톤 작동 방식', b.brandTonePattern], ['시그니처 경험/장면 논리', b.signatureExperiencePattern], ['설득력의 핵심', b.whatMadeItPersuasive], ['재사용 가능한 논리', b.reusableLogicOnly]] as const) {
       const v = briefVal(value);
       if (v) lines.push(`- ${label}: ${v}`);
@@ -471,6 +493,8 @@ export function buildPatternLearningSummary(comparison: ProposalSuccessPatternCo
     recommendedPatternRole: comparison.similarWinningPatterns[0]?.slideRole ?? comparison.similarWinningPatterns[0]?.narrativeStage ?? null,
     referenceBriefSummary: referenceBriefSummary ? referenceBriefSummary.slice(0, 140) : null,
     referenceBriefIsNeutral: brief ? Boolean(comparison.referenceBriefIsNeutral) : undefined,
+    referenceConfidenceReason: brief ? referenceConfidenceReason(comparison) : undefined,
+    referenceInfluenceLevel: brief ? referenceInfluenceLevel(comparison) : undefined,
   };
 }
 
