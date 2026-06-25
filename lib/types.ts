@@ -854,6 +854,15 @@ export interface ConceptCandidatesResult {
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
+  directionGenerationDiagnostics?: {
+    failureStage?: string;
+    initialError?: string;
+    initialDirectionCount?: number;
+    finalDirectionCount?: number;
+    repairPathRan?: boolean;
+    bpiDerivedFields?: string[];
+    rejectionReasons?: string[];
+  };
   directionValidation?: {
     allDirectionsAreStrategicBets?: boolean;
     noBasicRequirementDirections?: boolean;

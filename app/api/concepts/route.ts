@@ -679,6 +679,45 @@ function buildCompactAnalysis(analysis: AnalysisResult, differentiationSummary: 
 }
 
 
+
+function normalizeBrandProductIntelligenceForDirections(bpi: BrandProductIntelligence | undefined, analysis: AnalysisResult, diagnosis: RfpDiagnosis, input: ProjectInput): { value?: BrandProductIntelligence; complete: boolean; derived: string[]; reason?: string } {
+  if (!bpi) return { complete: false, derived: [], reason: 'brand_product_intelligence_missing' };
+  const derived: string[] = [];
+  const pick = (...values: Array<string | undefined>) => values.find((value) => value?.trim())?.trim() || '';
+  const list = (items?: string[]) => (items ?? []).map((item) => item.trim()).filter(Boolean);
+  const hasVisualContent = Boolean(
+    pick(bpi.clientOrBrandRole, bpi.productOrServiceMeaning, bpi.categoryContext, bpi.audiencePerceptionGap, bpi.strategyImplication, bpi.namingImplication)
+    || list(bpi.brandSpecificVocabulary).length >= 2,
+  );
+  if (!hasVisualContent) return { complete: false, derived, reason: 'brand_product_intelligence_empty' };
+  const next: BrandProductIntelligence = {
+    clientOrBrandRole: pick(bpi.clientOrBrandRole, diagnosis.clientUniquePosition, input.clientName, analysis.projectOverview),
+    productOrServiceMeaning: pick(bpi.productOrServiceMeaning, analysis.productInfo?.[0], analysis.productFeatures?.[0]?.valueProposition, diagnosis.coreWinningCondition, analysis.projectOverview),
+    categoryContext: pick(bpi.categoryContext, analysis.proposalTypeReasoning, analysis.projectOverview, diagnosis.strategicTension),
+    audiencePerceptionGap: pick(bpi.audiencePerceptionGap, diagnosis.strategicTension, diagnosis.hiddenNeed, analysis.targetInfo),
+    brandSpecificVocabulary: list(bpi.brandSpecificVocabulary),
+    wordsToAvoid: list(bpi.wordsToAvoid),
+    toneGuidance: pick(bpi.toneGuidance, '현재 RFP 근거와 브랜드/제품 이해에 맞춘 구체적이고 과장 없는 톤'),
+    strategyImplication: pick(bpi.strategyImplication, diagnosis.coreWinningCondition, diagnosis.proofBurden),
+    namingImplication: pick(bpi.namingImplication, diagnosis.clientUniquePosition, diagnosis.hiddenNeed),
+  };
+  (Object.keys(next) as Array<keyof BrandProductIntelligence>).forEach((key) => {
+    const original = bpi[key];
+    if (Array.isArray(original)) { if (!original.length && (next[key] as string[]).length) derived.push(key); }
+    else if (!String(original ?? '').trim() && String(next[key] ?? '').trim()) derived.push(key);
+  });
+  if (next.brandSpecificVocabulary.length < 2) {
+    next.brandSpecificVocabulary = compactList([input.clientName, input.projectName, next.productOrServiceMeaning, next.categoryContext, ...(analysis.productInfo ?? []), ...(diagnosis.rfpEvidenceAnchors ?? [])], 8, 40);
+    derived.push('brandSpecificVocabulary');
+  }
+  if (next.wordsToAvoid.length < 1) {
+    next.wordsToAvoid = ['범용 전략어', '타 RFP 어휘', '제안유형 프리셋'];
+    derived.push('wordsToAvoid');
+  }
+  const complete = Boolean(next.clientOrBrandRole && next.productOrServiceMeaning && next.categoryContext && next.audiencePerceptionGap && next.strategyImplication && next.namingImplication && next.brandSpecificVocabulary.length);
+  return complete ? { value: next, complete, derived } : { complete, derived, reason: 'brand_product_intelligence_incomplete' };
+}
+
 interface StrategicDirectionPlanItem {
   type: string;
   rfpConceptType: RfpConceptType;
@@ -1719,9 +1758,6 @@ export async function POST(request: Request) {
     if (!body.rfpDiagnosis) {
       return conceptsJson({ error: '제안 전략 진단 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
     }
-    if (!body.brandProductIntelligence) {
-      return conceptsJson({ error: '브랜드/제품 이해 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
-    }
     // Diagnosis must be COMPLETE ENOUGH (not just present) before final direction cards are generated, so shallow
     // diagnoses cannot drive weak directions. Lenient: a real /api/diagnosis result (strict schema) always passes.
     const diag = body.rfpDiagnosis;
@@ -1733,8 +1769,13 @@ export async function POST(request: Request) {
       && ((diag.requiredProofElements?.length ?? 0) > 0 || (diag.requiredPersuasionElements?.length ?? 0) > 0),
     );
     if (!diagnosisCompleteEnough) {
-      return conceptsJson({ error: '제안 전략 진단이 충분하지 않습니다. 전략 진단을 먼저 완료해 주세요.', reason: 'diagnosis_incomplete' }, { status: 400 });
+      return conceptsJson({ error: '제안 전략 진단이 충분하지 않습니다. 전략 진단을 먼저 완료해 주세요.', reason: 'diagnosis_incomplete', developmentDetails: { failureStage: 'proposalStrategyDiagnosis completeness check' } }, { status: 400 });
     }
+    const normalizedBpi = normalizeBrandProductIntelligenceForDirections(body.brandProductIntelligence, body.analysis, diag, body.input);
+    if (!normalizedBpi.complete || !normalizedBpi.value) {
+      return conceptsJson({ error: '브랜드/제품 이해가 충분하지 않습니다. 브랜드/제품 이해를 먼저 완료해 주세요.', reason: normalizedBpi.reason ?? 'brand_product_intelligence_incomplete', developmentDetails: { failureStage: 'Brand/Product Understanding completeness check', derivedFields: normalizedBpi.derived } }, { status: 400 });
+    }
+    body.brandProductIntelligence = normalizedBpi.value;
 
     const metadata: ConceptGenerationMetadata = {
       conceptPromptVersion: body.conceptPromptVersion,
@@ -1954,9 +1995,9 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
         maxRetries: 1,
       });
 
-      // §9: do NOT pad an under-generated result with hardcoded preset cards (fallbackCandidate). If the model returned
-      // fewer than 3 directions, treat it as a generation failure → the catch returns a retry signal (no generic cards).
-      if ((generated.concepts?.length ?? 0) < 3) throw new Error('under_generation: model returned fewer than 3 strategic directions');
+      // If the model under-generates but returns a parseable object, keep valid directions and let the
+      // evidence-derived repair gate synthesize only the missing slots from the discovery brief.
+      const initialDirectionCount = generated.concepts?.length ?? 0;
 
       let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({
         ...generated,
@@ -1970,6 +2011,7 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       result.brandProductIntelligence = body.brandProductIntelligence;
       result.proposalPatternsUsedForDirections = false;
       result.currentRfpOnlyMode = true;
+      result.directionGenerationDiagnostics = { failureStage: initialDirectionCount < 3 ? 'direction generation under-generated; evidence-derived repair filled missing directions' : 'direction generation completed', initialDirectionCount, finalDirectionCount: result.concepts.length, repairPathRan: initialDirectionCount < 3, bpiDerivedFields: normalizedBpi.derived };
       result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: [] });
       result = repairEntityBalance(result, balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(result, metadata));
@@ -1979,8 +2021,27 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       // return an explicit error instead; the client preserves the completed RFP analysis / diagnosis / brand understanding
       // and shows a retry CTA (regenerate from current-RFP evidence only). A generic fallback never reaches the user.
       const reason = error instanceof Error ? error.message : 'generation timeout';
-      console.error(`[concepts] strategic direction generation failed — returning retry signal (no generic fallback): ${reason}`);
-      return conceptsJson({ error: '전략 방향 생성에 실패했습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.', reason: 'direction_generation_failed', conceptPromptVersion }, { status: 502 });
+      console.warn(`[concepts] initial strategic direction generation failed; running evidence-derived repair path: ${reason}`);
+      try {
+        const repairSeed = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata, selectedRfpConceptType);
+        let repaired = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({
+          ...repairSeed,
+          concepts: [],
+          recommendation: { ...repairSeed.recommendation, recommendedDirectionLabel: strategicDirectionPlan[0]?.label || repairSeed.recommendation.recommendedDirectionLabel },
+        } as ConceptCandidatesResult, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount, subjects: directionSubjects })));
+        repaired.rfpDiagnosis = body.rfpDiagnosis;
+        repaired.brandProductIntelligence = body.brandProductIntelligence;
+        repaired.proposalPatternsUsedForDirections = false;
+        repaired.currentRfpOnlyMode = true;
+        repaired.directionGenerationDiagnostics = { failureStage: reason.includes('timed out') || reason.includes('timeout') ? 'LLM call failure/timeout' : 'schema parsing failure or validation rejection', initialError: reason, initialDirectionCount: 0, finalDirectionCount: repaired.concepts.length, repairPathRan: true, bpiDerivedFields: normalizedBpi.derived, rejectionReasons: ['initial generation did not produce a usable strict schema result; generated directions were repaired from discovery brief instead of generic fallback'] };
+        repaired = applyNonBlockingConceptNamingGuard(repaired, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: [] });
+        repaired = repairEntityBalance(repaired, balancedEvidenceSummary);
+        return conceptsJson(attachGenerationMetadata(repaired, metadata));
+      } catch (repairError) {
+        const repairReason = repairError instanceof Error ? repairError.message : 'repair failed';
+        console.error(`[concepts] evidence-derived repair path failed: ${repairReason}`);
+        return conceptsJson({ error: '전략 방향 생성에 실패했습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.', reason: 'direction_generation_failed', conceptPromptVersion, developmentDetails: { failureStage: 'repair path returning invalid schema', initialError: reason, repairError: repairReason, repairPathRan: true } }, { status: 502 });
+      }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.';
