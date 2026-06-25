@@ -2315,6 +2315,11 @@ export default function Home() {
   const [isDbUploadModalOpen, setIsDbUploadModalOpen] = useState(false);
   const [finalNamingError, setFinalNamingError] = useState('');
   const [finalNamingDebug, setFinalNamingDebug] = useState<{ responseStatus?: number; responseErrorMessage?: string; selectedDirectionKey?: string; missingFields?: string[] }>({});
+  // Incremental concept-candidate generation (§3-5): per-candidate progress + stale-guard refs so a direction/project
+  // switch (or a new generation run) stops the in-flight loop instead of accumulating candidates for an abandoned scope.
+  const [conceptGenProgress, setConceptGenProgress] = useState<{ current: number; total: number } | null>(null);
+  const namingRunIdRef = useRef(0);
+  const namingScopeRef = useRef({ directionKey: '', projectKey: '' });
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -2363,8 +2368,12 @@ export default function Home() {
   const selectedStrategicDirectionLabel = getStrategicDirectionLabel(selectedStrategicDirection);
   const selectedStrategicDirectionExists = Boolean(selectedStrategicDirection);
   const finalNamingLoading = loading === '컨셉명 후보 생성 중';
+  // Per-candidate progress label for the incremental generation loop (1/3 → 2/3 → 3/3 생성 중).
+  const conceptGenLabel = conceptGenProgress ? `${conceptGenProgress.current}/${conceptGenProgress.total} 생성 중` : '컨셉명 후보 생성 중';
   const selectedDirectionKey = getDirectionCacheKey(state.selectedDirectionIndex, selectedStrategicDirection);
   const currentProjectKey = buildCurrentProjectKey(state.input, uploadedDocuments);
+  // Keep the live (direction, project) scope in a ref so the incremental generation loop can detect a mid-flight switch.
+  namingScopeRef.current = { directionKey: selectedDirectionKey, projectKey: currentProjectKey };
   // The naming section is scoped to exactly one (project, direction) pair at a time.
   const activeNamingContextKey = selectedStrategicDirectionExists ? `${currentProjectKey}::${selectedDirectionKey}` : '';
   // STRICT: render ONLY candidates whose stamp matches the current project AND the current selected direction, and ONLY
@@ -3898,19 +3907,20 @@ export default function Home() {
     if (!state.analysis || !selectedStrategicDirection) return;
     setError('');
     setFinalNamingError('');
+    // A new run supersedes any in-flight loop (its stale-guard checks this id).
+    const myRunId = (namingRunIdRef.current += 1);
     setLoading('컨셉명 후보 생성 중');
+    setConceptGenProgress({ current: 1, total: 3 });
     try {
       const selectedDirection = selectedStrategicDirection;
       const directionKey = getDirectionCacheKey(state.selectedDirectionIndex, selectedDirection);
-      // Request identity for async-race protection: a response is only allowed to update the VISIBLE candidates if the
-      // user is still on this exact project + direction when it returns.
       const requestProjectKey = currentProjectKey;
       const generationBatchId = crypto.randomUUID ? crypto.randomUUID() : `${directionKey}-${requestProjectKey}`;
       const directionValidation = validateStrategicDirectionForDisplay(selectedDirection);
       const selectedDirectionForNaming = normalizeSelectedDirectionForNaming(selectedDirection);
       setFinalNamingDebug({ selectedDirectionKey: directionKey, missingFields: directionValidation.missingFields });
       if (!selectedDirectionForNaming || !directionValidation.canGenerateConceptNames) throw new Error(`missing_fields=${directionValidation.missingFields.join(',') || 'invalid_direction'}`);
-      const currentDirectionOptions = state.conceptNameOptionsByDirection?.[directionKey] ?? [];
+      const priorDirectionOptions = state.conceptNameOptionsByDirection?.[directionKey] ?? [];
       const otherDirectionOptions = Object.entries(state.conceptNameOptionsByDirection ?? {}).filter(([key]) => key !== directionKey).flatMap(([, value]) => value);
       const sanitizedNamingContext = sanitizeConceptContextByRfpType({
         primaryRfpConceptType: selectedDirection.rfpConceptType || state.conceptGenerationResult?.primaryRfpConceptType || state.analysis.primaryRfpConceptType || 'unknown',
@@ -3921,41 +3931,76 @@ export default function Home() {
         brandExperienceMatrix: state.conceptGenerationResult?.brandExperienceMatrix,
       });
       const activeRelevantMatrix = getActiveMatrix(sanitizedNamingContext) ?? undefined;
-      // Scope winning/losing pattern learning to THIS project's own uploaded reference proposals only (same scoping as
-      // outline). When nothing is persisted these are empty and the server skips the global pattern read.
+      // Scope winning/losing pattern learning to THIS project's own uploaded reference proposals only.
       const namingScopedDocuments = [...(state.uploadedDocuments ?? []), ...(state.dbUploadedDocuments ?? [])];
       const namingScopeProjectId = namingScopedDocuments.find((document) => document.dbProjectId)?.dbProjectId ?? null;
       const namingScopeDocumentIds = Array.from(new Set(namingScopedDocuments.map((document) => document.dbDocumentId).filter((id): id is string => Boolean(id))));
-      // Reference-proposal concept-logic brief: pass the cached brief if already extracted, else the reference proposal's
-      // own chunks (documentType 'finalProposal') so the server distils it ONCE; the result is cached back into state.
+      // Reference brief is extracted ONCE and cached client-side (winningReferenceBrief); every per-candidate request reuses
+      // the cache, so heavy reference extraction never re-runs inside the loop.
       const namingReferenceFields = state.winningReferenceBrief !== undefined
         ? { winningReferenceBriefProvided: true, winningReferenceBrief: state.winningReferenceBrief }
         : { winningReferenceChunks: documentChunks.filter((chunk) => chunk.documentType === 'finalProposal') };
-      const namingPayload = { ...namingReferenceFields, input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection: selectedDirectionForNaming, selectedStrategicDirection: selectedDirectionForNaming, selectedStrategicDirectionKey: directionKey, selectedStrategicDirectionId: selectedDirectionForNaming.conceptId, selectedStrategicDirectionConceptId: selectedDirectionForNaming.conceptId, directionAxis: selectedDirectionForNaming.directionAxis, strategicDirectionLabel: selectedDirectionForNaming.strategicDirectionLabel, oneLineStrategicBet: selectedDirectionForNaming.oneLineStrategicBet, representativePersuasionScene: selectedDirectionForNaming.representativePersuasionScene, generationNonce: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirectionForNaming.winningThesis, conceptLeap: selectedDirectionForNaming.conceptLeap, signatureProofIdea: selectedDirectionForNaming.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, brandProductIntelligence: state.brandProductIntelligence, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative, recentNameOptions: currentDirectionOptions.map((option) => option.conceptName), existingNamesForSelectedDirection: currentDirectionOptions.map((option) => option.conceptName), blockedOtherDirectionNames: otherDirectionOptions.map((option) => option.conceptName), projectId: namingScopeProjectId, documentIds: namingScopeDocumentIds };
-      const namingResponse = await fetch('/api/concept-names', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, cache: 'no-store', body: JSON.stringify(namingPayload) });
-      setFinalNamingDebug((current) => ({ ...current, responseStatus: namingResponse.status }));
-      const result = await parseJsonResponse<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string; patternLearningSummary?: PatternLearningSummary; winningReferenceBrief?: WinningReferencePatternBrief | null }> (namingResponse, '/api/concept-names');
-      if (!namingResponse.ok) throw new Error(result.details ? `${result.error || '컨셉명 생성 실패'} (${result.details})` : (result.error || '컨셉명 생성 중 오류가 발생했습니다.'));
-      const blockedOptions = [...currentDirectionOptions, ...otherDirectionOptions];
-      // Stamp every candidate with its project + direction provenance so the render filter can never show it under a
-      // different project/direction, even if it lands in state after the user has moved on.
-      const nameOptions = uniqueConceptNameOptions(result.nameOptions ?? result.options ?? [], blockedOptions)
-        .map((option, index) => ({ ...option, projectKey: requestProjectKey, directionKey, generationBatchId, candidateKey: `${requestProjectKey}::${directionKey}::${generationBatchId}::${index}` }));
-      if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
-      if (!nameOptions.length) throw new Error('컨셉명 후보가 비어 있습니다.');
-      if (result.warning) setFinalNamingError(`컨셉명 생성 경고: ${result.warning}`);
-      setState((current) => {
-        const currentKey = getDirectionCacheKey(current.selectedDirectionIndex, current.selectedStrategicDirection ?? current.selectedConcept?.selectedDirection);
-        const stillCurrent = currentKey === directionKey && buildCurrentProjectKey(current.input, current.uploadedDocuments) === requestProjectKey;
-        const latestDirectionOptions = current.conceptNameOptionsByDirection?.[directionKey] ?? [];
-        const nextOptions = options.append ? uniqueConceptNameOptions([...latestDirectionOptions, ...nameOptions]) : nameOptions;
-        const nextByDirection = { ...(current.conceptNameOptionsByDirection ?? {}), [directionKey]: nextOptions };
-        // Stale response (direction/project changed while in flight): keep the captured direction's bucket up to date for
-        // when the user returns, but do NOT overwrite the currently visible candidates or final selection.
-        if (!stillCurrent) return { ...current, conceptNameOptionsByDirection: nextByDirection };
-        return { ...current, conceptNameOptions: nextOptions, conceptNameOptionsByDirection: nextByDirection, selectedFinalConceptNameOption: options.append ? current.selectedFinalConceptNameOption : undefined, selectedFinalConceptCandidateKey: options.append ? current.selectedFinalConceptCandidateKey : undefined, conceptPatternLearningSummary: result.patternLearningSummary ?? current.conceptPatternLearningSummary, winningReferenceBrief: result.winningReferenceBrief !== undefined ? result.winningReferenceBrief : current.winningReferenceBrief, outline: undefined, slides: undefined };
-      });
+      const basePayload = { ...namingReferenceFields, input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection: selectedDirectionForNaming, selectedStrategicDirection: selectedDirectionForNaming, selectedStrategicDirectionKey: directionKey, selectedStrategicDirectionId: selectedDirectionForNaming.conceptId, selectedStrategicDirectionConceptId: selectedDirectionForNaming.conceptId, directionAxis: selectedDirectionForNaming.directionAxis, strategicDirectionLabel: selectedDirectionForNaming.strategicDirectionLabel, oneLineStrategicBet: selectedDirectionForNaming.oneLineStrategicBet, representativePersuasionScene: selectedDirectionForNaming.representativePersuasionScene, primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirectionForNaming.winningThesis, conceptLeap: selectedDirectionForNaming.conceptLeap, signatureProofIdea: selectedDirectionForNaming.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, brandProductIntelligence: state.brandProductIntelligence, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative, blockedOtherDirectionNames: otherDirectionOptions.map((option) => option.conceptName), projectId: namingScopeProjectId, documentIds: namingScopeDocumentIds };
+
+      // §3-5: incremental generation. Request ONE light candidate per call (the heavy 3-in-one request was the timeout
+      // cause); accumulate three valid candidates, show 1/3·2/3·3/3 progress, cap total attempts (no infinite loop), and
+      // keep partial candidates if the cap is hit. conceptFrameSynthesis is deterministically rebuilt per request (cheap,
+      // no LLM) and the reference brief is reused from cache — only the candidate itself is generated + validated.
+      const TARGET = 3;
+      const MAX_TOTAL_CANDIDATE_ATTEMPTS = 6;
+      const ROLES = ['theme', 'scene', 'declaration'] as const;
+      const priorNames = priorDirectionOptions.map((option) => option.conceptName).filter(Boolean);
+      const accumulated: ConceptNameOption[] = options.append ? [...priorDirectionOptions] : [];
+      const baseCount = accumulated.length;
+      let newCount = 0;
+      let attempts = 0;
+      let firstApplied = false;
+      let cachedPatternSummary: PatternLearningSummary | undefined;
+      let cachedReferenceBrief: WinningReferencePatternBrief | null | undefined;
+      const stillScoped = () => namingRunIdRef.current === myRunId && namingScopeRef.current.directionKey === directionKey && namingScopeRef.current.projectKey === requestProjectKey;
+
+      while (newCount < TARGET && attempts < MAX_TOTAL_CANDIDATE_ATTEMPTS && stillScoped()) {
+        attempts += 1;
+        const role = ROLES[newCount % ROLES.length];
+        setConceptGenProgress({ current: Math.min(newCount + 1, TARGET), total: TARGET });
+        const blockNames = Array.from(new Set([...priorNames, ...accumulated.map((option) => option.conceptName)].filter(Boolean)));
+        const payload = { ...basePayload, candidateCount: 1, candidateRole: role, generationNonce: (crypto.randomUUID ? crypto.randomUUID() : String(attempts)), recentNameOptions: blockNames, existingNamesForSelectedDirection: blockNames };
+        const namingResponse = await fetch('/api/concept-names', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, cache: 'no-store', body: JSON.stringify(payload) });
+        setFinalNamingDebug((current) => ({ ...current, responseStatus: namingResponse.status }));
+        const result = await parseJsonResponse<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string; patternLearningSummary?: PatternLearningSummary; winningReferenceBrief?: WinningReferencePatternBrief | null }>(namingResponse, '/api/concept-names');
+        if (!namingResponse.ok) throw new Error(result.details ? `${result.error || '컨셉명 생성 실패'} (${result.details})` : (result.error || '컨셉명 생성 중 오류가 발생했습니다.'));
+        if (result.ok === false) throw new Error(result.error || '컨셉명 생성 중 오류가 발생했습니다.');
+        if (result.patternLearningSummary) cachedPatternSummary = result.patternLearningSummary;
+        if (result.winningReferenceBrief !== undefined) cachedReferenceBrief = result.winningReferenceBrief;
+        // Stamp every candidate with its project + direction provenance so the render filter can never show it under a
+        // different project/direction, even if it lands in state after the user has moved on.
+        const got = uniqueConceptNameOptions(result.nameOptions ?? result.options ?? [], [...accumulated, ...otherDirectionOptions])
+          .map((option, i) => ({ ...option, projectKey: requestProjectKey, directionKey, generationBatchId, candidateKey: `${requestProjectKey}::${directionKey}::${generationBatchId}::${baseCount + newCount + i}` }));
+        if (!got.length) continue; // this light request produced nothing net-new — count the attempt and retry
+        accumulated.push(...got);
+        newCount += got.length;
+        const isFreshFirst = !options.append && !firstApplied;
+        firstApplied = true;
+        const snapshot = [...accumulated];
+        setState((current) => {
+          const currentKey = getDirectionCacheKey(current.selectedDirectionIndex, current.selectedStrategicDirection ?? current.selectedConcept?.selectedDirection);
+          // Include the run-id term: a superseded run's straggling fetch must NOT overwrite the visible candidates or
+          // clear the selection (it may only update its own captured bucket).
+          const stillCurrent = namingRunIdRef.current === myRunId && currentKey === directionKey && buildCurrentProjectKey(current.input, current.uploadedDocuments) === requestProjectKey;
+          const nextByDirection = { ...(current.conceptNameOptionsByDirection ?? {}), [directionKey]: snapshot };
+          // Stale (direction/project changed mid-flight, or superseded run): keep the captured bucket fresh for when the
+          // user returns, but do NOT overwrite the visible candidates or final selection.
+          if (!stillCurrent) return { ...current, conceptNameOptionsByDirection: nextByDirection };
+          return { ...current, conceptNameOptions: snapshot, conceptNameOptionsByDirection: nextByDirection, selectedFinalConceptNameOption: (!options.append && isFreshFirst) ? undefined : current.selectedFinalConceptNameOption, selectedFinalConceptCandidateKey: (!options.append && isFreshFirst) ? undefined : current.selectedFinalConceptCandidateKey, conceptPatternLearningSummary: cachedPatternSummary ?? current.conceptPatternLearningSummary, winningReferenceBrief: cachedReferenceBrief !== undefined ? cachedReferenceBrief : current.winningReferenceBrief, outline: undefined, slides: undefined };
+        });
+      }
+
+      if (stillScoped() && newCount < TARGET) {
+        // Hard limit reached without three valid candidates — keep the partial candidates, surface an explicit error.
+        setFinalNamingError('컨셉 후보를 3개 모두 생성하지 못했습니다. 생성된 후보를 먼저 확인하거나 다시 생성해 주세요.');
+      }
     } catch (err) {
+      if (namingRunIdRef.current !== myRunId) return; // superseded by a newer run — let it own the UI state
       const rawMessage = err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.';
       const message = isTimeoutMessage(rawMessage)
         ? '컨셉명 생성 시간이 초과되었습니다. 선택한 전략 방향은 유지되며, 컨셉명만 다시 생성할 수 있습니다.'
@@ -3964,7 +4009,10 @@ export default function Home() {
       setFinalNamingDebug((current) => ({ ...current, responseErrorMessage: rawMessage }));
       setError(message);
     } finally {
-      setLoading('');
+      if (namingRunIdRef.current === myRunId) {
+        setLoading('');
+        setConceptGenProgress(null);
+      }
     }
   };
 
@@ -4530,7 +4578,7 @@ export default function Home() {
                     {selected && state.selectedConcept && (
                       <div className="mt-5 rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-900">
                         <p>선택된 방향입니다. 아래 ‘최종 컨셉명 후보’ 섹션에서 컨셉명을 생성하고 비교하세요.</p>
-                        <button type="button" onClick={() => runConceptNames()} disabled={Boolean(loading) || !selectedStrategicDirectionExists} className="mt-3 rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white transition hover:bg-blue-700 disabled:opacity-50">{finalNamingLoading ? '컨셉명 후보 생성 중' : '컨셉명 생성하기'}</button>
+                        <button type="button" onClick={() => runConceptNames()} disabled={Boolean(loading) || !selectedStrategicDirectionExists} className="mt-3 rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white transition hover:bg-blue-700 disabled:opacity-50">{finalNamingLoading ? conceptGenLabel : '컨셉명 생성하기'}</button>
                       </div>
                     )}
                   </article>
@@ -4545,8 +4593,8 @@ export default function Home() {
                     <p className="mt-1 text-sm leading-6 text-slate-500">선택한 전략 방향을 바탕으로 생성된 컨셉명 후보입니다.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <PrimaryButton onClick={() => runConceptNames()} disabled={Boolean(loading) || !selectedStrategicDirectionExists}>{finalNamingLoading ? '컨셉명 후보 생성 중' : (directionConceptNameOptions.length ? '컨셉명 다시 생성' : '컨셉명 생성')}</PrimaryButton>
-                    {finalNamingError && <button type="button" onClick={() => runConceptNames()} className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">다시 시도</button>}
+                    <PrimaryButton onClick={() => runConceptNames()} disabled={Boolean(loading) || !selectedStrategicDirectionExists}>{finalNamingLoading ? conceptGenLabel : (directionConceptNameOptions.length ? '컨셉명 다시 생성' : '컨셉명 생성')}</PrimaryButton>
+                    {finalNamingError && <button type="button" onClick={() => runConceptNames()} disabled={Boolean(loading)} className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 disabled:opacity-50">다시 시도</button>}
                   </div>
                 </div>
                 <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm">
@@ -4608,7 +4656,7 @@ export default function Home() {
                     })}
                   </div>
                   <div className="mt-4 flex justify-center">
-                    <button type="button" onClick={() => runConceptNames({ append: true })} disabled={Boolean(loading) || !selectedStrategicDirectionExists} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50">추가 컨셉 보기</button>
+                    <button type="button" onClick={() => runConceptNames({ append: true })} disabled={Boolean(loading) || !selectedStrategicDirectionExists} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50">{finalNamingLoading ? conceptGenLabel : '추가 컨셉 보기'}</button>
                   </div>
                   </>
                 ) : <p className="mt-5 rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm font-semibold text-slate-500">{selectedStrategicDirectionExists ? '선택한 전략 방향에 맞는 컨셉명을 다시 생성해 주세요.' : '컨셉명을 생성하면 후보 카드가 이 영역에 표시됩니다.'}</p>}
