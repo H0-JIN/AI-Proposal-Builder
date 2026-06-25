@@ -1319,6 +1319,7 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
   concepts = dedupeDirectionLabels(concepts);
   concepts = validateAndRepairDirectionCards(concepts, params.plan, params.subjects);
   const contaminationCheckPassed = blockedTerms.length === 0;
+  const validationSummary = validateDynamicDirections(concepts);
   return {
     ...result,
     rawPrimaryRfpConceptType: params.rawPrimaryRfpConceptType ?? result.rawPrimaryRfpConceptType ?? params.primaryType,
@@ -1344,7 +1345,11 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
     brandExperienceMatrix: params.matrixType === 'brandExperienceMatrix' ? params.brandExperienceMatrix : [],
     entityDifferentiationMatrix: params.matrixType === 'entityDifferentiationMatrix' ? (result.entityDifferentiationMatrix?.length ? result.entityDifferentiationMatrix : params.entityMatrix) : [],
     concepts,
-    directionValidation: validateDynamicDirections(concepts),
+    strategicDirections: concepts,
+    strategyDiscoveryBrief: params.plan[0]?.discoveryBrief,
+    validationSummary,
+    warningSummary: { warnings: concepts.flatMap((concept) => concept.strategicDirectionQualityValidation?.isStrategicBet ? [] : [`${concept.conceptId}: repaired from axis-first fallback`]), strategicDirectionsCount: concepts.length },
+    directionValidation: validationSummary,
     recommendation: {
       ...result.recommendation,
       recommendedDirectionLabel: result.recommendation.recommendedDirectionLabel || concepts.find((concept) => concept.conceptId === result.recommendation.recommendedConceptId)?.strategicDirectionLabel || concepts[0]?.strategicDirectionLabel,
@@ -1714,13 +1719,13 @@ export async function POST(request: Request) {
     };
 
     if (!body.input || !body.analysis) {
-      return conceptsJson({ error: '프로젝트 입력값과 분석 결과가 필요합니다.' }, { status: 400 });
+      return conceptsJson({ error: '프로젝트 입력값과 분석 결과가 필요합니다.', failureStage: 'strategy_direction_upstream_validation', missingInputs: ['input', 'analysis'].filter((key) => !body[key as keyof typeof body]), rejectionReasons: [], repairAttempts: [], strategicDirectionsCount: 0 }, { status: 400 });
     }
     if (!body.rfpDiagnosis) {
-      return conceptsJson({ error: '제안 전략 진단 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
+      return conceptsJson({ error: '제안 전략 진단 확정 후 전략 방향을 생성할 수 있습니다.', failureStage: 'strategy_direction_upstream_validation', missingInputs: ['rfpDiagnosis'], rejectionReasons: ['rfpDiagnosis_missing'], repairAttempts: [], strategicDirectionsCount: 0 }, { status: 400 });
     }
     if (!body.brandProductIntelligence) {
-      return conceptsJson({ error: '브랜드/제품 이해 확정 후 전략 방향을 생성할 수 있습니다.' }, { status: 400 });
+      return conceptsJson({ error: '브랜드/제품 이해 확정 후 전략 방향을 생성할 수 있습니다.', failureStage: 'strategy_direction_upstream_validation', missingInputs: ['brandProductIntelligence'], rejectionReasons: ['brandProductIntelligence_missing'], repairAttempts: [], strategicDirectionsCount: 0 }, { status: 400 });
     }
     // Diagnosis must be COMPLETE ENOUGH (not just present) before final direction cards are generated, so shallow
     // diagnoses cannot drive weak directions. Lenient: a real /api/diagnosis result (strict schema) always passes.
@@ -1733,7 +1738,7 @@ export async function POST(request: Request) {
       && ((diag.requiredProofElements?.length ?? 0) > 0 || (diag.requiredPersuasionElements?.length ?? 0) > 0),
     );
     if (!diagnosisCompleteEnough) {
-      return conceptsJson({ error: '제안 전략 진단이 충분하지 않습니다. 전략 진단을 먼저 완료해 주세요.', reason: 'diagnosis_incomplete' }, { status: 400 });
+      return conceptsJson({ error: '제안 전략 진단이 충분하지 않습니다. 전략 진단을 먼저 완료해 주세요.', reason: 'diagnosis_incomplete', failureStage: 'strategy_direction_upstream_validation', missingInputs: ['complete_rfpDiagnosis'], rejectionReasons: ['diagnosis_incomplete'], repairAttempts: [], strategicDirectionsCount: 0 }, { status: 400 });
     }
 
     const metadata: ConceptGenerationMetadata = {
@@ -1974,16 +1979,34 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       result = repairEntityBalance(result, balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(result, metadata));
     } catch (error) {
-      // REGRESSION FIX (§9): do NOT render the hardcoded 3-preset fallback cards as final strategic directions — those are
-      // identical across RFPs and are the second source of the near-identical-directions bug. On any failure/timeout we
-      // return an explicit error instead; the client preserves the completed RFP analysis / diagnosis / brand understanding
-      // and shows a retry CTA (regenerate from current-RFP evidence only). A generic fallback never reaches the user.
+      // Axis-first recovery: do NOT render hardcoded preset cards. If the unconstrained batch under-generates or fails,
+      // rebuild exactly three cards from the current-RFP strategicDirectionPlan axes and expose warnings instead of an
+      // empty strategicDirections set.
       const reason = error instanceof Error ? error.message : 'generation timeout';
-      console.error(`[concepts] strategic direction generation failed — returning retry signal (no generic fallback): ${reason}`);
-      return conceptsJson({ error: '전략 방향 생성에 실패했습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.', reason: 'direction_generation_failed', conceptPromptVersion }, { status: 502 });
+      console.error(`[concepts] strategic direction generation failed — using axis-first current-RFP fallback (no generic preset cards): ${reason}`);
+      const axisFirstBase = buildFallbackConcepts(body.analysis, proposalNarrative, reason, metadata, selectedRfpConceptType);
+      let axisFirstResult = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({
+        ...axisFirstBase,
+        concepts: [],
+        conceptPromptVersion,
+        regenerationId: metadata.regenerationId,
+        generationAttempt: metadata.generationAttempt,
+        generatedAt: metadata.generatedAt,
+      }, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount, subjects: directionSubjects })));
+      axisFirstResult.rfpDiagnosis = body.rfpDiagnosis;
+      axisFirstResult.brandProductIntelligence = body.brandProductIntelligence;
+      axisFirstResult.proposalPatternsUsedForDirections = false;
+      axisFirstResult.currentRfpOnlyMode = true;
+      axisFirstResult.namingGuardNotice = {
+        message: '초기 전략 방향 생성이 실패해 현재 RFP 분석·브랜드/제품 이해·전략 진단에서 만든 direction axes로 복구했습니다.',
+        repairedConceptIds: axisFirstResult.concepts.map((concept) => concept.conceptId),
+        warningConceptIds: axisFirstResult.concepts.map((concept) => concept.conceptId),
+        violations: [reason],
+      };
+      return conceptsJson(attachGenerationMetadata(axisFirstResult, metadata));
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.';
-    return conceptsJson({ error: message, conceptPromptVersion }, { status: 500 });
+    const message = error instanceof Error ? error.message : '전략 방향 생성에 실패했습니다. 입력 분석 상태를 확인한 뒤 다시 시도해 주세요.';
+    return conceptsJson({ error: message, failureStage: 'strategy_direction_route', missingInputs: [], rejectionReasons: [message], repairAttempts: [], strategicDirectionsCount: 0, conceptPromptVersion }, { status: 500 });
   }
 }

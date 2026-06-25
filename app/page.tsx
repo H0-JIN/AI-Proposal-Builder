@@ -3883,7 +3883,7 @@ export default function Home() {
         ...current,
         proposalNarrative,
         conceptDevelopmentLogic: conceptResult.conceptDevelopmentLogic,
-        conceptCandidates: conceptResult.concepts,
+        conceptCandidates: conceptResult.strategicDirections?.length ? conceptResult.strategicDirections : conceptResult.concepts,
         conceptRecommendation: conceptResult.recommendation,
         conceptGenerationResult: conceptResult,
         selectedConcept: undefined,
@@ -3895,7 +3895,7 @@ export default function Home() {
     } catch (err) {
       setConceptRetryVisible(true);
       setStep('analysis');
-      const rawMessage = err instanceof Error ? err.message : '콘셉트 후보 생성 중 오류가 발생했습니다.';
+      const rawMessage = err instanceof Error ? err.message : '전략 방향 생성 중 오류가 발생했습니다.';
       const friendlyMessage = isTimeoutMessage(rawMessage)
         ? '전략 방향 생성 시간이 초과되었습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.'
         : rawMessage;
@@ -4406,7 +4406,7 @@ export default function Home() {
               )}
               {conceptRetryVisible && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-950">
-                  <p>컨셉 생성 시간이 초과되었습니다. 분석 결과는 유지됩니다.</p>
+                  <p>전략 방향 생성 실패. 분석 결과는 유지됩니다.</p>
                   <button onClick={() => runConcepts({ retryLight: true })} disabled={Boolean(loading)} className="mt-3 rounded-xl bg-amber-600 px-4 py-2 font-black text-white transition hover:bg-amber-700 disabled:opacity-50">가볍게 다시 생성</button>
                 </div>
               )}
