@@ -3814,7 +3814,7 @@ export default function Home() {
     setState((current) => current.brandProductIntelligence ? ({ ...current, brandProductIntelligence: { ...current.brandProductIntelligence, [key]: value.split('\n').map((item) => item.trim()).filter(Boolean) }, conceptDevelopmentLogic: undefined, conceptCandidates: undefined, conceptRecommendation: undefined, conceptGenerationResult: undefined, selectedStrategicDirection: undefined, selectedDirectionIndex: undefined, selectedConcept: undefined, conceptNameOptions: undefined, conceptNameOptionsByDirection: undefined, outline: undefined, slides: undefined }) : current);
   };
 
-  const runConcepts = async (options: { retryLight?: boolean } = {}) => {
+  const runConcepts = async () => {
     if (!state.analysis) return;
     // Strategic directions REQUIRE a real proposal strategy diagnosis. Never generate from a synthetic fallback —
     // that degrades directions to shallow template labels. The continuation CTA generates the diagnosis first.
@@ -3851,23 +3851,20 @@ export default function Home() {
     }));
 
     try {
-      const proposalNarrative = await postJson<ProposalNarrative>('/api/narrative', { input: analysisInput, analysis: state.analysis, uploadedDocuments: state.uploadedDocuments, documentChunks });
-      setLoading(options.retryLight ? '가벼운 새 후보 생성 중...' : '새 후보 생성 중...');
       const conceptResult = await postJson<ConceptCandidatesResult>('/api/concepts', {
         input: analysisInput,
         analysis: state.analysis,
-        proposalNarrative,
         rfpDiagnosis: state.rfpDiagnosis,
         brandProductIntelligence: effectiveBrand,
         conceptPromptVersion,
         regenerationId,
         timestamp: requestedAt,
         attempt: generationAttempt,
-        options: { maxCandidates: 3, retryLight: options.retryLight },
+        options: { maxCandidates: 3 },
       });
       setState((current) => ({
         ...current,
-        proposalNarrative,
+        proposalNarrative: current.proposalNarrative,
         conceptDevelopmentLogic: conceptResult.conceptDevelopmentLogic,
         conceptCandidates: conceptResult.concepts,
         conceptRecommendation: conceptResult.recommendation,
@@ -3883,7 +3880,7 @@ export default function Home() {
       setStep('analysis');
       const rawMessage = err instanceof Error ? err.message : '콘셉트 후보 생성 중 오류가 발생했습니다.';
       const friendlyMessage = isTimeoutMessage(rawMessage)
-        ? '전략 방향 생성 시간이 초과되었습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.'
+        ? '전략 방향 생성 시간이 초과되었습니다. 분석 결과는 유지됩니다. 전략 진단을 확인하거나 다시 생성해 주세요.'
         : rawMessage;
       setError(friendlyMessage);
     } finally {
@@ -4392,8 +4389,11 @@ export default function Home() {
               )}
               {conceptRetryVisible && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-950">
-                  <p>컨셉 생성 시간이 초과되었습니다. 분석 결과는 유지됩니다.</p>
-                  <button onClick={() => runConcepts({ retryLight: true })} disabled={Boolean(loading)} className="mt-3 rounded-xl bg-amber-600 px-4 py-2 font-black text-white transition hover:bg-amber-700 disabled:opacity-50">가볍게 다시 생성</button>
+                  <p>전략 방향 생성 시간이 초과되었습니다. 분석 결과는 유지됩니다. 전략 진단을 확인하거나 다시 생성해 주세요.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button onClick={() => runConcepts()} disabled={Boolean(loading)} className="rounded-xl bg-amber-600 px-4 py-2 font-black text-white transition hover:bg-amber-700 disabled:opacity-50">전략 방향 다시 생성</button>
+                    <button onClick={() => setConceptRetryVisible(false)} disabled={Boolean(loading)} className="rounded-xl border border-amber-300 bg-white px-4 py-2 font-black text-amber-900 transition hover:bg-amber-100 disabled:opacity-50">전략 진단 보기/수정</button>
+                  </div>
                 </div>
               )}
               <details className="rounded-2xl border border-slate-200 bg-slate-50/50 px-4 py-3">
