@@ -398,6 +398,25 @@ export function formatProposalSuccessPatternComparisonForPrompt(comparison: Prop
   return lines.join('\n');
 }
 
+// Concept-naming-framed winning-pattern influence (Priority 4). Surfaces the won concept-logic STRUCTURE (problem
+// reframing → strategy → concept emergence, content-after-concept, proof) so naming can apply a proven logic pattern —
+// structure only, never copying old names/slogans/copy, and never overriding the current RFP / direction / frame.
+export function formatWinningPatternInfluenceForConceptNaming(comparison: ProposalSuccessPatternComparison): string {
+  if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length) {
+    return '수주 패턴 비교 데이터 없음 — 현재 RFP·선택 전략 방향·Concept Frame Synthesis 근거만 사용한다(수주 패턴을 가정하지 말 것).';
+  }
+  const conceptStage = comparison.similarWinningPatterns.find((p) => /concept|rationale|strategy|개념|컨셉|전략/.test(`${p.narrativeStage || ''} ${p.slideRole || ''}`.toLowerCase()))?.principle || comparison.recommendedPatternToApply;
+  const lines: string[] = ['=== Winning Pattern Influence (Priority 4 — 컨셉 로직 구조 참고용. 과거 제안의 이름/슬로건/원문/카피를 복사하지 말고 논리 구조만 참고) ==='];
+  if (conceptStage) lines.push(`수주 컨셉 도출 로직(문제 재정의 → 전략 → 컨셉 전환): ${conceptStage}`);
+  if (comparison.winningDifferentiators.length) lines.push(`수주를 만든 차별 로직: ${comparison.winningDifferentiators.join(' / ')}`);
+  if (comparison.contentPatternToApply) lines.push(`수주 콘텐츠 전개 패턴(컨셉 이후): ${comparison.contentPatternToApply}`);
+  if (comparison.proofPatternToApply) lines.push(`수주 증명 패턴: ${comparison.proofPatternToApply}`);
+  if (comparison.losingRisksToAvoid.length) lines.push(`회피할 미수주 약점(리스크 경고로만, 긍정 영감 금지): ${comparison.losingRisksToAvoid.join(' / ')}`);
+  lines.push(`신뢰도: ${comparison.confidence} · 근거: 수주 ${comparison.evidenceSource.wonCount} / 유형 일치 ${comparison.evidenceSource.typeMatchedCount} (현재 프로젝트 업로드 레퍼런스 한정)`);
+  lines.push('요구: 최소 1개 후보는 위 수주 컨셉 로직 구조를 현재 RFP·선택 전략 방향에 맞게 적용한다. 단, 과거 제안의 이름/슬로건/카피/클라이언트·프로젝트명을 복사하지 말고 현재 RFP 고유 톤으로 새로 만든다. 이 영향은 현재 RFP·전략 방향·Concept Frame Synthesis·Korean seed→English transcreation 순서를 절대 바꾸지 않는다. 미수주 패턴을 긍정 영감으로 쓰면 거부한다.');
+  return lines.join('\n');
+}
+
 export function buildPatternLearningSummary(comparison: ProposalSuccessPatternComparison): PatternLearningSummary | null {
   if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length) return null;
   return {
