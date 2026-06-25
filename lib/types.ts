@@ -592,6 +592,10 @@ export interface ConceptNameOption {
   whyItFitsRfp: string;
   whyItFits?: string;
   whyItFitsSelectedDirection?: string;
+  whyItFitsCurrentRfp?: string;
+  conceptRole?: 'brand_theme_world' | 'scene_experience' | 'strategic_proof';
+  brandOrThemeAnchorUsed?: string;
+  proofOrExperienceAnchorUsed?: string;
   strategicClaim?: string;
   expandableTo?: { space: string; content: string; media: string; operation: string };
   validation?: {
@@ -619,6 +623,12 @@ export interface ConceptNameOption {
     noGenericEnglishCombination?: boolean;
     connectedToDiagnosis?: boolean;
     connectedToBrandProductIntelligence?: boolean;
+    conceptNameIsTitleLike?: boolean;
+    conceptNameIsMemorable?: boolean;
+    conceptNameNotGenericDescription?: boolean;
+    conceptNameUsesSelectedDirectionLogic?: boolean;
+    conceptNameUsesProjectSemanticAnchor?: boolean;
+    conceptBatchHasDistinctRoles?: boolean;
   };
   coverReadinessScore?: number;
   specificityScore?: number;
@@ -685,6 +695,11 @@ export interface StrategicDirectionQualityValidation {
   hasRepresentativePersuasionScene?: boolean;
   hasDistinctWinningLogic?: boolean;
   canGenerateUniqueConceptNames?: boolean;
+  labelIsStrategicChoice?: boolean;
+  labelNotSurfaceKeyword?: boolean;
+  labelNotSubjectPlusGenericNoun?: boolean;
+  labelExplainsAWinningLens?: boolean;
+  labelCanDriveConceptNaming?: boolean;
   validationReason: string;
 }
 
