@@ -119,7 +119,7 @@ const WEAK_DIRECTION_LABEL_PATTERN = /인식\s*전환|경험\s*이해|가치\s*�
 
 // Facility/space words that make a label facility-centered when they anchor it (subject or object).
 // NOTE: process words like "공정" are deliberately NOT here — "공정 신뢰 체험화" is a valid strategic label.
-const FACILITY_LABEL_TOKENS = new Set(['공장', 'factory', 'plant', '시설', 'facility', '견학룸', '견학', '전시관', '홍보관', '체험관', '쇼룸', 'showroom', '매장', '점포', 'store', '공간', 'space', '룸', 'room', '존', 'zone', '관', 'hall', '부스', 'booth', '파빌리온', 'pavilion', '외관', '외부', '내부', '외장', '내장', '파사드', 'facade', '인테리어', '리모델링', '건축', '복도', '입구', '동선', '사인']);
+const FACILITY_LABEL_TOKENS = new Set(['공장', 'factory', 'plant', '시설', 'facility', '견학룸', '견학', '전시관', '홍보관', '체험관', '쇼룸', 'showroom', '매장', '점포', 'store', '공간', 'space', '룸', 'room', '존', 'zone', '관', 'hall', '부스', 'booth', '파빌리온', 'pavilion', '전시', 'exhibition', '현장', 'field', '외관', '외부', '내부', '외장', '내장', '파사드', 'facade', '인테리어', '리모델링', '건축', '복도', '입구', '동선', '사인']);
 
 // A user-facing label is generic if it is an axis translation, follows the weak subject+axis template,
 // uses a venue/content-format word as its subject, OR is anchored (first/last token) on a facility/space word.
@@ -128,6 +128,8 @@ function isGenericDirectionLabel(label: string): boolean {
   if (!value) return true;
   if (isAxisTranslationLabel(value) || WEAK_DIRECTION_LABEL_PATTERN.test(value)) return true;
   const tokens = value.split(/[\s/·|]+/).filter(Boolean);
+  const genericTail = /^(전시|현장|경험|가치|연결|증명|기억|대표성|생태계|방향|전략)$/i;
+  if (tokens.length <= 3 && genericTail.test(tokens[tokens.length - 1] || '')) return true;
   if (CONTEXT_NOUN_BLOCKLIST.test(tokens[0] || '')) return true;
   // Facility-anchored anywhere (subject, object, or embedded token, incl. compounds like 공장견학) → facility-centered.
   return tokens.some((token) => FACILITY_LABEL_TOKENS.has(token.toLowerCase()) || FACILITY_SUBSTRING.test(token));
@@ -192,7 +194,7 @@ function contextualDirectionLabel(canonicalAxis: string, contextNoun: string): s
 // §2b/§10 deterministic LAST-RESORT label: an RFP-SPECIFIC noun phrase from THIS card's own evidence (subject + the most
 // distinctive non-generic evidence word) — never a noun-swap axis template, so two different RFPs get different fallback
 // labels even when the model label is rejected. The model's own RFP-grounded label is always preferred over this.
-const GENERIC_DIRECTION_LABEL_WORDS = new Set(['전략', '방향', '제안', '현재', '근거', '평가', '관람', '방문', '경험', '가치', '설득', '증명', '이해', '신뢰', '공간', '콘텐츠', '미디어', '운영', '실행', '브랜드', '제품', '대상', '핵심', '요구', '구조', '기준', '관점', '대표성', '시그니처']);
+const GENERIC_DIRECTION_LABEL_WORDS = new Set(['전략', '방향', '제안', '현재', '근거', '평가', '관람', '방문', '경험', '가치', '설득', '증명', '이해', '신뢰', '공간', '콘텐츠', '미디어', '운영', '실행', '브랜드', '제품', '대상', '핵심', '요구', '구조', '기준', '관점', '대표성', '시그니처', '전시', '현장', '연결', '기억', '생태계']);
 function evidenceDerivedDirectionLabel(planItem: StrategicDirectionPlanItem): string {
   const subject = (planItem.contextNoun || '').trim();
   const evidence = `${planItem.rfpEvidence || ''} ${planItem.emphasis || ''}`.trim();
@@ -200,6 +202,46 @@ function evidenceDerivedDirectionLabel(planItem: StrategicDirectionPlanItem): st
   const distinctive = words.find((word) => !GENERIC_DIRECTION_LABEL_WORDS.has(word) && word !== subject) || words.find((word) => word !== subject) || '';
   const core = [subject, distinctive].filter(Boolean).join(' ').trim();
   return compactText(core || subject || evidence, 18) || '현재 RFP 전략 방향';
+}
+
+function strategicChoiceLabelFromArgument(planItem: StrategicDirectionPlanItem): string {
+  const axis = canonicalizeDirectionAxis(planItem.directionAxis || planItem.type);
+  const subject = (planItem.contextNoun || '핵심 가치').trim();
+  const map: Record<string, string> = {
+    category_shift: `${subject}을(를) 미래 약속이 아닌 현재 판단 근거로`,
+    technology_reality_proof: `${subject}을(를) 지금 작동하는 장면으로`,
+    representative_position: `${subject}이(가) 선택의 기준이 되는 자리로`,
+    audience_understanding: `${subject}을(를) 관람객의 자기 언어로`,
+    product_value_proof: `${subject}을(를) 말보다 먼저 확인되는 증거로`,
+    process_trust: `${subject}을(를) 믿게 만드는 과정의 공개로`,
+    signature_scene: `${subject}을(를) 하나의 대표 장면으로`,
+    'system/ecosystem_proof': `${subject}을(를) 연결 목록이 아닌 작동 체계로`,
+    spatial_journey: `${subject}을(를) 걷는 동안 납득되는 흐름으로`,
+    brand_memory: `${subject}을(를) 방문 후 남는 한 장면으로`,
+    operational_confidence: `${subject}을(를) 실행 가능한 현장 판단으로`,
+    evaluator_clarity: `${subject}을(를) 심사자가 즉시 고를 이유로`,
+    emotional_affinity: `${subject}을(를) 공감 가능한 선택 이유로`,
+  };
+  return compactText(map[axis] || `${subject}을(를) 선택 가능한 전략 명제로`, 36);
+}
+
+function repairedStrategicArgument(planItem: StrategicDirectionPlanItem) {
+  const brief = planItem.discoveryBrief;
+  const winningThesis = compactText(`${planItem.emphasis} 핵심은 ${brief?.coreRfpChallenge || planItem.rfpEvidence}를 단순 정보가 아니라 선택 이유로 바꾸는 것입니다.`, 220);
+  const conceptLeap = compactText(`${brief?.hiddenNeed || planItem.rfpEvidence}를 ${planItem.representativeScene || '대표 설득 장면'}으로 압축해 최종 컨셉 네이밍까지 이어지는 의미 세계를 만듭니다.`, 220);
+  return {
+    directionAxis: planItem.directionAxis || planItem.type,
+    strategicQuestion: planItem.strategicQuestion || `이 RFP에서 ${planItem.contextNoun || '핵심 가치'}를 어떤 판단 변화로 설득할 것인가?`,
+    whyThisDirectionExists: planItem.whyThisDirectionExists || planItem.emphasis,
+    hiddenNeedAddressed: planItem.hiddenNeedAddressed || brief?.hiddenNeed || planItem.rfpEvidence,
+    evaluatorRiskAddressed: planItem.evaluatorRiskAddressed || brief?.evaluatorDecisionRisk || planItem.chooseWhen,
+    brandProductEvidenceUsed: planItem.brandProductEvidenceUsed || brief?.clientUniquePosition || planItem.rfpEvidence,
+    proofOrExperienceOpportunity: planItem.proofOrExperienceOpportunity || planItem.representativeScene || planItem.rfpEvidence,
+    winningThesis,
+    conceptLeap,
+    signatureProofIdea: planItem.signatureProofIdea || planItem.representativeScene || planItem.rfpEvidence,
+    labelRationale: '표면 키워드가 아니라 평가자가 왜 이 제안을 선택해야 하는지의 렌즈를 짧게 압축함',
+  };
 }
 
 // Content-format / deliverable / process words must never become the subject of a strategy label.
@@ -413,6 +455,11 @@ function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: St
     hasRepresentativePersuasionScene,
     hasDistinctWinningLogic: hasDistinctPointOfView,
     canGenerateUniqueConceptNames: isStrategicBet,
+    labelIsStrategicChoice: isStrategicBet,
+    labelNotSurfaceKeyword: !factLikeLabel && !isGenericDirectionLabel(concept.strategicDirectionLabel || ''),
+    labelNotSubjectPlusGenericNoun: !isGenericDirectionLabel(concept.strategicDirectionLabel || ''),
+    labelExplainsAWinningLens: Boolean(concept.winningThesisUse?.winningClaim || concept.oneLineStrategicBet),
+    labelCanDriveConceptNaming: Boolean(concept.conceptLeap?.conceptLeap || concept.signatureProofIdea?.signatureScene),
     validationReason: isStrategicBet
       ? '현재 RFP의 winning condition과 proof burden을 해결하는 선택지로 검증됨.'
       : '기본 수행조건/범용 방향으로 감지되어 confirmed diagnosis 기반 전략적 베팅으로 수리 필요.',
@@ -422,12 +469,12 @@ function buildDirectionQualityValidation(concept: ConceptCandidate, planItem: St
 function repairBasicStrategicDirection(concept: ConceptCandidate, planItem: StrategicDirectionPlanItem): ConceptCandidate {
   const repaired = {
     ...concept,
-    strategicDirectionLabel: isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : evidenceDerivedDirectionLabel(planItem),
+    strategicDirectionLabel: isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : strategicChoiceLabelFromArgument(planItem),
     strategicDirectionType: planItem.type,
     directionAxis: planItem.directionAxis || planItem.type,
     whatThisDirectionEmphasizes: planItem.emphasis,
     whenToChooseThisDirection: planItem.chooseWhen,
-    winningThesisUse: { ...(concept.winningThesisUse ?? {}), winningClaim: concept.winningThesisUse?.winningClaim || compactText(`${planItem.label}: ${planItem.rfpEvidence}`, 150), whatMustBeProven: concept.winningThesisUse?.whatMustBeProven || planItem.rfpEvidence } as ConceptCandidate['winningThesisUse'],
+    winningThesisUse: { ...(concept.winningThesisUse ?? {}), winningClaim: concept.winningThesisUse?.winningClaim || repairedStrategicArgument(planItem).winningThesis, whatMustBeProven: concept.winningThesisUse?.whatMustBeProven || repairedStrategicArgument(planItem).proofOrExperienceOpportunity } as ConceptCandidate['winningThesisUse'],
     conceptLeap: { ...(concept.conceptLeap ?? {}), conceptLeap: concept.conceptLeap?.conceptLeap || `${planItem.label} 관점에서 ${compactText(planItem.rfpEvidence, 70)}을(를) 평가자가 믿을 수 있는 대표 장면과 증거로 전환합니다.`, corePromise: concept.conceptLeap?.corePromise || planItem.emphasis } as ConceptCandidate['conceptLeap'],
     signatureProofIdea: { ...(concept.signatureProofIdea ?? {}), whyThisProvesTheConcept: concept.signatureProofIdea?.whyThisProvesTheConcept || `${planItem.rfpEvidence}를 근거로 선택 위험을 낮추는 대표 증명 장면을 제시합니다.`, whyThisIsNotGeneric: concept.signatureProofIdea?.whyThisIsNotGeneric || 'confirmed RFP-only diagnosis의 winning condition, tension, proof burden에서 도출한 방향이므로 범용 수행조건이 아닙니다.' } as ConceptCandidate['signatureProofIdea'],
     proposalCoreConceptName: isRfpFactDirectionText(planItem.label) ? directionAxisLabel(planItem.directionAxis || planItem.type) : planItem.label,
@@ -698,6 +745,27 @@ interface StrategicDirectionPlanItem {
   directionAxis?: string;
   representativeScene?: string;
   contextNoun?: string;
+  strategicQuestion?: string;
+  whyThisDirectionExists?: string;
+  hiddenNeedAddressed?: string;
+  evaluatorRiskAddressed?: string;
+  brandProductEvidenceUsed?: string;
+  proofOrExperienceOpportunity?: string;
+  whyThisCanWin?: string;
+  whyItIsDifferentFromOtherAxes?: string;
+  signatureProofIdea?: string;
+}
+
+interface StrategicDirectionAxisBrief {
+  axisName: string;
+  strategicQuestion: string;
+  hiddenNeedAddressed: string;
+  evaluatorRiskAddressed: string;
+  brandProductEvidenceUsed: string;
+  proofMechanism: string;
+  experienceOpportunity: string;
+  whyThisCanWin: string;
+  whyItIsDifferentFromOtherAxes: string;
 }
 
 interface StrategicDirectionDiscoveryBrief {
@@ -710,7 +778,7 @@ interface StrategicDirectionDiscoveryBrief {
   audiencePerceptionGap: string;
   whatMustBeProven: string;
   strongestStrategicTension: string;
-  possibleDirectionAxes: string[];
+  possibleDirectionAxes: StrategicDirectionAxisBrief[];
 }
 
 const MULTI_ENTITY_LEAKAGE_PATTERN = /국가|국가관|국격|그룹|연합|공동관|계열사|대기업\s*집단|하나의\s*큰\s*존재감|통합된\s*관람\s*이해|통합\s*아이덴티티|통합\s*\+?\s*역할\s*차별화|역할\s*(?:구분|차별화)|상징적\s*리더십|공동\s*시너지|연합\s*시너지|national\s*pavilion|joint\s*pavilion|alliance|coalition|group\s*presence|unified\s*identity|role\s*differentiation|symbolic\s*leadership|entity\s*role|multi[-\s]*entity|consortium|Entity\s*Differentiation\s*Matrix|entity\s*role\s*matrix/i;
@@ -873,16 +941,27 @@ function buildStrategicDirectionDiscoveryBrief(analysis: AnalysisResult, narrati
   const audiencePerceptionGap = firstEvidence(analysis, narrative, [/방문|관람|고객|대상|audience|visitor|인식|이해|체감|경험|신뢰/i], '관람자가 아직 이해·신뢰·기억하지 못하는 핵심 가치가 존재');
   const whatMustBeProven = firstEvidence(analysis, narrative, [/증명|proof|실행|운영|공정|제품|서비스|기능|성과|deliverable|산출|안전/i], '공간·콘텐츠·미디어·운영을 통해 제안의 실체와 실행 가능성을 증명');
   const strongestStrategicTension = compactText(`${categoryShift} ↔ ${whatMustBeProven}`, 220);
-  const baseAxes = [
-    `category_shift: ${categoryShift}`,
-    `audience_perception_change: ${audiencePerceptionGap}`,
-    `required_proof: ${whatMustBeProven}`,
-    `client_unique_position: ${clientUniquePosition}`,
-    `signature_experience: ${compactText(narrative.unifyingFrame || analysis.contentCondition || '대표 장면으로 기억되는 설득 장면', 150)}`,
-    `evaluator_clarity: ${evaluatorDecisionRisk}`,
+  const axisBrief = (axisName: string, evidence: string): StrategicDirectionAxisBrief => ({
+    axisName,
+    strategicQuestion: `${compactText(evidence, 90)}를 어떤 전략적 선택 이유로 바꿀 것인가?`,
+    hiddenNeedAddressed: hiddenNeed,
+    evaluatorRiskAddressed: evaluatorDecisionRisk,
+    brandProductEvidenceUsed: clientUniquePosition,
+    proofMechanism: whatMustBeProven,
+    experienceOpportunity: compactText(narrative.unifyingFrame || analysis.contentCondition || evidence, 150),
+    whyThisCanWin: compactText(`${coreRfpChallenge}에 대해 ${evidence}를 평가 가능한 대표 논리로 제시할 수 있기 때문`, 180),
+    whyItIsDifferentFromOtherAxes: `${directionAxisLabel(axisName)} 관점의 선택 기준과 대표 설득 장면이 다름`,
+  });
+  const baseAxes: StrategicDirectionAxisBrief[] = [
+    axisBrief('category_shift', categoryShift),
+    axisBrief('audience_perception_change', audiencePerceptionGap),
+    axisBrief('required_proof', whatMustBeProven),
+    axisBrief('client_unique_position', clientUniquePosition),
+    axisBrief('signature_experience', compactText(narrative.unifyingFrame || analysis.contentCondition || '대표 장면으로 기억되는 설득 장면', 150)),
+    axisBrief('evaluator_clarity', evaluatorDecisionRisk),
   ];
-  if (conceptType === 'multi_entity_pavilion' && hasMultipleEntities) baseAxes.push(`ecosystem_system_proof: ${compactText(narrative.differentiationPrinciple || '복수 주체의 관계와 기여를 현재 RFP 근거로 명확화', 150)}`);
-  if (conceptType !== 'multi_entity_pavilion') baseAxes.push(`operational_confidence_without_multi_entity_logic: ${compactText(analysis.operationCondition || '단일 RFP 맥락의 실행 신뢰를 증명', 150)}`);
+  if (conceptType === 'multi_entity_pavilion' && hasMultipleEntities) baseAxes.push(axisBrief('ecosystem_system_proof', compactText(narrative.differentiationPrinciple || '복수 주체의 관계와 기여를 현재 RFP 근거로 명확화', 150)));
+  if (conceptType !== 'multi_entity_pavilion') baseAxes.push(axisBrief('operational_confidence_without_multi_entity_logic', compactText(analysis.operationCondition || '단일 RFP 맥락의 실행 신뢰를 증명', 150)));
 
   // Context-aware winning-approach split: classify the RFP context and pick the 3 lead axes FROM that context,
   // so every RFP family (visitor-room, tech/energy, multi-entity, MICE, popup, conference, booth, ...) gets its own
@@ -949,14 +1028,14 @@ function buildStrategicDirectionDiscoveryBrief(analysis: AnalysisResult, narrati
     : isTechShowcase ? ['technology_reality_proof', 'representative_position', 'system/ecosystem_proof']
     : pavilionWithoutExplicitLead ? ['system/ecosystem_proof', 'audience_understanding', 'signature_scene']
     : (contextAxisSets[conceptType] ?? []);
-  const leadAxes = contextSet.map((axisKey) => `${axisKey}: ${axisEvidence(axisKey)}`);
+  const leadAxes = contextSet.map((axisKey) => axisBrief(axisKey, axisEvidence(axisKey)));
 
   // REGRESSION FIX (§2): the directions must be derived from CURRENT-RFP EVIDENCE, not the proposal-type preset. baseAxes
   // (each backed by firstEvidence from THIS RFP's analysis/diagnosis) therefore lead; the type-keyed contextSet (leadAxes)
   // is demoted to a SUPPLEMENTARY guardrail that only fills remaining slots. Proposal type never prescribes the axis set.
   const seenAxisKeys = new Set<string>();
   const possibleDirectionAxes = [...baseAxes, ...leadAxes].filter((axis) => {
-    const key = canonicalizeDirectionAxis(axis);
+    const key = canonicalizeDirectionAxis(axis.axisName);
     if (seenAxisKeys.has(key)) return false;
     seenAxisKeys.add(key);
     return true;
@@ -998,8 +1077,8 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
   const learning = buildProposalLearningBrief(currentRfpOnlyMode ? [] : patterns, currentRfpOnlyMode ? [] : avoidanceRules);
   const discoveryBrief = buildStrategicDirectionDiscoveryBrief(analysis, narrative, conceptType, hasMultipleEntities);
   const directionSubjects = subjects ?? buildDirectionSubjects(analysis);
-  const mk = (index: number, axis: string, rfpEvidence: string, patternLearning: string, lostAvoidance: string): StrategicDirectionPlanItem => {
-    const canonicalAxis = canonicalizeDirectionAxis(axis, index - 1);
+  const mk = (index: number, axis: StrategicDirectionAxisBrief, rfpEvidence: string, patternLearning: string, lostAvoidance: string): StrategicDirectionPlanItem => {
+    const canonicalAxis = canonicalizeDirectionAxis(axis.axisName, index - 1);
     const subject = axisSubject(canonicalAxis, directionSubjects);
     return {
       type: canonicalAxis, rfpConceptType: conceptType, secondaryRfpConceptTypes: secondary, label: contextualDirectionLabel(canonicalAxis, subject),
@@ -1015,6 +1094,14 @@ function buildStrategicDirectionPlan(analysis: AnalysisResult, narrative: Propos
       directionAxis: canonicalAxis,
       representativeScene: directionRepresentativeScene(canonicalAxis, subject),
       contextNoun: subject,
+      strategicQuestion: axis.strategicQuestion,
+      hiddenNeedAddressed: axis.hiddenNeedAddressed,
+      evaluatorRiskAddressed: axis.evaluatorRiskAddressed,
+      brandProductEvidenceUsed: axis.brandProductEvidenceUsed,
+      proofOrExperienceOpportunity: [axis.proofMechanism, axis.experienceOpportunity].filter(Boolean).join(' · '),
+      whyThisCanWin: axis.whyThisCanWin,
+      whyItIsDifferentFromOtherAxes: axis.whyItIsDifferentFromOtherAxes,
+      signatureProofIdea: directionRepresentativeScene(canonicalAxis, subject),
     };
   };
 
@@ -1050,7 +1137,7 @@ function formatStrategicDirectionPlanForPrompt(plan: StrategicDirectionPlanItem[
 - audiencePerceptionGap: ${brief.audiencePerceptionGap}
 - whatMustBeProven: ${brief.whatMustBeProven}
 - strongestStrategicTension: ${brief.strongestStrategicTension}
-- possibleDirectionAxes: ${brief.possibleDirectionAxes.join(' / ')}
+- possibleDirectionAxes: ${brief.possibleDirectionAxes.map((axis) => `${axis.axisName}: question=${axis.strategicQuestion}; hiddenNeed=${axis.hiddenNeedAddressed}; risk=${axis.evaluatorRiskAddressed}; brandEvidence=${axis.brandProductEvidenceUsed}; proof=${axis.proofMechanism}; experience=${axis.experienceOpportunity}; whyWin=${axis.whyThisCanWin}; distinct=${axis.whyItIsDifferentFromOtherAxes}`).join(' / ')}
 
 ` : '';
   return `${briefText}${plan.map((item, index) => `C${index + 1} [내부 작업용 axis: ${item.type} — 라벨 템플릿이 아님] · strategicDirectionLabel은 아래 rfpEvidence와 Discovery Brief에서 현재 RFP 고유 라벨로 새로 작성하라(명사치환 템플릿 금지)
@@ -1078,7 +1165,8 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
   const planAxis = canonicalizeDirectionAxis(planItem.directionAxis || planItem.type);
   const modelAxis = concept.directionAxis && (ALLOWED_DIRECTION_AXES as readonly string[]).includes(concept.directionAxis) ? concept.directionAxis : planAxis;
   // §2b: when the model's label is rejected, fall back to an RFP-SPECIFIC evidence-derived label, never the noun-swap axis template.
-  const planLabel = evidenceDerivedDirectionLabel(planItem);
+  const argument = repairedStrategicArgument(planItem);
+  const planLabel = strategicChoiceLabelFromArgument(planItem);
   const chosenLabel = isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : planLabel;
   const gated: ConceptCandidate = {
     ...concept,
@@ -1086,7 +1174,7 @@ function enforceStrategicDirectionGate(concept: ConceptCandidate, planItem: Stra
     secondaryRfpConceptTypes: planItem.secondaryRfpConceptTypes,
     strategicDirectionType: planItem.type,
     directionAxis: modelAxis,
-    whyThisDirectionExists: concept.whyThisDirectionExists || planItem.emphasis,
+    whyThisDirectionExists: concept.whyThisDirectionExists || argument.whyThisDirectionExists,
     strategicDirectionLabel: chosenLabel,
     directionSource: { rfpEvidence: planItem.rfpEvidence, proposalPatternLearning: planItem.patternLearning, lostPatternAvoidance: planItem.lostAvoidance },
     failurePatternAvoided: concept.failurePatternAvoided || planItem.lostAvoidance,
@@ -1236,7 +1324,7 @@ function validateAndRepairDirectionCards(concepts: ConceptCandidate[], plan: Str
     // Reject when blank/long/hero/generic, an exact duplicate, OR shares the same trailing token as another card
     // (so the 3 labels never read as one mechanical pattern).
     if (!label || !labelIsShort || !labelIsNotHeroGeneric || !labelIsContextual || seenLabel.has(label.toLowerCase()) || seenLabelTail.has(labelTailOf(label))) {
-      const base = evidenceDerivedDirectionLabel(planItem);
+      const base = strategicChoiceLabelFromArgument(planItem);
       let next = base;
       let n = 2;
       while (seenLabel.has(next.toLowerCase())) { next = `${base} ${n}`; n += 1; }
@@ -1272,7 +1360,7 @@ function validateAndRepairDirectionCards(concepts: ConceptCandidate[], plan: Str
 
     // Cross-RFP contamination guard: drop category terms the current RFP does not support, then regenerate the
     // field from the RFP-derived subject (clean for non-matching RFPs, e.g. strips 수분/포카리 from a hydrogen card).
-    if (isCrossRfpContaminated(label, evidenceBlob)) label = evidenceDerivedDirectionLabel(planItem);
+    if (isCrossRfpContaminated(label, evidenceBlob)) label = strategicChoiceLabelFromArgument(planItem);
     if (isCrossRfpContaminated(bet, evidenceBlob)) bet = directionStrategicBet(axis, ctx, rfpEvidence);
     if (isCrossRfpContaminated(criterion, evidenceBlob)) criterion = directionSelectionCriterion(axis, ctx);
     if (isCrossRfpContaminated(scene, evidenceBlob)) scene = planItem.representativeScene || directionRepresentativeScene(axis, ctx);
@@ -1302,7 +1390,7 @@ function enforceResultMatrixGate(result: ConceptCandidatesResult, params: { prim
       return {
         ...concept,
         strategicDirectionType: planItem.type,
-        strategicDirectionLabel: isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : evidenceDerivedDirectionLabel(planItem),
+        strategicDirectionLabel: isValidDirectionLabel(concept.strategicDirectionLabel || '', planItem.rfpConceptType) ? (concept.strategicDirectionLabel || '').trim() : strategicChoiceLabelFromArgument(planItem),
         whatThisDirectionEmphasizes: planItem.emphasis,
         whenToChooseThisDirection: planItem.chooseWhen,
         winningThesisUse: thesis as ConceptCandidate['winningThesisUse'],

@@ -66,7 +66,7 @@ function normalizeSelectedDirectionForNaming(body: { selectedDirection?: NamingD
   } as ConceptCandidate & { representativePersuasionScene?: string };
 }
 
-const GENERIC_MAIN_HOOKS = ['현장', '현장의', '경험', '체험', '증명', '가치', '연결', '흐름', '여정', '신뢰', '균형'] as const;
+const GENERIC_MAIN_HOOKS = ['현장', '현장의', '실제', '경험', '체험', '증명', '가치', '연결', '흐름', '여정', '신뢰', '균형', '전환', '기억'] as const;
 
 const INTERNAL_LANGUAGE_PATTERN = /\b(proof|evidence|proof burden|evaluator clarity|validation|source|score|signature proof idea)\b|증명 과제|증거|Proof|Evidence|Validation|Source|Score/gi;
 
@@ -110,6 +110,8 @@ const SPEC_BANNED_NAME_PATTERNS: RegExp[] = [
   /경험\s*이해/u,
   /가치\s*체험/u,
   /실체화/u,
+  /^(현장|실제)\s*(연결|전환|증명|경험|기억|흐름)$/u,
+  /^(연결|전환|증명|경험|기억|가치|현장|실제)$/u,
   /한눈에\s*보는/u,
   /시그니처/u,
   /\S+\s*중심\s*$/u,
@@ -164,7 +166,7 @@ function isCoverTitleNamingFamily(input: ProjectInput, selectedDirection: Concep
 }
 
 // Strategy-descriptor words that signal a name is EXPLAINING the direction rather than being a concept title.
-const STRATEGY_DESCRIPTOR_WORDS = new Set(['전략', '방향', '설득', '증명', '강화', '전환', '이해', '체험', '경험', '가치', '관점', '연결', '통합', '구조', '방안', '계획', '접근', '솔루션', '강조', '확장', '구현', '제시', '형성', '설계', '방식', '제고', '확보']);
+const STRATEGY_DESCRIPTOR_WORDS = new Set(['전략', '방향', '설득', '증명', '강화', '전환', '이해', '체험', '경험', '가치', '관점', '연결', '통합', '구조', '방안', '계획', '접근', '솔루션', '강조', '확장', '구현', '제시', '형성', '설계', '방식', '제고', '확보', '현장', '실제']);
 // Explanatory / sentence-like tail: a concept TITLE must not end like a strategy sentence.
 const EXPLANATORY_NAME_TAIL = /(합니다|입니다|하는|되는|위한|통해|중심으로|기반으로|전략|방향|방안|솔루션|구조|구현|제시|설계)\s*$/u;
 // Exact user-facing error when the strategy could not be turned into a concept-level title even after one regeneration.
@@ -316,15 +318,30 @@ function buildBrandThemeToneAnchor(body: { input: ProjectInput; analysis: Analys
 // Concept Frame Synthesis: the step BEFORE naming that reframes the selected strategy into title territory so the model
 // produces a COMPRESSED concept title, not a description. coreMeaning + forbiddenDescriptiveWords are deterministic;
 // the other slots are filled internally by the model before naming. No example names, current-RFP-only.
-function buildConceptFrameSynthesis(body: { selectedDirection: ConceptCandidate }): string {
+function buildConceptFrameSynthesis(body: { selectedDirection: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; proposalNarrative?: ProposalNarrative; analysis?: AnalysisResult }): string {
   const dir = body.selectedDirection;
   const sig = dir.signatureProofIdea;
   const scene = (dir as { representativePersuasionScene?: string }).representativePersuasionScene || sig?.signatureScene || sig?.signatureContent || sig?.signatureSpatialMove || '';
   const coreMeaning = compact(dir.oneLineStrategicBet || dir.winningThesisUse?.winningClaim || dir.whatThisDirectionEmphasizes, 180) || '선택한 전략 방향의 핵심 의미';
+  const fullLogic = compact({
+    selectedStrategicDirection: dir.strategicDirectionLabel,
+    oneLineSummary: dir.oneLineSummary || dir.oneLineStrategicBet || dir.whatThisDirectionEmphasizes,
+    directionAxis: dir.directionAxis || dir.strategicDirectionType,
+    winningThesis: dir.winningThesisUse,
+    conceptLeap: dir.conceptLeap,
+    signatureProofIdea: dir.signatureProofIdea,
+    hiddenNeedAddressed: body.rfpDiagnosis?.hiddenNeed,
+    evaluatorRiskAddressed: body.rfpDiagnosis?.evaluatorDecisionRisk,
+    brandProductEvidenceUsed: body.brandProductIntelligence?.productOrServiceMeaning || body.brandProductIntelligence?.clientOrBrandRole,
+    strategyDiscoveryBrief: (dir as { discoveryBrief?: unknown }).discoveryBrief,
+    semanticAnchors: body.brandProductIntelligence?.brandSpecificVocabulary || body.brandProductIntelligence?.categoryContext,
+    safeReferenceLogic: body.proposalNarrative?.strategicOpportunity,
+  }, 2600);
   const forbidden = Array.from(directionLabelTokens(dir)).slice(0, 14).join(' / ') || '없음';
   return [
     '=== Concept Frame Synthesis (네이밍 직전 단계. 전략을 설명하지 말고 콘셉트 타이틀로 전환하기 위한 프레임) ===',
     `coreMeaningToCarry(타이틀이 반드시 담아야 할 전략 의미): ${coreMeaning}`,
+    `fullSelectedDirectionLogic(라벨만 보지 말고 이 전체 논리에서 네이밍): ${fullLogic}`,
     '다음 슬롯을 먼저 내부적으로 채운 뒤(슬롯 자체는 출력하지 말 것) 그 프레임에서 conceptName 타이틀을 만든다:',
     '- symbolicFrame: coreMeaning을 타이틀로 바꿀 상징적 프레임 하나',
     '- experientialImage: 관람객이 떠올리거나 기억할 한 장면/이미지',
@@ -412,6 +429,12 @@ function truthyValidation() {
     noGenericEnglishCombination: true,
     connectedToDiagnosis: true,
     connectedToBrandProductIntelligence: true,
+    conceptNameIsTitleLike: true,
+    conceptNameIsMemorable: true,
+    conceptNameNotGenericDescription: true,
+    conceptNameUsesSelectedDirectionLogic: true,
+    conceptNameUsesProjectSemanticAnchor: true,
+    conceptBatchHasDistinctRoles: true,
   };
 }
 
@@ -432,6 +455,26 @@ function decidePrimaryConceptLanguage(body: { input: ProjectInput; analysis: Ana
   const koreanCultural = /전통\s*문화|문화\s*유산|무형\s*유산|국가\s*유산|문화재|민속|향토|향교|서원|국악|판소리|한복|한지|종가|세시|마을\s*공동체|지역\s*공동체|지역\s*주민|주민\s*참여|공공\s*문화|생활\s*문화|역사\s*문화|heritage|folk\s*culture|intangible\s*cultural|traditional\s*korean/i.test(text);
   if (koreanCultural) return { language: 'korean_primary', reason: 'Korean/local/cultural/heritage identity is the concept' };
   return { language: 'english_default', reason: 'global/B2B/technology/exhibition/brand-showcase/international context defaults to an English title with Korean subtitle/slogan' };
+}
+
+
+function conceptRoleFor(index: number): 'brand_theme_world' | 'scene_experience' | 'strategic_proof' {
+  return (['brand_theme_world', 'scene_experience', 'strategic_proof'] as const)[index % 3];
+}
+
+function hasProjectSemanticAnchor(option: { conceptName?: string; koreanSubtitle?: string; oneLineSlogan?: string; shortMeaning?: string }, vocabulary: string[]) {
+  if (!vocabulary.length) return true;
+  const text = [option.conceptName, option.koreanSubtitle, option.oneLineSlogan, option.shortMeaning].filter(Boolean).join(' ').toLowerCase();
+  return vocabulary.some((word) => word.length >= 2 && text.includes(word.toLowerCase()));
+}
+
+function isGenericExplanatoryConceptName(name: string) {
+  const trimmed = (name || '').trim();
+  const tokens = trimmed.split(/[\s/·|]+/).map((token) => token.replace(/[^가-힣A-Za-z0-9]/g, '')).filter(Boolean);
+  if (!tokens.length) return true;
+  if (/^(현장|실제)\s*(연결|전환|증명|경험|기억|흐름)$/u.test(trimmed)) return true;
+  if (tokens.length <= 2 && tokens.every((token) => STRATEGY_DESCRIPTOR_WORDS.has(token) || GENERIC_MAIN_HOOKS.includes(token as (typeof GENERIC_MAIN_HOOKS)[number]))) return true;
+  return false;
 }
 
 function buildFinalOptions(
@@ -492,7 +535,8 @@ function buildFinalOptions(
   const quality = safe.filter((entry) => {
     const conceptName = entry.option.conceptName || '';
     if (isWeakConceptName(conceptName, body.input)) return false;
-    if (vocabRich && !entry.usesVocabulary) return false;
+    if (isGenericExplanatoryConceptName(conceptName)) return false;
+    if (vocabRich && (!entry.usesVocabulary || !hasProjectSemanticAnchor(entry.option, currentRfpVocabularySet))) return false;
     // Cover-title types: drop names that read like a descriptive summary / strategy label / direction-label restatement
     // (the title must be a compressed concept title, not an explanation). Drops feed the regenerate-once-then-error path.
     if (coverTitleFamily && isDescriptiveOrStrategyLabelName(conceptName, body.selectedDirection)) { descriptiveDrops += 1; return false; }
@@ -519,7 +563,11 @@ function buildFinalOptions(
       // If the model omitted it, backfill from the Korean seed first (it carries the concept meaning), then shortMeaning.
       koreanSubtitle: (option.koreanSubtitle && option.koreanSubtitle.trim()) ? option.koreanSubtitle : (isLatinDominantName(option.conceptName || '') ? userFacingCopy(option.koreanConceptSeed || option.shortMeaning || option.oneLineSlogan || '', 60) : ''),
       oneLineSlogan: option.oneLineSlogan || option.shortMeaning,
-      whyItFitsRfp: whyItFits,
+      whyItFitsRfp: option.whyItFitsCurrentRfp || whyItFits,
+      whyItFitsCurrentRfp: option.whyItFitsCurrentRfp || whyItFits,
+      conceptRole: option.conceptRole || conceptRoleFor(index),
+      brandOrThemeAnchorUsed: option.brandOrThemeAnchorUsed || currentRfpVocabularySet.slice(0, 3).join(' / '),
+      proofOrExperienceAnchorUsed: option.proofOrExperienceAnchorUsed || (body.selectedDirection.signatureProofIdea?.signatureScene || body.selectedDirection.oneLineStrategicBet || whyItFits),
       whyItFitsSelectedDirection: option.whyItFitsSelectedDirection || whyItFits,
       namingStyle: option.namingStyle ?? styles[index % styles.length],
       mainRisk,
@@ -639,8 +687,9 @@ Brand vocabulary: ${body.brandProductIntelligence?.brandSpecificVocabulary?.join
 Words/tone to avoid: ${body.brandProductIntelligence?.wordsToAvoid?.join(' / ') || 'none'}
 Existing names for selected direction to avoid: ${(body.existingNamesForSelectedDirection ?? body.recentNameOptions)?.join(' / ') || 'none'}
 Names already generated for other directions to block: ${body.blockedOtherDirectionNames?.join(' / ') || 'none'}\n\n요구사항:\n${countRequirementBlock}
-- generic hook(현장/경험/체험/증명/가치/연결/흐름/여정/신뢰/균형)이 conceptName 또는 oneLineSlogan의 주어처럼 3회 이상 반복되면 약한 후보를 currentRfpVocabularySet 기반으로 재작성한다.\n- 각 option은 먼저 koreanConceptSeed(Concept Frame Synthesis에서 만든 강한 한국어 컨셉 시드 타이틀)를 만들고, 그 시드에서 conceptName을 도출한다. 출력 필드: koreanConceptSeed, conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsSelectedDirection, namingStyle, mainRisk. 점수, validation boolean 블록, expandableTo, 디버그/근거 필드는 출력하지 말라(서버가 코드로 처리한다). english_default이면 conceptName은 koreanConceptSeed를 trans-create한 영어 타이틀이어야 하고(시드와 따로 새로 만든 범용 영어 라벨이 아님), koreanSubtitle는 koreanConceptSeed의 의미를 보존한다. korean_primary이면 conceptName은 koreanConceptSeed(또는 다듬은 버전)이다.\n- conceptName은 전략을 "설명"하는 문장이 아니라 Concept Frame Synthesis에서 압축한 제안서 표지 콘셉트 타이틀이다. 전략 라벨/슬라이드 제목/제품 카테고리/분석 heading/방향 라벨 복사/서술형 요약이 아니며, 상징·이미지·움직임·긴장·장면 같은 프레임을 함축해야 한다. 슬로건이 풀어 설명하기 전에 단독으로 의도가 읽혀야 하고, 호기심을 만들되 모호하지 않게 한다. 임시 전략 방향명/컨설팅 목차명/단순 제품명/랜덤 영어 명사 조합이 아니다.
+- generic hook(현장/경험/체험/증명/가치/연결/흐름/여정/신뢰/균형)이 conceptName 또는 oneLineSlogan의 주어처럼 3회 이상 반복되면 약한 후보를 currentRfpVocabularySet 기반으로 재작성한다.\n- 각 option은 먼저 koreanConceptSeed(Concept Frame Synthesis에서 만든 강한 한국어 컨셉 시드 타이틀)를 만들고, 그 시드에서 conceptName을 도출한다. 출력 필드: koreanConceptSeed, conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, conceptRole(brand_theme_world/scene_experience/strategic_proof 중 하나), shortMeaning, whyItFitsSelectedDirection, whyItFitsCurrentRfp, brandOrThemeAnchorUsed, proofOrExperienceAnchorUsed, namingStyle, mainRisk. 점수, validation boolean 블록, expandableTo, 디버그/근거 필드는 출력하지 말라(서버가 코드로 처리한다). english_default이면 conceptName은 koreanConceptSeed를 trans-create한 영어 타이틀이어야 하고(시드와 따로 새로 만든 범용 영어 라벨이 아님), koreanSubtitle는 koreanConceptSeed의 의미를 보존한다. korean_primary이면 conceptName은 koreanConceptSeed(또는 다듬은 버전)이다.\n- conceptName은 전략을 "설명"하는 문장이 아니라 Concept Frame Synthesis에서 압축한 제안서 표지 콘셉트 타이틀이다. 전략 라벨/슬라이드 제목/제품 카테고리/분석 heading/방향 라벨 복사/서술형 요약이 아니며, 상징·이미지·움직임·긴장·장면 같은 프레임을 함축해야 한다. 슬로건이 풀어 설명하기 전에 단독으로 의도가 읽혀야 하고, 호기심을 만들되 모호하지 않게 한다. 임시 전략 방향명/컨설팅 목차명/단순 제품명/랜덤 영어 명사 조합이 아니다.
 - 필드 역할 분리: conceptName=압축 타이틀(설명/문장/요약 금지), oneLineSlogan=타이틀을 설명·날카롭게(타이틀보다 직접적이어도 됨), shortMeaning=타이틀이 왜 맞는지, whyItFitsRfp=RFP 근거. conceptName이 다른 필드의 역할을 대신하지 말라. forbiddenDescriptiveWords를 타이틀의 주 단어로 쓰지 말라.
+- 3개 후보 역할은 반드시 구분한다: 하나는 brand_theme_world(브랜드/테마/세계), 하나는 scene_experience(장면/경험), 하나는 strategic_proof(전략/설득). 요청 수가 1개면 candidateRole을 우선하되 conceptRole을 명시한다.
 - 각 option의 oneLineSlogan은 conceptName이 주장하는 승리 논리를 1문장으로 설명한다. whyItFitsSelectedDirection은 선택한 전략 방향과 confirmed diagnosis의 coreWinningCondition, strategicTension, proofBurden, signatureProofIdea 중 최소 2개와 연결한다.
 - generic English word combinations, vague abstract nouns, consulting-style labels, literal RFP summaries, any-name-fits-any-exhibition 후보를 거부하고 재생성한다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- Generate names only for the selected strategic direction. The names must not be usable for the other two directions. If a name could fit another direction with no change, reject it. 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
 - Use the selected direction’s directionAxis and 대표 설득 장면 as the primary naming source.
