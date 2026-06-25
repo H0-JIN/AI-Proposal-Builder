@@ -854,6 +854,15 @@ export interface ConceptCandidatesResult {
   conceptDevelopmentLogic: ConceptDevelopmentLogic;
   concepts: ConceptCandidate[];
   recommendation: ConceptRecommendation;
+  directionGenerationDebug?: {
+    repairPathRan?: boolean;
+    initialGeneratedCount?: number;
+    finalGeneratedCount?: number;
+    underGenerationRepaired?: boolean;
+    validationRejectedAllCandidates?: boolean;
+    missingDirectionsRepaired?: number;
+    repairSource?: string;
+  };
   directionValidation?: {
     allDirectionsAreStrategicBets?: boolean;
     noBasicRequirementDirections?: boolean;

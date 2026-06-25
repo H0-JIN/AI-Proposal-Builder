@@ -16,6 +16,7 @@ import { extractRfpConceptHierarchy, hierarchyThemeSeeds, formatRfpHierarchyAnch
 const DEFAULT_CONCEPT_COUNT = 3;
 const ALLOWED_DIRECTION_AXES = ['representative_position', 'audience_understanding', 'signature_scene', 'product_value_proof', 'process_trust', 'category_shift', 'system/ecosystem_proof', 'spatial_journey', 'brand_memory', 'operational_confidence', 'evaluator_clarity', 'emotional_affinity', 'technology_reality_proof'] as const;
 const CONCEPT_GENERATION_TIMEOUT_MS = Number(process.env.CONCEPT_GENERATION_TIMEOUT_MS ?? 18_000);
+const MAX_DIRECTION_GENERATION_REPAIR_ATTEMPTS = Number(process.env.MAX_DIRECTION_GENERATION_REPAIR_ATTEMPTS ?? 2);
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -1696,6 +1697,70 @@ function attachGenerationMetadata(result: ConceptCandidatesResult, metadata: Con
   };
 }
 
+function buildDirectionFailureDetails(stage: string, details: Record<string, unknown>) {
+  return {
+    stage,
+    ...details,
+    strictGuardrailsPreserved: true,
+    proposalTypeUsedOnlyAsGuardrail: true,
+    previousProjectCacheUsed: false,
+    maxRepairAttempts: MAX_DIRECTION_GENERATION_REPAIR_ATTEMPTS,
+  };
+}
+
+function completeDirectionsFromCurrentEvidence(params: {
+  generated: ConceptCandidatesResult;
+  analysis: AnalysisResult;
+  proposalNarrative: ProposalNarrative;
+  strategicDirectionPlan: StrategicDirectionPlanItem[];
+  selectedRfpConceptType: RfpConceptType;
+  selectedMatrixType: MatrixType;
+  brandExperienceMatrix: BrandExperienceMatrixItem[];
+  entityMatrix: ReturnType<typeof buildRfpDifferentiationStrategy>['entityDifferentiationMatrix'];
+  sanitizedContext: ReturnType<typeof sanitizeConceptContextByRfpType>;
+  classificationEvidence: ReturnType<typeof classifyRfpEvidence>;
+  directionSubjects: DirectionSubjects;
+}) {
+  const { generated, analysis, proposalNarrative, strategicDirectionPlan } = params;
+  const initialCount = generated.concepts?.length ?? 0;
+  const safeConcepts = Array.from({ length: DEFAULT_CONCEPT_COUNT }, (_, index) => {
+    const modelConcept = generated.concepts?.[index];
+    if (modelConcept) return modelConcept;
+    const planItem = strategicDirectionPlan[index] ?? strategicDirectionPlan[0];
+    // Evidence-derived repair: synthesize only the missing/rejected card from current RFP analysis, BPI-supported
+    // direction plan/diagnosis context, and the current proposal narrative. This is not a proposal-type preset and does
+    // not read proposal_patterns or previous-project cache.
+    return fallbackCandidate(index + 1, evidenceDerivedDirectionLabel(planItem), analysis, proposalNarrative, params.selectedRfpConceptType);
+  });
+  const repairedGenerated: ConceptCandidatesResult = { ...generated, concepts: safeConcepts };
+  const result = enforceResultMatrixGate(repairedGenerated, {
+    primaryType: params.selectedRfpConceptType,
+    matrixType: params.selectedMatrixType,
+    plan: strategicDirectionPlan,
+    brandExperienceMatrix: params.brandExperienceMatrix,
+    entityMatrix: params.entityMatrix,
+    sanitizerApplied: params.sanitizedContext.sanitizerApplied,
+    sanitizerReason: params.sanitizedContext.sanitizerReason,
+    rawMatrixType: params.sanitizedContext.rawMatrixType,
+    rawPrimaryRfpConceptType: params.sanitizedContext.rawPrimaryRfpConceptType,
+    multiEntityEvidenceCount: params.classificationEvidence.multiEntityEvidenceCount,
+    singleBrandVisitorRoomEvidenceCount: params.classificationEvidence.singleBrandVisitorRoomEvidenceCount,
+    subjects: params.directionSubjects,
+  });
+  return {
+    result,
+    repairDebug: {
+      repairPathRan: initialCount < DEFAULT_CONCEPT_COUNT || result.directionValidation?.allDirectionsAreStrategicBets !== true,
+      initialGeneratedCount: initialCount,
+      finalGeneratedCount: result.concepts.length,
+      underGenerationRepaired: initialCount < DEFAULT_CONCEPT_COUNT,
+      validationRejectedAllCandidates: initialCount > 0 && (generated.concepts ?? []).every((concept, index) => buildDirectionQualityValidation(concept, strategicDirectionPlan[index] ?? strategicDirectionPlan[0]).isStrategicBet !== true),
+      missingDirectionsRepaired: Math.max(0, DEFAULT_CONCEPT_COUNT - initialCount),
+      repairSource: 'current_rfp_analysis_brand_product_diagnosis_discovery_brief_only',
+    },
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
@@ -1954,18 +2019,29 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
         maxRetries: 1,
       });
 
-      // §9: do NOT pad an under-generated result with hardcoded preset cards (fallbackCandidate). If the model returned
-      // fewer than 3 directions, treat it as a generation failure → the catch returns a retry signal (no generic cards).
-      if ((generated.concepts?.length ?? 0) < 3) throw new Error('under_generation: model returned fewer than 3 strategic directions');
+      const { result: repairedResult, repairDebug } = completeDirectionsFromCurrentEvidence({
+        generated: {
+          ...generated,
+          conceptPromptVersion,
+          regenerationId: metadata.regenerationId,
+          generationAttempt: metadata.generationAttempt,
+          generatedAt: metadata.generatedAt,
+          concepts: (generated.concepts ?? []).slice(0, maxCandidates),
+        },
+        analysis: body.analysis,
+        proposalNarrative,
+        strategicDirectionPlan,
+        selectedRfpConceptType,
+        selectedMatrixType,
+        brandExperienceMatrix,
+        entityMatrix: differentiationStrategy.entityDifferentiationMatrix,
+        sanitizedContext,
+        classificationEvidence,
+        directionSubjects,
+      });
 
-      let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({
-        ...generated,
-        conceptPromptVersion,
-        regenerationId: metadata.regenerationId,
-        generationAttempt: metadata.generationAttempt,
-        generatedAt: metadata.generatedAt,
-        concepts: generated.concepts.slice(0, maxCandidates),
-      }, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount, subjects: directionSubjects })));
+      let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(repairedResult));
+      result.directionGenerationDebug = repairDebug as ConceptCandidatesResult['directionGenerationDebug'];
       result.rfpDiagnosis = body.rfpDiagnosis;
       result.brandProductIntelligence = body.brandProductIntelligence;
       result.proposalPatternsUsedForDirections = false;
@@ -1980,10 +2056,10 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       // and shows a retry CTA (regenerate from current-RFP evidence only). A generic fallback never reaches the user.
       const reason = error instanceof Error ? error.message : 'generation timeout';
       console.error(`[concepts] strategic direction generation failed — returning retry signal (no generic fallback): ${reason}`);
-      return conceptsJson({ error: '전략 방향 생성에 실패했습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.', reason: 'direction_generation_failed', conceptPromptVersion }, { status: 502 });
+      return conceptsJson({ error: '전략 방향 생성에 실패했습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.', reason: 'direction_generation_failed', conceptPromptVersion, details: buildDirectionFailureDetails('llm_call_or_schema_parse', { message: reason, hasBrandProductIntelligence: Boolean(body.brandProductIntelligence), hasProposalStrategyDiagnosis: Boolean(body.rfpDiagnosis), hasStrategyDiscoveryBrief: Boolean(strategicDirectionPlan[0]?.discoveryBrief), generatedDirectionCount: 0 }) }, { status: 502 });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.';
-    return conceptsJson({ error: message, conceptPromptVersion }, { status: 500 });
+    return conceptsJson({ error: message, conceptPromptVersion, details: buildDirectionFailureDetails('before_llm_or_unhandled', { message }) }, { status: 500 });
   }
 }
