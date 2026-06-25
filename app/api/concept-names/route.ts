@@ -168,8 +168,6 @@ const STRATEGY_DESCRIPTOR_WORDS = new Set(['전략', '방향', '설득', '증명
 // Explanatory / sentence-like tail: a concept TITLE must not end like a strategy sentence.
 const EXPLANATORY_NAME_TAIL = /(합니다|입니다|하는|되는|위한|통해|중심으로|기반으로|전략|방향|방안|솔루션|구조|구현|제시|설계)\s*$/u;
 // Exact user-facing error when the strategy could not be turned into a concept-level title even after one regeneration.
-const DESCRIPTIVE_NAMING_ERROR = '선택한 전략 방향을 컨셉명으로 충분히 전환하지 못했습니다. 컨셉명을 다시 생성해 주세요.';
-const INCOMPLETE_CANDIDATES_ERROR = '유효한 컨셉명 후보 3개를 채우지 못했습니다. 잠시 후 다시 시도하거나 전략 방향을 다시 선택해 주세요.';
 
 function directionLabelTokens(dir: ConceptCandidate): Set<string> {
   return new Set([dir.strategicDirectionLabel, dir.oneLineStrategicBet, dir.whatThisDirectionEmphasizes, (dir as { oneLineSummary?: string }).oneLineSummary]
@@ -526,7 +524,7 @@ function buildFinalOptions(
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; analysisSummary?: string; selectedDirection: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; activeMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; primaryRfpConceptType?: string; languageMode?: string; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[]; projectId?: string | null; documentIds?: string[]; winningReferenceChunks?: DocumentChunk[]; winningReferenceBrief?: WinningReferencePatternBrief | null; winningReferenceBriefProvided?: boolean };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; analysisSummary?: string; selectedDirection: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; activeMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; primaryRfpConceptType?: string; languageMode?: string; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[]; projectId?: string | null; documentIds?: string[]; winningReferenceChunks?: DocumentChunk[]; winningReferenceBrief?: WinningReferencePatternBrief | null; winningReferenceBriefProvided?: boolean; candidateCount?: number; candidateRole?: string };
     if (!body.input || !body.analysis || (!body.selectedDirection && !body.selectedStrategicDirection)) return json(errorResponse('프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.'), { status: 400 });
     body.selectedDirection = normalizeSelectedDirectionForNaming(body) as ConceptCandidate;
 
@@ -574,10 +572,25 @@ export async function POST(request: Request) {
     ].join('\n');
     console.info('[concept-names:gating]', { rfpProvidedConceptHierarchyDetected: Boolean(rfpHierarchy), primaryConceptLanguage: conceptLanguage.language, hierarchyFieldsUsedForNaming: rfpHierarchy ? Object.entries({ mainTheme: rfpHierarchy.mainTheme, subThemes: rfpHierarchy.subThemes.length, zoneConcepts: rfpHierarchy.zoneConcepts.length, officialSlogan: rfpHierarchy.officialSlogan, keyMessage: rfpHierarchy.keyMessage }).filter(([, v]) => v).map(([k]) => k) : [] });
 
+    // §3-5: generate only a small batch per request (the client drives the incremental loop) so each request stays light
+    // and cannot time out. requestedCount defaults to 3 for backward compatibility; the client sends 1. candidateRole
+    // (theme/scene/declaration) carries the deliberate A/B/C variety across the client's per-candidate requests.
+    const requestedCount = Math.max(1, Math.min(3, Math.floor(body.candidateCount ?? 3)));
+    const roleHints: Record<string, string> = {
+      theme: '주제형 — 위 Brand/Theme Tone Anchor의 현재 전시 테마·카테고리·브랜드 톤·프로젝트 세계를 담아 현재 RFP에 고유하게 들리고 무관한 브랜드/전시에는 그대로 쓸 수 없는 타이틀(브랜드/클라이언트명 직접 사용 금지, 톤·어휘·상징으로 간접 반영, namingStyle은 Brand/category-specific phrase).',
+      scene: '장면형 — 대표 관람 경험·장면·움직임·공간/콘텐츠 순간을 기억에 남는 이미지로 압축(namingStyle은 Spatial/experience frame).',
+      declaration: '선언형 — 선택한 전략 방향을 표지 타이틀로 압축하되 전략 라벨이 되지 않게(namingStyle은 Direct claim 또는 Strong one-line statement).',
+    };
+    const requestedRole = typeof body.candidateRole === 'string' ? roleHints[body.candidateRole] : undefined;
+    const namingStyleLine = '- namingStyle 필드를 반드시 다음 중 하나로 지정: Direct claim, Short bilingual title, Brand/category-specific phrase, Spatial/experience frame, Symbolic but grounded, Strong one-line statement.';
+    const countRequirementBlock = requestedCount >= 3
+      ? `- options는 반드시 정확히 3개. 모두 표지에 올릴 수 있는 강한 후보여야 한다.\n${namingStyleLine}\n- 3개 후보는 의도적으로 서로 다른 역할을 갖는다: (A) ${roleHints.theme} (B) ${roleHints.scene} (C) ${roleHints.declaration} 세 후보는 톤·어휘·논리에서 명확히 달라야 하고, 셋 다 무관한 브랜드에 그대로 맞는 범용 영어/추상 명사 조합이면 거부하고 재생성한다. 단, 이 역할 분담이 Concept Frame Synthesis → 한국어 컨셉 시드 → (필요 시) 영어 trans-create 순서를 깨뜨리지 않는다.`
+      : `- options는 반드시 정확히 ${requestedCount}개의 강한 후보. 빠르고 가볍게 생성하되 품질은 절대 낮추지 말 것(표지에 바로 올릴 수 있는 수준이어야 한다).\n${namingStyleLine}\n- 이 후보의 역할: ${requestedRole || roleHints.declaration}\n- 위 'Existing names for selected direction to avoid'의 이름과 의도적으로 다른 톤·어휘·논리로 만들고, 같은 slogan structure / strategic claim / shortMeaning 반복을 거부한다. 무관한 브랜드에 그대로 맞는 범용 영어/추상 명사 조합이면 거부하고 재생성한다. 이 역할 분담이 Concept Frame Synthesis → 한국어 컨셉 시드 → (필요 시) 영어 trans-create 순서를 깨뜨리지 않는다.`;
+
     const system = [
       'You are a senior Korean proposal concept naming director.',
       'Generate final cover-level concept name options only after a strategic direction has been selected.',
-      'Return exactly 3 strong final concept name options for the selected strategic direction only. Fewer, sharper, non-interchangeable options are required.',
+      `Return exactly ${requestedCount} strong final concept name option(s) for the selected strategic direction only. Fewer, sharper, non-interchangeable options are required.`,
       'Concept Frame Synthesis is the PRIMARY naming driver and always comes first. Build the conceptName from the frame, not from the language policy: derive the strongest conceptual meaning from the frame, form an internal strong Korean concept-seed title, and only then apply the language. When primaryConceptLanguage is english_default, TRANS-CREATE the Korean seed into a short English cover title (at least 2 of 3) that preserves the seed\'s image/tension/movement/symbol — never invent a separate generic English label, and never flatten it into a business keyword; carry the Korean seed as koreanSubtitle and a Korean oneLineSlogan. When korean_primary, the Korean seed is the conceptName. The language policy decides ONLY the title language; the title\'s strength, distinctiveness, and structure must come from the symbolic frame / experiential image / narrative motion / audience afterimage / strategic tension / representative proof scene. Reject any English name that is weaker, more generic, or more abstract than the Korean seed, or that reads as a generic noun, strategy label, category label, or description.',
       'Avoid consulting labels, analysis headings, internal strategy phrases, generic abstract nouns, awkward translated phrases, product-specific names, one-zone-specific names, one-entity-specific names, unsupported poetic metaphors, and generic tech/event slogans.',
       'Names must be proposal-cover concepts that express the winning claim and can expand into space, content, media, and operation.',
@@ -609,7 +622,7 @@ currentRfpVocabularySet: ${currentRfpVocabularySet.join(' / ')}
 Brand vocabulary: ${body.brandProductIntelligence?.brandSpecificVocabulary?.join(' / ') || 'none'}
 Words/tone to avoid: ${body.brandProductIntelligence?.wordsToAvoid?.join(' / ') || 'none'}
 Existing names for selected direction to avoid: ${(body.existingNamesForSelectedDirection ?? body.recentNameOptions)?.join(' / ') || 'none'}
-Names already generated for other directions to block: ${body.blockedOtherDirectionNames?.join(' / ') || 'none'}\n\n요구사항:\n- options는 반드시 정확히 3개. 모두 표지에 올릴 수 있는 강한 후보여야 한다.\n- namingStyle 필드를 반드시 다음 중 하나로 다양화: Direct claim, Short bilingual title, Brand/category-specific phrase, Spatial/experience frame, Symbolic but grounded, Strong one-line statement.\n- 3개 후보는 의도적으로 서로 다른 역할을 갖는다: (A) 주제형 — 위 Brand/Theme Tone Anchor의 현재 전시 테마·카테고리·브랜드 톤·프로젝트 세계를 담아 현재 RFP에 고유하게 들리고 무관한 브랜드/전시에는 그대로 쓸 수 없는 타이틀(브랜드/클라이언트명 직접 사용 금지, 톤·어휘·상징으로 간접 반영, namingStyle은 Brand/category-specific phrase). (B) 장면형 — 대표 관람 경험·장면·움직임·공간/콘텐츠 순간을 기억에 남는 이미지로 압축(namingStyle은 Spatial/experience frame). (C) 선언형 — 선택한 전략 방향을 표지 타이틀로 압축하되 전략 라벨이 되지 않게(namingStyle은 Direct claim 또는 Strong one-line statement). 세 후보는 톤·어휘·논리에서 명확히 달라야 하고, 셋 다 무관한 브랜드에 그대로 맞는 범용 영어/추상 명사 조합이면 거부하고 재생성한다. 단, 이 역할 분담이 Concept Frame Synthesis → 한국어 컨셉 시드 → (필요 시) 영어 trans-create 순서를 깨뜨리지 않는다.
+Names already generated for other directions to block: ${body.blockedOtherDirectionNames?.join(' / ') || 'none'}\n\n요구사항:\n${countRequirementBlock}
 - generic hook(현장/경험/체험/증명/가치/연결/흐름/여정/신뢰/균형)이 conceptName 또는 oneLineSlogan의 주어처럼 3회 이상 반복되면 약한 후보를 currentRfpVocabularySet 기반으로 재작성한다.\n- 각 option은 먼저 koreanConceptSeed(Concept Frame Synthesis에서 만든 강한 한국어 컨셉 시드 타이틀)를 만들고, 그 시드에서 conceptName을 도출한다. 출력 필드: koreanConceptSeed, conceptName, languageMode(Korean/English/bilingual), koreanSubtitle(없으면 빈 문자열), oneLineSlogan, shortMeaning, whyItFitsSelectedDirection, namingStyle, mainRisk. 점수, validation boolean 블록, expandableTo, 디버그/근거 필드는 출력하지 말라(서버가 코드로 처리한다). english_default이면 conceptName은 koreanConceptSeed를 trans-create한 영어 타이틀이어야 하고(시드와 따로 새로 만든 범용 영어 라벨이 아님), koreanSubtitle는 koreanConceptSeed의 의미를 보존한다. korean_primary이면 conceptName은 koreanConceptSeed(또는 다듬은 버전)이다.\n- conceptName은 전략을 "설명"하는 문장이 아니라 Concept Frame Synthesis에서 압축한 제안서 표지 콘셉트 타이틀이다. 전략 라벨/슬라이드 제목/제품 카테고리/분석 heading/방향 라벨 복사/서술형 요약이 아니며, 상징·이미지·움직임·긴장·장면 같은 프레임을 함축해야 한다. 슬로건이 풀어 설명하기 전에 단독으로 의도가 읽혀야 하고, 호기심을 만들되 모호하지 않게 한다. 임시 전략 방향명/컨설팅 목차명/단순 제품명/랜덤 영어 명사 조합이 아니다.
 - 필드 역할 분리: conceptName=압축 타이틀(설명/문장/요약 금지), oneLineSlogan=타이틀을 설명·날카롭게(타이틀보다 직접적이어도 됨), shortMeaning=타이틀이 왜 맞는지, whyItFitsRfp=RFP 근거. conceptName이 다른 필드의 역할을 대신하지 말라. forbiddenDescriptiveWords를 타이틀의 주 단어로 쓰지 말라.
 - 각 option의 oneLineSlogan은 conceptName이 주장하는 승리 논리를 1문장으로 설명한다. whyItFitsSelectedDirection은 선택한 전략 방향과 confirmed diagnosis의 coreWinningCondition, strategicTension, proofBurden, signatureProofIdea 중 최소 2개와 연결한다.
@@ -632,53 +645,41 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
     const generate = (userPrompt: string) => createStructuredJson<ConceptNameOptionsResult>({ schemaName: 'concept_name_options', schema: conceptNameOptionsJsonSchema, system, user: userPrompt, timeoutMs: 18_000, maxRetries: 1 });
 
     const forbiddenCopyTerms = refBriefResult.brief?.forbiddenCopyTerms ?? [];
-    // §2: GUARANTEE exactly three valid primary candidates for the selected direction. Accumulate SURVIVING options across
-    // up to 3 passes, feeding the already-accepted names back into both the prompt (avoid line) and buildFinalOptions'
-    // blocked set so each pass yields net-new, direction-scoped candidates. Rejected candidates are replaced, never
-    // silently dropped; only a true hard failure (fewer than 3 after all passes) returns an explicit error.
+    // §3-5: generate only THIS small batch (requestedCount, default 1) so a single request is light and cannot time out.
+    // The CLIENT drives the loop across requests to reach three valid candidates and shows per-candidate progress. We keep
+    // a small bounded per-request retry (maxAttemptsPerCandidate) so a single rejected batch still usually yields a valid
+    // candidate without a long request. No 3-candidate top-up here, no infinite loop — the client owns the total budget.
     type BuiltOption = ReturnType<typeof buildFinalOptions>['options'][number];
     const accepted: BuiltOption[] = [];
     const acceptedNorm = new Set<string>();
     const acceptedNames: string[] = [];
     let result: ConceptNameOptionsResult | undefined;
-    let lastDiag: ReturnType<typeof buildFinalOptions>['diag'] | undefined;
-    const MAX_PASSES = 3;
-    for (let pass = 0; pass < MAX_PASSES && accepted.length < 3; pass++) {
-      const passBody = {
+    const MAX_ATTEMPTS_PER_REQUEST = 2;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_REQUEST && accepted.length < requestedCount; attempt++) {
+      const attemptBody = {
         ...body,
         recentNameOptions: [...(body.recentNameOptions ?? []), ...acceptedNames],
         existingNamesForSelectedDirection: [...(body.existingNamesForSelectedDirection ?? []), ...acceptedNames],
       };
       const avoidLine = acceptedNames.length ? `\n\n[이미 생성됨 — 반드시 회피하고 새 후보만 생성] ${acceptedNames.join(' / ')}` : '';
-      const passUser = `${user}${pass === 0 ? '' : STRICTER_RETRY_ADDENDUM}${avoidLine}`;
-      const passResult = await generate(passUser);
-      if (pass === 0) result = passResult;
-      const passBuilt = buildFinalOptions(passResult, passBody, currentRfpVocabularySet, forbiddenCopyTerms);
-      lastDiag = passBuilt.diag;
-      for (const option of passBuilt.options) {
+      const attemptUser = `${user}${attempt === 0 ? '' : STRICTER_RETRY_ADDENDUM}${avoidLine}`;
+      const attemptResult = await generate(attemptUser);
+      if (attempt === 0) result = attemptResult;
+      const attemptBuilt = buildFinalOptions(attemptResult, attemptBody, currentRfpVocabularySet, forbiddenCopyTerms);
+      for (const option of attemptBuilt.options) {
         const key = normalizeName(option.conceptName || '');
         if (!key || acceptedNorm.has(key)) continue;
         accepted.push(option);
         acceptedNorm.add(key);
         acceptedNames.push(option.conceptName || '');
-        if (accepted.length >= 3) break;
+        if (accepted.length >= requestedCount) break;
       }
     }
-    if (!accepted.length) {
-      const d = lastDiag ?? { returned: 0, deduped: 0, safe: 0, quality: 0, blockedNameDrops: 0, descriptiveDrops: 0 };
-      // When the model kept producing descriptive / strategy-label names that could not be turned into concept titles,
-      // surface the conversion-specific error; otherwise the generic weak-naming error.
-      const conversionFailure = d.descriptiveDrops > 0 && d.safe > 0;
-      const message = conversionFailure ? DESCRIPTIVE_NAMING_ERROR : WEAK_NAMING_ERROR;
-      return json(errorResponse(message, `reason=${conversionFailure ? 'descriptive_after_retry' : 'weak_after_retry'}; returned=${d.returned}; deduped=${d.deduped}; safe=${d.safe}; quality=${d.quality}; blockedNameDrops=${d.blockedNameDrops}; descriptiveDrops=${d.descriptiveDrops}`), { status: 422 });
-    }
-    if (accepted.length < 3) {
-      // 1-2 survivors after all passes → explicit error rather than showing incomplete candidates (§2).
-      return json(errorResponse(INCOMPLETE_CANDIDATES_ERROR, `reason=only_${accepted.length}_valid_after_${MAX_PASSES}_passes`), { status: 422 });
-    }
-    const finalOptions = accepted.slice(0, 3).map((option, index) => ({ ...option, id: `${body.selectedDirection.conceptId || 'direction'}-name-${index + 1}` }));
-    console.info('[concept-names:count]', { requested: 3, returned: finalOptions.length, accepted: accepted.length });
-    return json({ ...successResponse({ ...(result ?? ({} as ConceptNameOptionsResult)), selectedDirectionId: body.selectedDirection.conceptId, options: finalOptions }), patternLearningSummary, winningReferenceBrief: refBriefResult.brief });
+    // Return whatever valid candidates this light request produced (0..requestedCount). The client accumulates across
+    // requests and surfaces the final "couldn't reach 3" error — the server never blocks on reaching the full count.
+    const finalOptions = accepted.slice(0, requestedCount).map((option, index) => ({ ...option, id: `${body.selectedDirection.conceptId || 'direction'}-${body.candidateRole || 'name'}-${index + 1}` }));
+    console.info('[concept-names:incremental]', { requestedCount, returned: finalOptions.length, role: body.candidateRole ?? null });
+    return json({ ...successResponse({ ...(result ?? ({} as ConceptNameOptionsResult)), selectedDirectionId: body.selectedDirection.conceptId, options: finalOptions }), patternLearningSummary, winningReferenceBrief: refBriefResult.brief, requestedCount, returnedCount: finalOptions.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
     return json(errorResponse(WEAK_NAMING_ERROR, `reason=${classifyServerError(message)}; ${message}`), { status: 502 });
