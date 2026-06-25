@@ -14,7 +14,7 @@ import { applyProposalStructureGuardToOutline, buildConstraintPriorityGuardInstr
 import { applyReferenceGuardToOutline, buildReferenceGuardInstruction, isReferenceSlideExplicitlyRequested, strategicMessageFieldsFromLogic } from '@/lib/referenceGuard';
 import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
-import { getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
+import { getConceptDefinition, getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
 import { buildPatternLearningSummary, formatProposalAvoidanceRulesForPrompt, formatProposalPatternDiagnostics, formatProposalPatternsForOutlinePrompt, formatProposalSuccessPatternComparisonForPrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
 import { buildWinningReferencePatternBrief } from '@/lib/winningReferencePatternBrief';
 import type { WinningReferencePatternBrief } from '@/lib/types';
@@ -413,7 +413,19 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
     // layout (text-led before concept, visual-first after), strip the concept name from the Approach band. This converts
     // the model's analysis-ordered pages into a real proposal deck without relying on the LLM to emit structural fields.
     const proposalTypeLabel = proposalTypeLabels[normalizeProposalType(body.input.proposalType)];
-    const deckSlides = applyDeckStructure(dedupedSlides, { finalConceptName, finalConceptSlogan, projectName: body.input.projectName, clientName: body.input.clientName, proposalTypeLabel, makeSlide: makeOutlineDeckSlide });
+    // Only let a confirmed-winner (non-neutral, medium/high confidence) reference structurally influence the Concept page;
+    // a low-confidence/neutral reference must not be presented as a strong structural source (§4).
+    const refStructural = Boolean(outlineRefBrief) && proposalPatternGuidance.comparison.referenceBriefIsNeutral === false && (proposalPatternGuidance.comparison.confidence === 'high' || proposalPatternGuidance.comparison.confidence === 'medium');
+    const deckSlides = applyDeckStructure(dedupedSlides, {
+      finalConceptName, finalConceptSlogan,
+      projectName: body.input.projectName, clientName: body.input.clientName, proposalTypeLabel,
+      makeSlide: makeOutlineDeckSlide,
+      conceptKoreanSubtitle: body.selectedConcept.conceptNameKR || undefined,
+      conceptMeaning: getConceptDefinition(body.selectedConcept) || finalConceptSlogan || undefined,
+      conceptWhyThisDirection: selectedDirection.oneLineStrategicBet || selectedDirection.oneLineSummary || selectedDirection.strategicDirectionLabel || undefined,
+      conceptReferenceInfluence: refStructural ? '수주 레퍼런스 제안의 설득 구조 논리를 현재 RFP·선택 방향에 맞게 반영(원문/이름 미사용)' : undefined,
+      conceptVisualDirection: '풀블리드 히어로 비주얼 · 큰 타이포의 컨셉명 · 짧은 한 줄 오버레이 카피 · 분석 라벨 없음',
+    });
     const designGuide = buildDeckDesignGuide(body.input);
     console.info('[outline:deck-structure]', validateDeckStructure(deckSlides, finalConceptName));
     return NextResponse.json({ slides: deckSlides, designGuide, patternLearningSummary, winningReferenceBrief: outlineRefBrief });

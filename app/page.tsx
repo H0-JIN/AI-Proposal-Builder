@@ -1666,8 +1666,30 @@ function ConceptRecommendationPanel({ recommendation }: { recommendation?: Conce
   return (
     <div className="mt-6 rounded-3xl border border-emerald-100 bg-emerald-50 p-5 text-emerald-950">
       <p className="text-sm font-black uppercase tracking-[0.2em] text-emerald-700">AI Recommendation</p>
-      <h3 className="mt-2 text-xl font-black">AI 추천 방향: {recommendation.recommendedDirectionLabel || recommendation.recommendedConceptId}</h3>
-      <p className="mt-3 text-sm leading-6"><span className="font-black">왜 이 방향이 맞는가</span><br />{recommendation.recommendationReason}</p>
+      <h3 className="mt-2 text-xl font-black">AI 추천 방향: {recommendation.recommendedDirectionLabel || recommendation.recommendedConceptId}{typeof recommendation.recommendationScore === 'number' && <span className="ml-2 align-middle text-sm font-bold text-emerald-700">종합 {recommendation.recommendationScore}점</span>}</h3>
+      <p className="mt-3 text-sm leading-6"><span className="font-black">왜 이 방향인가?</span><br />{recommendation.recommendationReason}</p>
+      {recommendation.scoreBreakdown && recommendation.scoreBreakdown.length > 0 && (
+        <details className="mt-3 rounded-2xl bg-white/70 px-4 py-3 text-sm">
+          <summary className="cursor-pointer font-black text-emerald-800">방향별 점수 (스코어 기반 추천)</summary>
+          <table className="mt-2 w-full text-left text-xs">
+            <thead className="text-emerald-700">
+              <tr><th className="py-1 pr-2">방향</th><th className="py-1 pr-2">종합</th><th className="py-1 pr-2">RFP부합</th><th className="py-1 pr-2">차별성</th><th className="py-1 pr-2">타깃</th><th className="py-1 pr-2">실행</th></tr>
+            </thead>
+            <tbody className="font-semibold text-slate-700">
+              {[...recommendation.scoreBreakdown].sort((a, b) => b.total - a.total).map((row) => (
+                <tr key={row.conceptId} className={row.conceptId === recommendation.recommendedConceptId ? 'font-black text-emerald-800' : ''}>
+                  <td className="py-1 pr-2">{row.directionLabel || row.conceptId}{row.conceptId === recommendation.recommendedConceptId ? ' ★' : ''}</td>
+                  <td className="py-1 pr-2">{row.total}</td>
+                  <td className="py-1 pr-2">{row.rfpFitScore}</td>
+                  <td className="py-1 pr-2">{row.differentiationScore}</td>
+                  <td className="py-1 pr-2">{row.targetFitScore}</td>
+                  <td className="py-1 pr-2">{row.operationFeasibilityScore}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
       {(recommendation.otherDirectionsUsefulness || recommendation.whyNotOthers) && (
         <p className="mt-3 text-sm leading-6"><span className="font-black">다른 방향의 활용성</span><br />{recommendation.otherDirectionsUsefulness || recommendation.whyNotOthers}</p>
       )}
@@ -4471,7 +4493,7 @@ export default function Home() {
                     <h3 className="mt-2 text-2xl font-black leading-tight text-slate-950">{getStrategicDirectionLabel(concept)}</h3>
                     {isRecommended && rec?.recommendationReason && (
                       <details className="mt-2 rounded-xl bg-emerald-50/60 px-2.5 py-1.5 text-xs">
-                        <summary className="cursor-pointer font-bold text-emerald-700">왜 이 방향인가?</summary>
+                        <summary className="cursor-pointer font-bold text-emerald-700">왜 이 방향인가?{typeof rec.recommendationScore === 'number' ? ` (종합 ${rec.recommendationScore}점)` : ''}</summary>
                         <p className="mt-1.5 font-semibold leading-5 text-slate-600">{rec.recommendationReason}</p>
                         {(rec.otherDirectionsUsefulness || rec.whyNotOthers) && <p className="mt-1.5 leading-5 text-slate-500">다른 방향: {rec.otherDirectionsUsefulness || rec.whyNotOthers}</p>}
                       </details>
@@ -4537,6 +4559,7 @@ export default function Home() {
                     <summary className="cursor-pointer text-sm font-bold text-slate-600">{state.conceptPatternLearningSummary.referenceBriefSummary ? (state.conceptPatternLearningSummary.referenceBriefIsNeutral ? '업로드 제안 구조 참고' : '수주안 구조 참고') : '수주 패턴 참고'} · 신뢰도 {state.conceptPatternLearningSummary.confidence === 'high' ? '높음' : state.conceptPatternLearningSummary.confidence === 'medium' ? '보통' : '낮음'}</summary>
                     <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
                       {state.conceptPatternLearningSummary.referenceBriefSummary && <li>참고한 구조: {state.conceptPatternLearningSummary.referenceBriefSummary}</li>}
+                      {state.conceptPatternLearningSummary.referenceConfidenceReason && <li className={state.conceptPatternLearningSummary.referenceInfluenceLevel === 'structural' ? 'text-emerald-700' : 'text-amber-700'}>신뢰도 근거: {state.conceptPatternLearningSummary.referenceConfidenceReason}</li>}
                       {state.conceptPatternLearningSummary.winningPatternCount > 0 && <li>유사 수주 제안서의 컨셉 도출 로직 구조를 참고했습니다.</li>}
                       {state.conceptPatternLearningSummary.riskCount > 0 && <li>미수주 제안서의 약점 패턴은 리스크로만 피했습니다.</li>}
                       {state.conceptPatternLearningSummary.contentPatternUsed && <li>콘텐츠 전개에는 유사 프로젝트의 패턴을 참고했습니다.</li>}
@@ -4636,6 +4659,7 @@ export default function Home() {
                 <summary className="cursor-pointer text-sm font-bold text-slate-600">{state.patternLearningSummary.referenceBriefSummary ? (state.patternLearningSummary.referenceBriefIsNeutral ? '업로드 제안 구조 참고' : '수주안 구조 참고') : '수주 패턴 참고'} · 신뢰도 {state.patternLearningSummary.confidence === 'high' ? '높음' : state.patternLearningSummary.confidence === 'medium' ? '보통' : '낮음'}</summary>
                 <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
                   {state.patternLearningSummary.referenceBriefSummary && <li>참고한 구조: {state.patternLearningSummary.referenceBriefSummary}</li>}
+                  {state.patternLearningSummary.referenceConfidenceReason && <li className={state.patternLearningSummary.referenceInfluenceLevel === 'structural' ? 'text-emerald-700' : 'text-amber-700'}>신뢰도 근거: {state.patternLearningSummary.referenceConfidenceReason}</li>}
                   {state.patternLearningSummary.winningPatternCount > 0 && <li>유사 수주 제안서의 설득 구조를 참고했습니다.</li>}
                   {state.patternLearningSummary.riskCount > 0 && <li>미수주 제안서의 약점 패턴을 리스크로 반영했습니다.</li>}
                   {state.patternLearningSummary.contentPatternUsed && <li>콘텐츠 구성에는 유사 프로젝트의 미디어/체험 패턴을 참고했습니다.</li>}
