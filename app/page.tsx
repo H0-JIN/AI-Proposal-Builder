@@ -172,6 +172,9 @@ const proposalOutcomeLabels: Record<ProposalOutcome, string> = {
 };
 
 const STORAGE_KEY = 'ai-proposal-builder-state';
+// Bump when persisted generated state must be invalidated. On mismatch, rehydration keeps only the user's inputs and
+// drops generated fields (analysis/diagnosis/brand/directions/concepts/outline) so stale/contaminated state can't persist.
+const STATE_SCHEMA_VERSION = 'rfp-specific-strategy-v1';
 
 
 const diagnosisFieldAdapters = {
@@ -2338,12 +2341,19 @@ export default function Home() {
     const saved = window.localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        const parsed = JSON.parse(saved) as ProposalState;
-        setState(parsed);
-        if (parsed.slides?.length) setStep('slides');
-        else if (parsed.outline?.length) setStep('outline');
-        else if (parsed.selectedConcept || parsed.conceptCandidates?.length) setStep('concepts');
-        else if (parsed.analysis) setStep('analysis');
+        const parsed = JSON.parse(saved) as ProposalState & { __v?: string };
+        // REGRESSION FIX (§7): only restore GENERATED state (analysis/diagnosis/brandProductIntelligence/directions/
+        // concepts/…) when the persisted schema version matches. A stale or pre-fix blob may carry a previous project's
+        // analysis/directions; in that case restore ONLY the user's inputs and force a clean regeneration with the fixed,
+        // RFP-specific logic — so no previous-project generated state can contaminate a new RFP.
+        const restored: ProposalState = parsed.__v === STATE_SCHEMA_VERSION
+          ? parsed
+          : { input: parsed.input ?? initialInput, supplementalInfo: parsed.supplementalInfo ?? initialSupplementalInfo, uploadedDocuments: parsed.uploadedDocuments ?? [], dbUploadedDocuments: parsed.dbUploadedDocuments ?? [] };
+        setState(restored);
+        if (restored.slides?.length) setStep('slides');
+        else if (restored.outline?.length) setStep('outline');
+        else if (restored.selectedConcept || restored.conceptCandidates?.length) setStep('concepts');
+        else if (restored.analysis) setStep('analysis');
         else setStep('create');
       } catch {
         window.localStorage.removeItem(STORAGE_KEY);
@@ -2352,7 +2362,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, __v: STATE_SCHEMA_VERSION }));
   }, [state]);
 
   const supplementalInfo = state.supplementalInfo ?? initialSupplementalInfo;
@@ -3816,14 +3826,18 @@ export default function Home() {
 
   const runConcepts = async (options: { retryLight?: boolean } = {}) => {
     if (!state.analysis) return;
-    // Strategic directions REQUIRE a real proposal strategy diagnosis. Never generate from a synthetic fallback —
-    // that degrades directions to shallow template labels. The continuation CTA generates the diagnosis first.
-    // Brand/product intelligence stays OPTIONAL (empty fallback object so it alone never blocks generation).
+    // REGRESSION FIX (§5): RFP analysis, the proposal strategy diagnosis, AND Brand/Product Understanding are MANDATORY
+    // inputs for strategic directions. Never generate from a synthetic empty fallback — that removes the one input that
+    // differentiates same-type RFPs and lets proposal-type presets dominate. Block (with a continuation CTA) if missing.
     if (!state.rfpDiagnosis) {
       setError('전략 방향 생성을 위해 제안 전략 진단을 먼저 생성해 주세요.');
       return;
     }
-    const effectiveBrand = state.brandProductIntelligence ?? buildFallbackBrandProductIntelligence();
+    if (!state.brandProductIntelligence) {
+      setError('전략 방향 생성을 위해 브랜드/제품 이해를 먼저 생성해 주세요. (브랜드/제품 이해는 필수 분석입니다)');
+      return;
+    }
+    const effectiveBrand = state.brandProductIntelligence;
     const generationAttempt = conceptGenerationAttemptRef.current + 1;
     conceptGenerationAttemptRef.current = generationAttempt;
     const requestedAt = new Date().toISOString();
@@ -4487,17 +4501,19 @@ export default function Home() {
               {hasConfirmationNeeds && (
                 <PrimaryButton onClick={rerunAnalyzeWithSupplementalInfo} disabled={Boolean(loading)}>추가 정보 반영하기</PrimaryButton>
               )}
-              {state.rfpDiagnosis ? (
-                <PrimaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.analysis}>전략 방향 생성</PrimaryButton>
-              ) : (
+              {!state.rfpDiagnosis ? (
                 <PrimaryButton onClick={continueStrategyDiagnosis} disabled={Boolean(loading) || !state.analysis}>전략 진단 계속 생성</PrimaryButton>
+              ) : !state.brandProductIntelligence ? (
+                <PrimaryButton onClick={runBrandProductIntelligence} disabled={Boolean(loading) || !state.analysis}>브랜드/제품 이해 생성하기</PrimaryButton>
+              ) : (
+                <PrimaryButton onClick={() => runConcepts()} disabled={Boolean(loading) || !state.analysis}>전략 방향 생성</PrimaryButton>
               )}
             </div>
             {!state.rfpDiagnosis && (
               <p className="mt-3 text-sm font-semibold leading-6 text-indigo-800">핵심 분석은 완료되었습니다. 전략 방향 생성을 위해 제안 전략 진단을 먼저 완료해야 합니다.</p>
             )}
             {state.rfpDiagnosis && !state.brandProductIntelligence && (
-              <p className="mt-3 text-sm font-semibold leading-6 text-sky-800">브랜드/제품 이해는 선택 분석 항목입니다. 현재 전략 진단을 기준으로 전략 방향을 생성할 수 있습니다.</p>
+              <p className="mt-3 text-sm font-semibold leading-6 text-sky-800">브랜드/제품 이해는 전략 방향 생성을 위한 <b>필수 분석</b>입니다. 먼저 생성해 주세요. (업로드 자료·RFP 근거 기반으로 정리되며 시간이 다소 걸릴 수 있습니다.)</p>
             )}
           </SectionCard>
         )}
