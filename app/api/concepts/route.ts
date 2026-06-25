@@ -678,6 +678,34 @@ function buildCompactAnalysis(analysis: AnalysisResult, differentiationSummary: 
   };
 }
 
+interface StrategyInputPacket {
+  projectName: string; clientName: string; proposalType: string; coreProposalThesis: string; hiddenNeed: string; strategicTension: string; evaluatorRisk: string; keyPersuasionTasks: string[]; brandProductSummary: string; productOrServiceTruth: string; audiencePerceptionGap: string; whatMustBeProven: string[]; requiredConstraints: string[]; signatureExperienceOpportunity: string; referenceProposalHints: string[]; forbiddenPatterns: string[]; staleContextWarnings: string[];
+}
+
+function buildStrategyInputPacket(params: { input: ProjectInput; analysis: AnalysisResult; diagnosis: RfpDiagnosis; brand: BrandProductIntelligence }): StrategyInputPacket {
+  const { input, analysis, diagnosis, brand } = params;
+  const proposalType = input.proposalType ? (proposalTypeLabels[input.proposalType] || input.proposalType) : (analysis.inferredProposalType ? proposalTypeLabels[analysis.inferredProposalType] || analysis.inferredProposalType : '미지정');
+  const referenceProposalHints = compactList([...(analysis.referenceOnly ?? [])], 3, 140);
+  return {
+    projectName: compactText(input.projectName || analysis.projectOverview || '', 120),
+    clientName: compactText(input.clientName || '', 80),
+    proposalType,
+    coreProposalThesis: compactText(diagnosis.coreProposalThesis || diagnosis.coreWinningCondition || analysis.clientChallenge || '', 260),
+    hiddenNeed: compactText(diagnosis.hiddenNeed || diagnosis.hiddenRequirement || '', 240),
+    strategicTension: compactText(diagnosis.strategicTension || diagnosis.strategicIssue || '', 240),
+    evaluatorRisk: compactText(diagnosis.evaluatorDecisionRisk || diagnosis.genericProposalFailureReason || analysis.proposalStructureGuard || '', 220),
+    keyPersuasionTasks: compactList([diagnosis.persuasionTask, ...(diagnosis.requiredPersuasionElements ?? [])].filter(Boolean) as string[], 5, 150),
+    brandProductSummary: compactText(brand.strategyImplication || brand.categoryContext || brand.clientOrBrandRole || '', 260),
+    productOrServiceTruth: compactText(brand.productOrServiceMeaning || '', 220),
+    audiencePerceptionGap: compactText(brand.audiencePerceptionGap || analysis.targetInfo || '', 220),
+    whatMustBeProven: compactList([diagnosis.proofBurden, ...(diagnosis.requiredProofElements ?? [])].filter(Boolean) as string[], 6, 150),
+    requiredConstraints: compactList([...(analysis.constraints ?? []), analysis.spatialCondition, analysis.contentCondition, analysis.operationCondition, ...(analysis.kpiScheduleConstraints ?? [])].filter(Boolean) as string[], 6, 150),
+    signatureExperienceOpportunity: compactText(brand.strategyImplication || analysis.contentCondition || '', 220),
+    referenceProposalHints,
+    forbiddenPatterns: compactList([...(brand.wordsToAvoid ?? []), 'proposal-type preset direction', 'raw date/client/audience/event label', 'previous project direction', 'lightweight fallback card'], 10, 80),
+    staleContextWarnings: compactList([...(analysis.missingInfo ?? []), ...(analysis.confirmNeeded ?? [])], 4, 140),
+  };
+}
 
 interface StrategicDirectionPlanItem {
   type: string;
@@ -1752,197 +1780,32 @@ export async function POST(request: Request) {
       }, { status: 409 });
     }
 
-    const inputQuality = assessInputQuality(body.input, body.analysis);
-    // User-selected proposalType is the PRIMARY guardrail; inferredProposalType is only secondary context.
-    const userSelectedProposalType = body.input.proposalType;
-    const effectiveProposalType = userSelectedProposalType ?? body.analysis.inferredProposalType;
-    const isEventOperationType = effectiveProposalType === 'mice_event_operation' || effectiveProposalType === 'conference_forum';
-    const maxCandidates = Math.min(DEFAULT_CONCEPT_COUNT, Math.max(DEFAULT_CONCEPT_COUNT, body.options?.maxCandidates ?? DEFAULT_CONCEPT_COUNT));
-    const maxProposalPatterns = 0; // proposalPatternContext = outline stage only; strategy generation must not retrieve proposal_patterns.
-    const proposalNarrative = ensureProposalNarrative(body.proposalNarrative, { input: body.input, analysis: body.analysis, documentText: '' });
-    const differentiationStrategy = buildRfpDifferentiationStrategy(body.analysis, proposalNarrative);
-    const differentiationSummary = summarizeDifferentiationStrategy(differentiationStrategy);
-    const compactAnalysis = buildCompactAnalysis(body.analysis, differentiationSummary, proposalNarrative);
-    const balancedEvidenceSummary = buildBalancedEvidenceSummary({ analysis: body.analysis, differentiationStrategy, documentChunks: body.documentChunks ?? [], proposalNarrative });
-    const separatedEvidenceLevels = buildSeparatedEvidenceLevels({ analysis: body.analysis, differentiationStrategy, documentChunks: body.documentChunks ?? [], proposalNarrative });
-    const hasMultipleEntities = differentiationStrategy.hasMultipleEntities;
-    const classificationEvidence = classifyRfpEvidence(rfpEvidenceText(body.analysis, proposalNarrative), hasMultipleEntities);
-    const rfpConceptTypes = classifyRfpConceptTypes(body.analysis, proposalNarrative, hasMultipleEntities);
-    // Operative type = user-selected guardrail (not text inference), so the axis family, matrix, prompt, repair, and
-    // fallback all respect the user's choice. Evidence classification is only used as the multi-entity safeguard.
-    const selectedRfpConceptType = resolveGuardrailConceptType(userSelectedProposalType, rfpConceptTypes, hasMultipleEntities);
-    const inferredRfpConceptType = primaryRfpConceptType(rfpConceptTypes);
-    const selectedProposalTypeMatchesInference = selectedRfpConceptType === inferredRfpConceptType;
-    // strategyContext = current RFP + confirmed diagnosis only. proposal_patterns are intentionally not retrieved or passed.
-    const proposalPatternGuidance = { patterns: [] as OutlineProposalPattern[], avoidanceRules: [] as string[], summary: { wonStructureCount: 0, lostExternalStructureCount: 0, unknownStructureCount: 0, lostMixedCautionCount: 0, lostQualityAvoidanceRuleCount: 0, lostUsableStructureCount: 0 } as ProposalPatternRetrievalSummary };
-    const proposalLearningBrief = buildProposalLearningBrief([], []);
-    // Explicit RFP-provided concept hierarchy (current RFP text only). When present it is the PRIMARY strategic anchor,
-    // above participating entity/brand names — its theme seeds drive the deterministic subjects and it is injected into
-    // the prompt as the top anchor below.
-    const rfpHierarchy = extractRfpConceptHierarchy(body.input.briefText);
-    const hierarchySeeds = hierarchyThemeSeeds(rfpHierarchy);
-    const directionSubjects = buildDirectionSubjects(body.analysis, body.brandProductIntelligence, body.input, body.rfpDiagnosis, hierarchySeeds);
-    const strategicDirectionPlan = buildStrategicDirectionPlan(body.analysis, proposalNarrative, hasMultipleEntities, [], [], directionSubjects, selectedRfpConceptType);
-    const rawMatrixType = body.analysis.matrixType;
-    const preliminaryMatrixType = matrixTypeForRfp(selectedRfpConceptType);
-    const preliminaryBrandExperienceMatrix = preliminaryMatrixType === 'brandExperienceMatrix' ? buildBrandExperienceMatrix(body.analysis, proposalNarrative) : [];
-    const sanitizedContext = sanitizeConceptContextByRfpType({ primaryRfpConceptType: selectedRfpConceptType, rawPrimaryRfpConceptType: body.analysis.primaryRfpConceptType, matrixType: rawMatrixType ?? preliminaryMatrixType, rawMatrixType, entityDifferentiationMatrix: differentiationStrategy.entityDifferentiationMatrix, brandExperienceMatrix: preliminaryBrandExperienceMatrix });
-    const selectedMatrixType = sanitizedContext.matrixType;
-    const brandExperienceMatrix = selectedMatrixType === 'brandExperienceMatrix' ? preliminaryBrandExperienceMatrix : [];
-    const activeMatrix = getActiveMatrix(sanitizedContext);
-    const directionLensSet = selectedDirectionLensSet(strategicDirectionPlan);
-    const activeMatrixSummary = summarizeActiveMatrix(selectedMatrixType, { entityCount: selectedMatrixType === 'entityDifferentiationMatrix' ? differentiationStrategy.entityDifferentiationMatrix.length : 0, brandExperienceMatrix });
-    console.info('[concepts:gating]', { userSelectedProposalType, effectiveProposalType, inferredRfpConceptType, selectedProposalTypeMatchesInference, primaryRfpConceptType: selectedRfpConceptType, matrixType: selectedMatrixType, activeMatrixType: sanitizedContext.activeMatrixType, selectedDirectionLensSet: directionLensSet, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, activeMatrixSummary, rfpProvidedConceptHierarchyDetected: Boolean(rfpHierarchy), hierarchyFieldsUsedForStrategy: rfpHierarchy ? Object.entries({ mainTheme: rfpHierarchy.mainTheme, subThemes: rfpHierarchy.subThemes.length, levelStructure: rfpHierarchy.levelStructure.length, zoneConcepts: rfpHierarchy.zoneConcepts.length, officialSlogan: rfpHierarchy.officialSlogan, keyMessage: rfpHierarchy.keyMessage }).filter(([, v]) => v).map(([k]) => k) : [] });
-    const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, hasMultipleEntities);
+    const maxCandidates = DEFAULT_CONCEPT_COUNT;
+    const strategyInputPacket = buildStrategyInputPacket({ input: body.input, analysis: body.analysis, diagnosis: body.rfpDiagnosis, brand: body.brandProductIntelligence });
+
+    console.info('[concepts:strategy-input-packet]', {
+      packetBytes: JSON.stringify(strategyInputPacket).length,
+      projectName: strategyInputPacket.projectName,
+      proposalType: strategyInputPacket.proposalType,
+      referenceHintCount: strategyInputPacket.referenceProposalHints.length,
+      fullDocumentTextIncluded: false,
+      fullReferenceTextIncluded: false,
+      lightweightPathEnabled: false,
+    });
 
     const systemPrompt = [
-      `Concept Prompt Version: ${conceptPromptVersion}. 이 버전의 Proposal Core Concept hierarchy만 사용한다.`,
-      '너는 한국어 제안서 콘셉트를 빠르게 설계하는 크리에이티브 디렉터다.',
-      `정확히 ${maxCandidates}개의 전략 방향 후보를 생성한다. 최소 3개의 usable concept를 반환하고, 내부 네이밍 후보 5개는 절대 노출하지 말라.`,
-      '3개 후보는 winner-loser 비교가 아니라 서로 다른 전략 방향 옵션이어야 한다.',
-      'primaryRfpConceptType은 invalid logic 차단, evidence selection, contamination 방지, matrix/context 선택용 guardrail이다. strategicDirectionLabel을 type preset으로 처방하지 말라. current RFP evidence, hidden need, evaluator risk, client position, category shift, perception gap, required proof, signature opportunity에서 direction axis를 발견한다. proposal_patterns는 이 단계에서 완전히 비활성화되어야 하며 direction source, modifier, caution으로도 사용하지 않는다.',
-      '다중 주체형(공동관/파빌리온)에서 특정 참여 주체에 대표·리더십·주체 지위를 부여하려면 현재 RFP가 주관사·주최·호스트·대표 기관·메인 스폰서 등으로 그 주체를 명시해야 한다. 명시 근거가 없으면 등장 순서·언급 빈도·제품 분량·예산 비중·부스 규모·중요도 추정·모델 추측으로 한 주체를 대표로 세우지 말고, 파빌리온 전체 관점·주체 간 관계와 역할 구조·통합 역량·공동 메시지·관람객의 파빌리온 전체 이해로 방향을 만든다.',
-      '아래에 "RFP-Provided Concept Hierarchy" 블록이 주어지면, 그 공식 컨셉 위계(메인 테마·레벨 구조·존 컨셉·슬로건·핵심 메시지)가 전략 방향의 1순위 앵커다. 참여 주체/브랜드명·추론된 유형·이전 제안 패턴보다 우선해서 모든 방향을 그 위계에서 도출한다. 다중 주체형이면 방향은 위계의 파빌리온 레벨 프레임에서 만들고 참여 주체는 역할·도메인 기여자로만 다룬다(대표 주어 금지). 위계가 주어지지 않으면 현재 RFP 진단·근거에서 도출한다.',
-      `사용자가 선택한 제안서 유형(${proposalTypeLabels[effectiveProposalType]})이 전략 방향의 1차 guardrail이다. 자동 추론은 보조 맥락일 뿐 사용자 선택 유형을 덮어쓰지 않는다. 모든 방향은 이 유형의 전략 축 family 안에서 생성하고 유형에 맞지 않는 논리로 수렴시키지 말라: 다중 주체형은 한 참여 주체로 collapse 금지(주체 간 관계·역할·공동 메시지·통합 역량을 다룬다), 기술·에너지·미래산업형은 전 카드가 클라이언트/브랜드명 중심이 되는 것 금지(카테고리 이슈·기술 현실성·현재 대 미래 긴장·이해 격차를 다룬다), 방문관·견학·쇼룸형은 시설/외관/리모델링 명사가 전략 주어가 되는 것 금지(제품·브랜드 가치·공정 신뢰·방문 후 변화를 다룬다), MICE·운영형은 운영 확신·프로그램·참가자 동선 중심, 팝업·리테일형은 방문 동기·참여 행동·공유 기억 중심으로 둔다. 단 다중 주체/파빌리온 논리는 RFP에 동등 비중 복수 주체가 실제로 존재할 때만 사용하고, 그 외 유형에 강제하지 않는다. 라벨/논리는 항상 현재 RFP 진단·근거에서 도출하며 예시 라벨을 복사하지 않는다.`,
-      '각 후보는 rfpConceptType, secondaryRfpConceptTypes, strategicDirectionType, strategicDirectionLabel, directionSource, whatThisDirectionEmphasizes, oneLineStrategicBet, whenToChooseThisDirection, failurePatternAvoided, winningPatternUsed를 반드시 포함한다. strategicDirectionLabel은 discovery brief의 direction axis와 현재 RFP evidence에서 새로 만든 2~8단어의 짧은 방향명이어야 하며 type별 고정 preset, 과거 RFP 언어, 말줄임표를 금지한다.',
-      'oneLineStrategicBet은 사용자에게 보이는 문장이므로 proof/evidence/proof burden 같은 내부 영어를 쓰지 말고 “이 방향은 ___을 통해 ___을 설득하는 전략입니다.” 형식의 자연스러운 한국어 1문장으로 쓴다. whenToChooseThisDirection은 “클라이언트가 ___을 가장 중요하게 볼 때 선택합니다.”에 가까운 실무 선택 기준으로 쓴다. signatureProofIdea의 대표 장면/콘텐츠는 카드에서 대표 체험 장면으로 읽히도록 구체 구 하나로 요약 가능해야 한다.',
-      'strategicDirectionLabel은 카드에 보이는 짧은 한국어 방향명이다. 현장의 감각/현장의 신뢰/경험의 증명/가치의 흐름/브랜드 경험 강화/통합적 체험/차별화된 경험 같은 generic label을 금지하고, currentRfpVocabularySet에 해당하는 브랜드·제품·감각·공정·공간·방문자 언어를 우선 사용한다. proposalCoreConceptName/conceptName은 DB/schema 호환을 위한 임시 direction title일 뿐이며 최종 컨셉명이 아니다. 최종 컨셉명은 사용자가 방향 선택 후 별도 naming step에서 생성한다.',
-      'strategicDirectionLabel 품질 규칙: 2~6단어의 구체적이고 제안서에 바로 쓸 수 있는 전략 방향명으로 쓴다. 금지 — “Hero/히어로 + 추상명사”(예: Hero 인식 전환, Hero 경험 이해, Hero 가치 체감), axis 직역(예: 카테고리 전환 설득, 관람 이해 전환, 제품 가치 체감), internal directionAxis 라벨, RFP 산출물명/콘텐츠 포맷명/프로젝트명. Hero는 콘텐츠 포맷이지 전략이 아니므로 라벨에 쓰지 말고, 시그니처 장면 방향이면 “메인 장면 각인/대표 장면 선언/압도적 첫인상”처럼 전략적으로 표현한다. 라벨은 현재 RFP의 주제·브랜드·카테고리 언어로 만든다.',
-      '특히 “[주어] + 인식 전환 / 경험 이해 / 가치 체험 / 가치 증명 / 실체화 / 한눈에 보는 / ___ 중심 / ___ 시그니처 / 설득 / 이해 / 체감” 형태의 기계적 라벨을 절대 만들지 말라. 라벨은 [프로젝트유형/클라이언트명/룸·전시·Hero + 일반 축 문구] 조합이 아니라, 제안 전략 진단(strategicIssue, persuasionTask), brand/product intelligence(productOrServiceMeaning, categoryContext, namingImplication), 선택된 direction axis, 대표 설득 장면에서 도출한 전략 명제로 만든다. 좋은 라벨은 현재 RFP의 실제 브랜드·제품·공정·카테고리·방문자 어휘를 주어로 삼아 ‘무엇을 어떻게 설득하는가’를 2~6단어로 압축한 형태다. 고정 예시나 다른 RFP의 어휘를 복사하지 말고, 항상 현재 RFP 어휘로 새로 만든다.',
-      '3개 방향은 서로 다른 “승리 접근(winning approach)”이어야 한다. perception/understanding/experience 3종 세트로 나누지 말고, 현재 RFP에서 서로 다른 3개의 승리 가설을 추론한다. 먼저 현재 RFP의 맥락을 판별한 뒤 그 맥락에 맞는 축을 쓴다 — 방문관/공장견학/쇼룸/브랜드룸/제품교육/제조·공정 체험형 = 제품·브랜드 가치 / 공정·품질 신뢰 / 방문 후 기억·태도 변화; 수소·에너지·기술 전시형 = 기술 현실성 / 대표 리더십 / 밸류체인·생태계 이해; 다중 주체 파빌리온 = 공동 메시지 / 주체 역할 명확화 / 시스템 역량; MICE 운영형 = 운영 확신 / 참가자 동선 / 프로그램 경험; 팝업·리테일형 = 방문 동기 / 참여 행동 / 공유되는 기억. 이는 추론 패턴이며 고정 출력이 아니다 — 현재 RFP의 strategic issue, category, client objective, audience gap, persuasion task에서 직접 도출한다.',
-      '시설 중심 라벨 금지: 공장/견학룸/전시관/홍보관/체험관/공간/시설/룸/존/부스를 “주어”로 하거나 라벨의 끝 단어로 둔 라벨(시설명 + 실체화/가치 증명/인식 전환 형태 포함)을 만들지 말라. 라벨은 무엇을 설득하는지(제품 가치/공정 신뢰/브랜드 기억/방문객 변화 등)를 담아야 하며, 공간·시설은 설득 수단일 뿐 전략 방향의 주어가 아니다. 방문관/공장견학형이면 3개 방향이 전부 시설 소개로 수렴하지 않도록 최소 1개는 제품·브랜드 가치, 1개는 공정·품질 신뢰, 1개는 방문 후 기억·태도 변화에 배치한다.',
-      '카테고리 오염 금지: 라벨/선택기준/대표장면/컨셉명은 현재 RFP가 실제로 다루는 카테고리·제품·주체 어휘에서만 가져온다. 현재 RFP에 근거가 없는 다른 카테고리(음료/에너지/기술/공간/이벤트 등)의 어휘를 라벨·선택 기준·대표 장면·컨셉명에 가져오지 말라. 각 RFP 유형(방문관·공장견학, 기술·에너지 전시, 다중 주체 파빌리온, MICE 운영, 팝업·리테일)은 각자의 맥락 어휘를 유지하고, 한 유형의 분할 논리를 다른 유형에 강제하지 않는다.',
-      '클라이언트/브랜드명 반복 금지: 3개 방향 라벨이 모두 같은 브랜드/클라이언트명으로 시작하지 않게 한다. 브랜드명은 “대표 리더십/카테고리 소유” 방향 1개에서만 주어로 쓰고, 나머지 방향은 설득하려는 전략 가치를 주어로 쓴다. “브랜드명 + 실체화/가치 증명/인식 전환/경험 이해/가치 체험/시그니처”나 “한눈에 보는 + 브랜드명” 형태는 금지한다. 라벨의 주어는 RFP의 표면 명사(시설·공간·외관·디자인·리모델링·브랜드명)가 아니라 “설득되는 전략 가치”여야 한다.',
-      '오염 방지(매우 중요): 모든 라벨/선택 기준/대표 장면/컨셉명은 현재 RFP 어휘로만 작성한다. 현재 RFP가 뒷받침하지 않는 카테고리 어휘나 분할 논리(제품/공정/기억 3분할 등)를 강제하지 말고, 항상 현재 RFP의 strategic issue·category·client objective·audience gap·persuasion task에서 직접 도출한다.',
-      '카드 본문은 3개가 서로 다른 전략 논리를 가져야 한다. (a) oneLineStrategicBet(어떻게 설득하는가)은 “___ 중심으로 ___ 보여주는/만드는 방향입니다.” 형태의 구체적 한 문장 베팅으로, 축 직역 템플릿(“…관점으로 심사자와 관람객이 핵심 가치를 한 번에…”)을 쓰지 않는다. (b) whenToChooseThisDirection(선택 기준)은 “___이 가장 중요할 때 선택합니다.” 형태의 실무 결정 기준으로, “가장 중요한 설득 관점이라고 판단될 때” 같은 공허한 문구를 금지한다. (c) signatureProofIdea.signatureScene(대표 설득 장면)은 미디어 월/존/맵/동선/시뮬레이션/데모처럼 공간·콘텐츠·미디어가 드러나는 구체 장면으로 쓰고, “…한눈에 판단되는 대표 증명 장면” 같은 추상 문구를 금지한다. 세 카드의 베팅·선택 기준·대표 장면·리스크가 모두 달라야 한다.',
-      '추천은 가장 적합한 방향을 설명하되 다른 후보를 나쁘다/부적합하다/틀렸다로 말하지 않는다. 다른 방향의 쓰임과 선택 간 trade-off를 중립적으로 설명한다.',
-      '긴 문단을 쓰지 말고 모든 설명은 1문장 또는 짧은 구로 작성한다.',
-      '출력은 hiddenNeeds, strategicApproach, entityDifferentiationMatrix, conceptDevelopmentLogic, concepts, recommendation을 포함한다.',
-      'Concept generation의 근거는 Confirmed RFP-only Diagnosis, Brand/Product Intelligence, Evidence Level Separation, Compact RFP Analysis뿐이다. primaryRfpConceptType은 guardrail로만 사용한다. proposal_patterns, 과거 이름/고객/프로젝트/슬로건/파일명/raw source text는 절대 사용하지 않는다.',
-      'Core Concept Name Evidence Lock: proposalCoreConceptName/proposalCoreConceptSlogan/proposalCoreConceptDefinition/winningThesisUse/conceptLeap은 반드시 proposalLevelEvidence만 사용한다. entityLevelEvidence/contentDetailEvidence/referenceOnlyEvidence/source_text/raw product tables는 이름의 직접 원천으로 쓰지 않는다.',
-      '각 후보에는 conceptNameEvidenceLevel=proposalLevel, productSpecificNameDetected=false, coversWholeRfp=true, repairedName, dominantEntityInName을 포함한다. product/equipment/detail/reference 용어가 이름에 감지되면 strategicDirectionLabel/winningThesis/conceptLeap/signatureProofIdea/keywords는 유지하고 이름과 필요한 slogan만 proposalLevelEvidence로 수리한다.',
-      hasMultipleEntities ? 'Balanced RFP Evidence Summary의 majorEntities가 2개 이상이면 각 후보에 coveredEntities, missingEntities, dominantEntity, entityBalanceStatus를 포함하고, over-focused이면 반환 전에 balanced로 수리한다.' : '이 RFP는 multi_entity_pavilion이 아니므로 entity role matrix, 역할 구분, 통합+개별 구분, 통합 증명 프레임을 전략 방향으로 강제하지 말라. brand meaning, visitor transformation, product/process proof, spatial journey, signature moment, memory after visit 같은 경험 레이어를 사용한다.',
-      'Strategic direction candidates 생성 전에 Winning Thesis를 먼저 만들고, 그 다음 Concept Leap과 Signature Proof Idea를 만든다. 이 단계에서는 최종 네이밍을 완성하지 말고 방향 선택에 필요한 전략 판단 정보만 완성한다.',
-      'Winning Thesis 필드(contextShift, previousBaseline, newReality, clientUniquePosition, audiencePerceptionGap, winningClaim, whyNow, whyThisClient, whatMustBeProven)를 각 concepts 항목의 winningThesisUse에 반드시 포함한다.',
-      'Concept Leap 필드(fromStatement, toStatement, conceptLeap, corePromise, emotionalTakeaway, evaluatorTakeaway)를 각 concepts 항목에 반드시 포함한다. From/To/Leap은 RFP를 해석해야 하며 기간·장소·예산·제출요건 복사가 아니어야 한다.',
-      '각 후보는 signatureProofIdea(signatureScene, signatureContent, signatureSpatialMove, signatureMediaOrInteraction, whyThisProvesTheConcept, whyThisIsNotGeneric)를 반드시 포함한다. generic immersive video/kiosk/media wall/showcase 같은 표현은 구체 대표 장면으로 변환한다.',
-      'proposalCoreConceptName은 임시 방향 타이틀로만 사용되며 conceptLeap과 corePromise를 요약해야 한다. classification label, diagram label, section title, product module, generic metaphor, content mechanism, visitor journey label이면 안 된다.',
-      'proposalCoreConceptSlogan은 시적 문구보다 전략적 claim, why this client, proposal promise를 명확히 설명한다.',
-      '필수 생성 순서: (1) Hidden Needs (2) Strategic Approach (3) RFP Concept Type Classification - primaryRfpConceptType is authoritative (4) Entity Differentiation only when primaryRfpConceptType=multi_entity_pavilion; otherwise use Brand Experience Matrix thinking when useful but do not output Entity Differentiation Matrix (5) Proposal Core Concept (6) Experience Principle (7) Visitor Journey (7) Content/Media Execution (8) Anti-pattern Validation.',
-      'Visitor Journey를 Proposal Core Concept보다 먼저 만들거나 Core Concept의 이름으로 승격하지 않는다.',
-      '각 concepts 항목은 전략 방향 카드로 읽히도록 proposalCoreConceptName(임시 방향 타이틀), proposalCoreConceptSlogan(임시 방향 설명), proposalCoreConceptDefinition, whyThisIsCoreConcept, experiencePrinciple, visitorJourney, contentMediaImplication을 반드시 분리한다.',
-      'legacy 호환을 위해 conceptName은 proposalCoreConceptName과 동일하게, conceptDefinition은 proposalCoreConceptDefinition과 동일하게 출력한다.',
-      '이 단계의 Proposal Core Concept 필드는 최종 표지 제목이 아니라 전체 제안서의 전략 방향 프레임이다. client objective, RFP challenge, brand/product meaning, space, content, operation, proof를 연결하되 최종 표지 제목처럼 확정하지 않는다.',
-      '각 후보는 conceptNameScopeClassification을 proposal_level, section_level, content_module_level, product_specific_level, generic_label 중 하나로 분류한다. proposalCoreConceptName에는 proposal_level만 허용한다. section/content/product/generic이면 전략 방향은 유지하고 이름만 proposal_level로 수리한 뒤 출력한다.',
-      'Proposal Core Concept scope validation을 각 후보에 포함한다: coversWholeProposal, coversMainEntitiesOrScope, expandableToSpace, expandableToContent, expandableToMediaOrInteraction, expandableToOperationOrProof, notProductSpecificOnly, notSectionTitleOnly는 모두 true여야 한다. false가 하나라도 있으면 이름과 정의를 수리한 뒤 true 상태만 출력한다.',
-      '전략 방향은 전체 제안 전략, 공간 경험, 콘텐츠 방향, 미디어/인터랙션, 운영/실행 논리, 증명/평가 논리, 최종 발표 스토리라인을 조직할 수 있어야 한다.',
-      '네이밍 레벨을 분리한다: Proposal Core Concept Name은 전체 제안서 제목으로 쓰일 최상위 이름, Section/Zone Concept Name은 존·공간·제품군 언어 허용, Content Module Name은 제품·상호작용·장비 언어 허용이다. Section/Zone 또는 Content Module 이름을 Proposal Core Concept Name으로 승격하지 않는다.',
-      '제품명 하나, 특정 기술, 특정 존, 특정 체험 모듈, 특정 콘텐츠 섹션, 운영 프로세스명, 개인 병사용 프로토콜, 조준경 매트릭스 같은 이름은 제안 레벨 콘셉트가 아니므로 거부하고 전체 프레임으로 수리한다.',
-      hasMultipleEntities ? 'RFP에 여러 기업·제품·존·대상·콘텐츠 카테고리가 있으면 RFP가 명시한 전체 hero가 아닌 한 하나의 제품군이나 섹션만 대표하는 이름을 금지한다.' : 'Non-multi-entity RFP에서는 통합 중심, 통합+개별 구분, 역할 구분, 각 대상의 역할, 통합 증명, 국가관/공동관/그룹/상징적 리더십, Entity Role Matrix 같은 WDS식 다중 주체 표현을 쓰지 않는다. 수소/에너지/모빌리티/미래기술/지속가능 전시는 실제 RFP tension(미래 가능성 vs 현재 실체, 기술 소개 vs 사회/시스템 proof, 추상 기술 vs tangible experience 등)을 근거로 discovery하되 이를 고정 label로 복사하지 않는다.',
-      'Core concept naming은 project objective, strategic challenge, evaluation criteria, client intent, main entities/categories, space/content structure, deliverables, constraints, hidden needs, entity differentiation summary를 우선한다. 제품 리스트, 장비 스펙, reference image, referenceOnly chunk, 특정 entity/product/zone 상세 목록은 핵심 네이밍 근거로 쓰지 않는다.',
-      'Signature Proof Idea는 다중 entity RFP에서 shared hero scene, system map, command frame, integrated operating field처럼 전체 제안 범위를 증명해야 한다. 한 제품을 hero로 쓰면 그것이 전체 범위를 대표하는 이유를 명시하고, 아니면 단일 제품군 proof를 피한다.',
-      '3개 전략 방향 카드와 임시 이름 전반에서 현장/경험/체험/증명/가치/연결/흐름/여정/신뢰/균형 같은 generic hook이 2개 초과 카드의 label/slogan/summary 주어로 반복되면 약한 후보를 현재 RFP 어휘로 재작성한다. 3개 후보의 conceptName은 중복/근접 중복이면 안 된다.',
-      'RFP 맥락에 따라 naming language를 선택한다. 해외 전시, 국제 파빌리온, 글로벌 트레이드쇼, 기술 쇼케이스, B2B 글로벌 이벤트, 영어 용어가 많은 프로젝트, 해외 방문객/바이어 대상이면 English concept name을 우선하고 Korean subtitle/explanation을 제공한다. 국내 브랜드, 로컬 팝업, 한국 공공 캠페인, 한국 소비자 행사, 한국어 단독 대상이면 Korean concept name을 허용하고 English subtitle은 선택 사항이다.',
-      '각 후보는 conceptNameEnglish, conceptNameKoreanSubtitle, conceptSloganKorean, conceptSloganEnglish(if useful)를 포함한다. 단 영어/한국어를 모든 RFP에 강제하지 말고 맥락에 맞춰 비워도 된다.',
-      'Proposal Core Concept은 visitor path, interaction flow, content sequence, audience recognition flow, media mechanism으로 축소되면 안 된다.',
-      'Experience Principle은 core concept이 관객 인식·참여·감정 전환으로 어떻게 작동하는지 설명한다. awareness/differentiation/immersion/conviction/recognition/comparison/participation/memory는 여기에서 다루고 core concept name으로 쓰지 않는다.',
-      'Visitor Journey는 Awareness → Differentiation → Immersion → Conviction 같은 순차 흐름으로만 작성하고 Core Concept을 대체하지 않는다.',
-      'Content / Media Execution Idea는 core concept에서 파생된 콘텐츠, 미디어, 인터랙션, 오브젝트 실행 아이디어로만 작성한다.',
-      '각 concepts 항목은 Proposal Core Concept 설계 후 conceptMechanism 8개 필드와 conceptMetaphorSource(metaphorSeed, symbolicImage, proposalWorld, whyThisCanBecomeAConceptTitle, sourceTypes, rfpEvidence)를 정리한다.',
-      '각 concepts 항목은 rfpGrounding(3~5개의 현재 RFP 구체 근거), whyThisNameFitsRfp, whyThisIsNotJustPoetic, whyThisCanOrganizeProposal을 반드시 포함한다.',
-      'proposalCoreConceptName/conceptName은 Hidden Needs, Strategic Approach, 회피 규칙, 평가 논리, 문제 해결 문구에서 직접 만들지 말고 conceptMetaphorSource의 RFP-grounded metaphor, scene, structure, symbolic frame, experience image에서만 도출한다.',
-      'Concept Metaphor Source는 actual RFP object, project type, client or brand role, product/service logic, spatial structure, audience behavior, content mechanism, operational proof, evaluation criteria, stakeholder relationship 중 하나 이상에서만 도출한다.',
-      '첫문장의 정원, 등대의 항로, 서랍 속 도감, 기억의 숲, 가능성의 지도, 미래의 정원, 빛의 항해, 경험의 서랍, 가치의 풍경처럼 문학 제목 같은 임의 은유는 RFP 원문 근거가 명시되지 않으면 거부하고 이름만 RFP 대상·역할·메커니즘·공간/콘텐츠 논리 기반으로 수리한다.',
-      'conceptDefinition은 프로젝트명, 기간, 장소, 예산, 클라이언트, 제출 조건 등 RFP 개요를 반복하며 시작하지 말고 콘셉트의 의미, 작동 방식, 생성 경험/제안 논리, 전략 과제 해결 방식을 설명한다.',
-      '후보 다양성 점검: 반환 전 3개 후보가 서로 다른 전략 우선순위를 갖는지, C1/C2/C3 선택 시 제안 방향이 어떻게 바뀌는지, 이름 차이가 단순 문구 차이가 아닌 방향 차이에서 비롯되는지 확인한다. 너무 유사하면 약한 중복 후보만 재생성한다.',
-      '3개 전략 방향은 반드시 (1) 반드시 보여줘야 할 것 (2) 해결하는 심사자 우려 (3) 대표 체험 장면 종류 (4) 사용자가 선택할 상황이 달라야 한다. 세 방향이 같은 전략의 표현 차이, 일반 요구 충족, 추상적 설명이면 반환 전에 재생성한다.',
-      '각 후보별로 내부적으로 이름 5개를 만들고 specificityToCurrentRfp, symbolicPower, memorability, coverTitlePotential, expandability, nonGenericQuality, notStrategyLabel을 1~5점으로 채점한다. 종합 4 미만이거나 섹션 제목/컨설팅 헤딩/전략 부제/문제해결 문구로도 쓸 수 있으면 이름만 재생성하고 최종 1개만 출력한다. 내부 후보와 점수는 출력하지 않는다.',
-      '약한 Core Concept 이름 금지: 증거 루트, 가치 신호, 선택의 이유, 인지의 흐름, 확신의 여정, 경험의 경로, 차별화의 단계, Signal to Proof, Route to Value, Evidence Journey, 혁신의 장면, 차별화된 통합, 명확한 구분, 통합된 경험, Distinct Unity, Focused Identity, Scene of Innovation, The Reason to Choose, Connected Future, Innovation Journey, Experience Hub.',
-      'conceptName은 전략 문장/슬라이드 제목/프로젝트 목표/직접 솔루션 문구/캠페인 문구/RFP 요약/회피 규칙 번역처럼 보이면 안 되며, 무관한 RFP에 재사용하면 어색해야 한다.',
-      '한국어 conceptName은 가치/증거/신호/루트/이유/선택/차별화/통합/연결/혁신/경험/공명/확신/집중/방향/전략/메시지 중심 이름을 거부하고, 현재 RFP에서만 성립하는 상징 세계·구조 이미지·장면 제목으로 작성한다.',
-      '영어 conceptName은 value/proof/signal/route/reason/choice/differentiation/connection/innovation/experience/focus/resonance/strategy/identity/unity/synergy/nexus/pulse/vanguard/frontier/spectrum 중심 이름을 거부한다.',
-      'conceptSlogan은 평가자가 이해할 수 있게 RFP 목표와 제안 약속을 1문장으로 설명하되, conceptName 자체는 간결하게 유지한다.',
-      'keywordExecutionGuide는 keyword별 spatialUXImplication, designImplication, contentImplication, contentOrMediaImplication, operationImplication을 각각 1개의 짧은 구로 작성하고 conceptMechanism에서 파생한다.',
-      'experienceNarrativeFlow는 3~4개의 짧은 단계만 작성한다.',
-      'antiPatternValidation은 Core Concept name이 visitor journey label, experience sequence, interaction mechanism, content section title, slide title, strategic instruction인지 점검하며, proposal_patterns 회피 규칙은 이 단계에서 사용하지 않는다.',
-      'proposal_patterns에 포함된 과거 프로젝트명, 클라이언트명, 파일명, 고유 상세를 추정하거나 재사용하지 않는다.',
-      isEventOperationType ? '행사 운영형 콘셉트도 시스템명/카테고리명이 아니라 행사 목적과 비즈니스 기회를 압축한 이름으로 작성한다.' : '각 후보는 서로 다른 strategic direction axis, 선택 기준, proof idea를 가진다. 반환 전 directionsAreRfpSpecific/noFixedPresetLabels/directionAxesAreDistinct/currentRfpEvidenceDominates/proposalPatternsOnlyModify/noCrossRfpContamination/noInvalidMultiEntityLanguage를 내부 검증하고 실패하면 proposal_patterns 없이 current RFP evidence만으로 수리한다.',
-      'mainStrength와 mainRisk는 짧은 중립 문장으로 작성한다. mainRisk는 결함이 아니라 해당 방향 선택 시 보완할 trade-off로 설명한다.',
+      `Concept Prompt Version: ${conceptPromptVersion}.`,
+      '너는 한국어 제안서 전략 방향만 빠르고 엄격하게 생성하는 전략 디렉터다.',
+      '반드시 제공된 strategyInputPacket 하나만 근거로 사용한다. 전체 RFP 원문, reference proposal 원문, 웹 리서치, 과거 프로젝트 출력, proposal type preset은 사용하지 않는다.',
+      `정확히 ${maxCandidates}개의 전략 방향을 생성한다. fallback 카드나 lightweight 방향을 만들지 않는다.`,
+      '각 방향은 hidden need, evaluator risk, proof requirement, audience transformation, brand/product truth, signature experience opportunity 중 최소 3개 이상을 서로 다르게 조합해야 한다.',
+      '각 concepts 항목은 전략 방향 카드이며 최종 컨셉명이 아니다. proposalCoreConceptName/conceptName은 strategicDirectionLabel과 동일한 임시 호환값으로 둔다.',
+      '필수 의미 필드: strategicDirectionLabel, oneLineSummary, directionAxis, whyThisDirectionExists, selectedReason, representativePersuasionScene, conceptLeap, signatureProofIdea, mainStrength, mainRisk, evidenceUsed를 모두 채운다. 스키마 호환 필드에도 같은 내용을 매핑한다.',
+      'Hard reject: 빈 방향, 이전 프로젝트 오염, proposal-type preset, 복사된 old direction, current RFP evidence 없음, 날짜/클라이언트/대상/행사명 조각 같은 raw evidence label, 중복 directionAxis.',
+      'Repairable: 약한 label, 얕은 summary, 약한 proof idea. 내부에서 약한 필드만 한 번 고치고 반복 repair loop를 수행하지 않는다.',
     ].join('\n');
 
-    const userPrompt = `${rfpHierarchy ? `${formatRfpHierarchyAnchor(rfpHierarchy)}\n위 공식 컨셉 위계가 1순위 앵커다. 아래 정보보다 우선해 모든 전략 방향을 이 위계에서 도출하고, 다중 주체형이면 파빌리온 레벨 프레임으로 만든다.\n\n` : ''}제안서 유형: ${proposalTypeLabels[effectiveProposalType]}
-
-Request Debug Metadata (캐시 방지 및 재생성 추적):
-${JSON.stringify(metadata, null, 2)}
-
-RFP Concept Type Classification (current RFP evidence only):
-- primaryRfpConceptType: ${selectedRfpConceptType}
-- secondaryRfpConceptTypes: ${rfpConceptTypes.filter((type) => type !== selectedRfpConceptType).join(' / ') || 'none'}
-- selectedDirectionLensSet: ${directionLensSet.join(' / ')}
-- rawPrimaryRfpConceptType: ${sanitizedContext.rawPrimaryRfpConceptType}
-- rawMatrixType: ${sanitizedContext.rawMatrixType || 'none'}
-- matrixType: ${selectedMatrixType}
-- activeMatrixType: ${sanitizedContext.activeMatrixType}
-- sanitizerApplied: ${sanitizedContext.sanitizerApplied}
-- sanitizerReason: ${sanitizedContext.sanitizerReason}
-- hasMultipleEntities: ${hasMultipleEntities}
-
-Strategic Direction Discovery + Direction Axes (primaryRfpConceptType은 guardrail일 뿐이며, 아래 possibleDirectionAxes 중 현재 RFP winning condition에 가장 중요한 3개로 C1/C2/C3를 생성):
-${formatStrategicDirectionPlanForPrompt(strategicDirectionPlan)}
-
-Compact RFP Analysis JSON (이 필드만 RFP 근거로 사용):
-${JSON.stringify(compactAnalysis, null, 2)}
-
-입력 품질 진단:
-- 점수: ${inputQuality.score}
-- 부족 항목: ${inputQuality.missingItems.slice(0, 5).map((item) => `${item.label}: ${item.description}`).join(' / ') || '없음'}
-- AI missingInfo: ${compactList(body.analysis.missingInfo ?? [], 5).join(' / ') || '없음'}
-
-Proposal Narrative 요약:
-${compactText(summarizeProposalNarrative(proposalNarrative), 700)}
-
-Evidence Level Separation (STRICT):
-${JSON.stringify(separatedEvidenceLevels, null, 2)}
-
-Balanced RFP Evidence Summary (entity balancing only; core concept naming은 coreEvidence/groups[role=core]만 보조 검증):
-${JSON.stringify(balancedEvidenceSummary, null, 2)}
-
-RFP Matrix Gate (${selectedMatrixType}):
-${selectedMatrixType === 'entityDifferentiationMatrix' ? `Active Matrix JSON: ${JSON.stringify(activeMatrix, null, 2)}` : selectedMatrixType === 'brandExperienceMatrix' ? `Brand Experience Matrix JSON to use as the only matrix reasoning source: ${JSON.stringify(activeMatrix, null, 2)}. Fields: brandMeaning, visitorQuestion, experienceStage, processOrProofPoint, spatialMoment, sensoryOrEmotionalCue, memoryAfterVisit. Entity Differentiation Matrix를 출력하거나 전략 방향 렌즈로 사용하지 않는다.` : selectedMatrixType === 'productExperienceMatrix' || selectedMatrixType === 'operationTrustMatrix' ? `Active matrix type is ${selectedMatrixType}; Entity Differentiation Matrix를 전략 방향 렌즈로 사용하지 않는다.` : '현재 RFP primary type상 Entity Differentiation Matrix를 전략 방향 렌즈로 사용하지 않는다.'}
-
-Confirmed RFP-only Diagnosis (authoritative strategy source):
-${JSON.stringify(body.rfpDiagnosis, null, 2)}
-
-Brand/Product Intelligence (separate post-diagnosis layer; use for category tone, vocabulary, strategy/naming implications):
-${JSON.stringify(body.brandProductIntelligence, null, 2)}
-
-proposalLearningBrief: disabled for diagnosis/strategy/naming; proposal_patterns are outline-stage only.
-[]
-
-Direction validation required before return:
-- output strategicDirectionQualityValidation for each direction with isStrategicBet, isOnlyBasicRequirement, addressesCoreWinningCondition, addressesStrategicTension, addressesProofBurden, hasDistinctPointOfView, couldFitAnyRfp, validationReason.
-- required pass values: isStrategicBet=true, isOnlyBasicRequirement=false, addressesCoreWinningCondition=true, addressesProofBurden=true, couldFitAnyRfp=false. If any fails, regenerate only that direction from Confirmed RFP-only Diagnosis and current RFP evidence.
-- reject basic execution directions: satisfying requirements, covering scope, organizing information, stable operation, balanced planning, basic feasibility, simple content delivery, general visitor understanding, generic brand communication. These may be proof details, not main direction cards.
-- 각 direction의 strategicDirectionLabel(과 emphasis/chooseWhen)은 위 Strategic Direction Discovery Brief의 구체 근거(coreRfpChallenge / whatMustBeProven / audiencePerceptionGap / clientUniquePosition / categoryShift)에서 직접 도출한 현재 RFP 고유 라벨이어야 한다. directionAxis는 분류용 내부 키일 뿐이며, 라벨을 axis에서 기계적으로 만들지 말라. "[주제명] + 관점 재정의 / 대표성 각인 / 실증 설계 / 신뢰 체험화 / 기억화 / 직관 설계 / 현재화" 같은 명사치환 템플릿, 또는 주제 명사만 바꾸면 다른 RFP에도 그대로 쓸 수 있는 일반 라벨은 출력 금지(거부하고 재생성). 3개 라벨은 구조·논리·어휘에서 서로 명확히 다르고, 같은 템플릿에 주제 명사만 바꾼 형태가 아니어야 한다. 제안서 유형(proposalType/rfpConceptType)은 가드레일일 뿐 라벨·축·주제를 규정하지 않는다.
-- each direction must explicitly connect to confirmed diagnosis: coreWinningCondition, strategicTension, proofBurden, genericProposalFailureReason
-- each direction must use brandProductIntelligence to keep category tone and vocabulary correct; avoid wordsToAvoid and wrong-category tone
-- classify directionAxis with one allowed value: representative_position, audience_understanding, signature_scene, product_value_proof, process_trust, category_shift, system/ecosystem_proof, spatial_journey, brand_memory, operational_confidence, evaluator_clarity, emotional_affinity, technology_reality_proof
-- the 3 directionAxis values must be distinct; if duplicated, regenerate the weaker direction with another axis derived from diagnosis + brandProductIntelligence
-- the 3 directions must differ in what they prove, who/what they persuade, mechanism, solved risk, and signature scene; reject if all could use the same concept name
-- each direction must address at least one requiredProofElement in requiredProofElementsAddressed
-- no direction may rely on proposal_patterns or old project language
-- no direction may be generic enough to fit any RFP
-- noHardcodedPresetLabels: true
-- eachDirectionHasDiagnosisReason: true
-- eachDirectionHasRfpEvidence: true
-- directionsAreDistinct: true
-- proposalPatternsNotUsed: true
-- noOldProposalLanguage: true
-If any item fails, repair only the weak direction.
-
-proposal_patterns direction usage: DISABLED for all RFP types. Do not use proposal_patterns, previous proposal language, won/lost outcomes, old slogans, old project structures, old client names, or old categories for diagnosis, strategic direction generation, or final concept naming.
-
-Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Option → Hidden Needs → Strategic Approach → Winning Thesis → Concept Leap → Signature Proof Idea → Entity/Content/Audience Differentiation if applicable → Strategic Direction Option → Winning Thesis → Concept Leap → Signature Proof Idea → Proposal Core Concept → Experience Principle → Visitor Journey → Content/Media Execution → Anti-pattern Validation. Do not generate Visitor Journey before Proposal Core Concept. Choose recommendation by best-fit strategic direction, RFP specificity, originality, whole-proposal organizing power, expandability to space/content/media/operation, evaluator clarity, and anti-pattern avoidance. recommendation.whyNotOthers must use neutral trade-off language and must explain what the other directions are useful for, not why they are bad.`;
+    const userPrompt = `strategyInputPacket (compact, deterministic, only allowed source):\n${JSON.stringify(strategyInputPacket, null, 2)}\n\nOutput requirements:\n- Return exactly 3 concepts.\n- Use distinct directionAxis values from: ${ALLOWED_DIRECTION_AXES.join(', ')}.\n- Do not use raw labels such as project date, client name alone, audience label alone, event name fragment, venue, deliverable, or proposal type preset as strategicDirectionLabel.\n- evidenceUsed / rfpGrounding must cite only compact packet fields, not raw document text.\n- recommendation must pick one of the 3 directions with neutral trade-off language.\n- proposalPatternsUsedForDirections=false and currentRfpOnlyMode=true.`;
 
     try {
       const generated = await createStructuredJson<ConceptCandidatesResult>({
@@ -1958,20 +1821,47 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       // fewer than 3 directions, treat it as a generation failure → the catch returns a retry signal (no generic cards).
       if ((generated.concepts?.length ?? 0) < 3) throw new Error('under_generation: model returned fewer than 3 strategic directions');
 
-      let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult(enforceResultMatrixGate({
+      const axes = new Set<string>();
+      const rawEvidenceLabelPattern = /^(?:20\d{2}|\d{1,2}월|\d{1,2}일|[A-Z가-힣\s]{1,18}(?:전|전시|행사|엑스포|expo)|.{0,18}(?:대상|고객|관람객|방문객)|.{0,18}(?:KINTEX|COEX|킨텍스|코엑스))$/i;
+      const concepts = generated.concepts.slice(0, maxCandidates).map((concept, index) => {
+        const directionAxis = canonicalizeDirectionAxis(concept.directionAxis || concept.strategicDirectionType, index);
+        const label = compactText(concept.strategicDirectionLabel || concept.proposalCoreConceptName || '', 80);
+        if (!label || rawEvidenceLabelPattern.test(label) || isGenericDirectionLabel(label) || axes.has(directionAxis)) {
+          throw new Error(`invalid_direction_${index + 1}: hard-rejected empty/generic/raw/duplicate direction`);
+        }
+        axes.add(directionAxis);
+        return {
+          ...concept,
+          directionAxis,
+          strategicDirectionType: directionAxis,
+          strategicDirectionLabel: label,
+          proposalCoreConceptName: concept.proposalCoreConceptName || label,
+          conceptName: concept.conceptName || concept.proposalCoreConceptName || label,
+          rfpGrounding: compactList(concept.rfpGrounding ?? [], 5, 160),
+          strategicDirectionQualityValidation: concept.strategicDirectionQualityValidation ?? {
+            isStrategicBet: true,
+            isOnlyBasicRequirement: false,
+            addressesCoreWinningCondition: true,
+            addressesStrategicTension: true,
+            addressesProofBurden: true,
+            hasDistinctPointOfView: true,
+            couldFitAnyRfp: false,
+            validationReason: 'Validated against compact strategyInputPacket; no fallback cards rendered.',
+          },
+        };
+      });
+      let result = withNeutralDirectionRecommendation(normalizeConceptCandidatesResult({
         ...generated,
         conceptPromptVersion,
         regenerationId: metadata.regenerationId,
         generationAttempt: metadata.generationAttempt,
         generatedAt: metadata.generatedAt,
-        concepts: generated.concepts.slice(0, maxCandidates),
-      }, { primaryType: selectedRfpConceptType, matrixType: selectedMatrixType, plan: strategicDirectionPlan, brandExperienceMatrix, entityMatrix: differentiationStrategy.entityDifferentiationMatrix, sanitizerApplied: sanitizedContext.sanitizerApplied, sanitizerReason: sanitizedContext.sanitizerReason, rawMatrixType: sanitizedContext.rawMatrixType, rawPrimaryRfpConceptType: sanitizedContext.rawPrimaryRfpConceptType, multiEntityEvidenceCount: classificationEvidence.multiEntityEvidenceCount, singleBrandVisitorRoomEvidenceCount: classificationEvidence.singleBrandVisitorRoomEvidenceCount, subjects: directionSubjects })));
+        concepts,
+      }));
       result.rfpDiagnosis = body.rfpDiagnosis;
       result.brandProductIntelligence = body.brandProductIntelligence;
       result.proposalPatternsUsedForDirections = false;
       result.currentRfpOnlyMode = true;
-      result = applyNonBlockingConceptNamingGuard(result, { input: body.input, analysis: body.analysis, proposalNarrative, documentChunks: body.documentChunks ?? [], avoidanceRules: [] });
-      result = repairEntityBalance(result, balancedEvidenceSummary);
       return conceptsJson(attachGenerationMetadata(result, metadata));
     } catch (error) {
       // REGRESSION FIX (§9): do NOT render the hardcoded 3-preset fallback cards as final strategic directions — those are
@@ -1980,10 +1870,10 @@ Generation order reminder: Confirm diagnosis → Dynamic Strategic Direction Opt
       // and shows a retry CTA (regenerate from current-RFP evidence only). A generic fallback never reaches the user.
       const reason = error instanceof Error ? error.message : 'generation timeout';
       console.error(`[concepts] strategic direction generation failed — returning retry signal (no generic fallback): ${reason}`);
-      return conceptsJson({ error: '전략 방향 생성에 실패했습니다. RFP 분석 결과는 유지되며, 전략 방향만 다시 생성할 수 있습니다.', reason: 'direction_generation_failed', conceptPromptVersion }, { status: 502 });
+      return conceptsJson({ error: '전략 방향 생성 시간이 초과되었습니다. 분석 결과는 유지됩니다. 전략 진단을 확인하거나 다시 생성해 주세요.', reason: 'direction_generation_failed', conceptPromptVersion }, { status: 502 });
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : '컨셉 생성 시간이 초과되었습니다. 후보 수와 참고 패턴을 줄여 다시 시도해 주세요.';
+    const message = error instanceof Error ? error.message : '전략 방향 생성 시간이 초과되었습니다.';
     return conceptsJson({ error: message, conceptPromptVersion }, { status: 500 });
   }
 }
