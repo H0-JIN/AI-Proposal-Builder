@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { conceptNameOptionsJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, BrandExperienceMatrixItem, ConceptCandidate, ConceptDevelopmentLogic, ConceptNameOptionsResult, EntityDifferentiationItem, MatrixType, ProjectInput, ProposalNarrative, ProposalType, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
+import type { AnalysisResult, BrandExperienceMatrixItem, ConceptCandidate, ConceptDevelopmentLogic, ConceptNameOptionsResult, EntityDifferentiationItem, MatrixType, ProjectInput, ProposalNarrative, ProposalType, RfpDiagnosis, BrandProductIntelligence, WinningReferencePatternBrief } from '@/lib/types';
 import { normalizeProposalType } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { getActiveMatrix, sanitizeConceptContextByRfpType } from '@/lib/conceptContextSanitizer';
 import { extractRfpConceptHierarchy, type RfpProvidedConceptHierarchy } from '@/lib/rfpConceptHierarchy';
 import { buildPatternLearningSummary, formatWinningPatternInfluenceForConceptNaming, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
+import { buildWinningReferencePatternBrief } from '@/lib/winningReferencePatternBrief';
+import type { DocumentChunk } from '@/lib/rag';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -436,10 +438,13 @@ function buildFinalOptions(
   result: ConceptNameOptionsResult,
   body: { input: ProjectInput; selectedDirection: ConceptCandidate; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[] },
   currentRfpVocabularySet: string[],
+  forbiddenCopyTerms: string[] = [],
 ) {
   const styles = ['Direct claim', 'Short bilingual title', 'Brand/category-specific phrase', 'Spatial/experience frame', 'Symbolic but grounded', 'Strong one-line statement'] as const;
   const repeatedHooks = genericHookCounts(result.options ?? []);
   const blockedNameSet = new Set([...(body.recentNameOptions ?? []), ...(body.existingNamesForSelectedDirection ?? []), ...(body.blockedOtherDirectionNames ?? [])].map(normalizeName).filter(Boolean));
+  // Reference deny-list: drop any candidate that copies the reference proposal's OWN concept names/slogans/titles.
+  const forbiddenSet = forbiddenCopyTerms.map((term) => term.toLowerCase().trim()).filter((term) => term.length >= 2);
   const seenNameSet = new Set<string>();
   const seenFingerprintSet = new Set<string>();
   let blockedNameDrops = 0;
@@ -448,6 +453,10 @@ function buildFinalOptions(
     const fingerprint = optionTextFingerprint(option);
     if (!nameKey) return false;
     if (blockedNameSet.has(nameKey)) { blockedNameDrops += 1; return false; }
+    if (forbiddenSet.length) {
+      const fields = `${option.conceptName || ''} ${option.koreanSubtitle || ''} ${option.oneLineSlogan || ''}`.toLowerCase();
+      if (forbiddenSet.some((term) => fields.includes(term))) { blockedNameDrops += 1; return false; }
+    }
     if (seenNameSet.has(nameKey) || (fingerprint && seenFingerprintSet.has(fingerprint))) return false;
     seenNameSet.add(nameKey);
     if (fingerprint) seenFingerprintSet.add(fingerprint);
@@ -516,7 +525,7 @@ function buildFinalOptions(
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; analysisSummary?: string; selectedDirection: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; activeMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; primaryRfpConceptType?: string; languageMode?: string; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[]; projectId?: string | null; documentIds?: string[] };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; analysisSummary?: string; selectedDirection: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; activeMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; primaryRfpConceptType?: string; languageMode?: string; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[]; projectId?: string | null; documentIds?: string[]; winningReferenceChunks?: DocumentChunk[]; winningReferenceBrief?: WinningReferencePatternBrief | null; winningReferenceBriefProvided?: boolean };
     if (!body.input || !body.analysis || (!body.selectedDirection && !body.selectedStrategicDirection)) return json(errorResponse('프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.'), { status: 400 });
     body.selectedDirection = normalizeSelectedDirectionForNaming(body) as ConceptCandidate;
 
@@ -539,6 +548,16 @@ export async function POST(request: Request) {
     const conceptFrameBlock = buildConceptFrameSynthesis(body);
     // Phase 3-2: safe, project-scoped winning/losing pattern learning (structure-only, Priority 4). Skips when no scope.
     const learningGuidance = await retrieveProposalPatternsForOutline({ projectId: body.projectId ?? null, documentIds: body.documentIds ?? [], currentProposalType: normalizeProposalType(body.input.proposalType), limit: 12 });
+    // Phase 3-2b: distil the current project's OWN uploaded reference proposal into concept-LOGIC structure (one LLM call,
+    // cached client-side and reused). An untagged reference is surfaced as NEUTRAL (not "winning"). Falls back cleanly.
+    const refBriefResult = body.winningReferenceBriefProvided
+      ? { hasReference: Boolean(body.winningReferenceBrief), usable: Boolean(body.winningReferenceBrief), brief: body.winningReferenceBrief ?? null }
+      : (body.winningReferenceChunks?.length ? await buildWinningReferencePatternBrief({ referenceChunks: body.winningReferenceChunks, currentRfpContext: compact(body.analysis, 4000) }) : { hasReference: false, usable: false, brief: null });
+    if (refBriefResult.usable && refBriefResult.brief) {
+      learningGuidance.comparison.winningReferencePatternBrief = refBriefResult.brief;
+      learningGuidance.comparison.referenceBriefIsNeutral = learningGuidance.comparison.evidenceSource.wonCount === 0;
+    }
+    console.info('[concept-names:refBrief]', { hasReference: refBriefResult.hasReference, usable: refBriefResult.usable, forbiddenCount: refBriefResult.brief?.forbiddenCopyTerms?.length ?? 0, neutral: learningGuidance.comparison.referenceBriefIsNeutral ?? false });
     const winningPatternInfluenceBlock = formatWinningPatternInfluenceForConceptNaming(learningGuidance.comparison);
     const patternLearningSummary = buildPatternLearningSummary(learningGuidance.comparison);
     const conceptLanguage = decidePrimaryConceptLanguage(body);
@@ -611,13 +630,14 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
 
     const generate = (userPrompt: string) => createStructuredJson<ConceptNameOptionsResult>({ schemaName: 'concept_name_options', schema: conceptNameOptionsJsonSchema, system, user: userPrompt, timeoutMs: 18_000, maxRetries: 1 });
 
+    const forbiddenCopyTerms = refBriefResult.brief?.forbiddenCopyTerms ?? [];
     let result = await generate(user);
-    let built = buildFinalOptions(result, body, currentRfpVocabularySet);
+    let built = buildFinalOptions(result, body, currentRfpVocabularySet, forbiddenCopyTerms);
     // Spec: if the first pass produces zero sufficiently-specific options (all weak/ungrounded/duplicate),
     // regenerate ONCE with stricter anti-pattern filtering before failing. Never show weak fallback names.
     if (!built.options.length) {
       result = await generate(user + STRICTER_RETRY_ADDENDUM);
-      built = buildFinalOptions(result, body, currentRfpVocabularySet);
+      built = buildFinalOptions(result, body, currentRfpVocabularySet, forbiddenCopyTerms);
     }
     if (!built.options.length) {
       const { returned, deduped, safe, quality, blockedNameDrops, descriptiveDrops } = built.diag;
@@ -627,7 +647,7 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
       const message = conversionFailure ? DESCRIPTIVE_NAMING_ERROR : WEAK_NAMING_ERROR;
       return json(errorResponse(message, `reason=${conversionFailure ? 'descriptive_after_retry' : 'weak_after_retry'}; returned=${returned}; deduped=${deduped}; safe=${safe}; quality=${quality}; blockedNameDrops=${blockedNameDrops}; descriptiveDrops=${descriptiveDrops}`), { status: 422 });
     }
-    return json({ ...successResponse({ ...result, selectedDirectionId: body.selectedDirection.conceptId, options: built.options }), patternLearningSummary });
+    return json({ ...successResponse({ ...result, selectedDirectionId: body.selectedDirection.conceptId, options: built.options }), patternLearningSummary, winningReferenceBrief: refBriefResult.brief });
   } catch (error) {
     const message = error instanceof Error ? error.message : '컨셉명 생성 중 오류가 발생했습니다.';
     return json(errorResponse(WEAK_NAMING_ERROR, `reason=${classifyServerError(message)}; ${message}`), { status: 502 });

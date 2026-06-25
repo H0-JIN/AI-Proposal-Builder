@@ -258,8 +258,28 @@ export type DeckHeroElement = 'none' | 'big-number' | 'big-keyword' | 'full-imag
 export type DeckVisualWeight = 'text-led' | 'balanced' | 'visual-led';
 export type DeckTextDensity = 'low' | 'medium' | 'high';
 
+// Generation-time distilled concept-LOGIC structure of the current project's own uploaded reference proposal. LOGIC ONLY
+// — never old copy. forbiddenCopyTerms are the reference's own concept names/slogans/page titles, captured expressly to
+// BLOCK them downstream (deny-list). Computed fresh at generation (no DB write); attached to the comparison advisory.
+export interface WinningReferencePatternBrief {
+  strategicReframingPattern: string;
+  conceptEmergencePattern: string;
+  audienceQuestionPattern: string;
+  brandTonePattern: string;
+  signatureExperiencePattern: string;
+  contentArchitecturePattern: string;
+  mediaAndInteractionPattern: string;
+  spatialJourneyPattern: string;
+  operationProofPattern: string;
+  proofPattern: string;
+  deckStructurePattern: string;
+  whatMadeItPersuasive: string;
+  reusableLogicOnly: string;
+  forbiddenCopyTerms: string[];
+}
+
 // UI-safe summary of how past won/lost proposal pattern learning informed the generated proposal structure. Carries
-// NO raw old-proposal copy — only counts/flags for the collapsed "수주 패턴 참고" chip.
+// NO raw old-proposal copy — only counts/flags + a scrubbed one-liner for the collapsed "수주 패턴 참고" chip.
 export interface PatternLearningSummary {
   used: boolean;
   confidence: 'high' | 'medium' | 'low';
@@ -268,6 +288,8 @@ export interface PatternLearningSummary {
   contentPatternUsed: boolean;
   proofPatternUsed: boolean;
   recommendedPatternRole: string | null;
+  referenceBriefSummary?: string | null;
+  referenceBriefIsNeutral?: boolean;
 }
 
 // Deck-level design guide (deterministic, themed by proposal type). Applied to the PPTX (fonts, colors, before/after-
@@ -934,6 +956,9 @@ export interface ProposalState {
   // Winning/losing pattern learning applied during final concept naming (phase 3-2). Shown in the naming section's
   // collapsed "수주 패턴 참고" chip. Project-scoped (cleared on a new RFP/project).
   conceptPatternLearningSummary?: PatternLearningSummary;
+  // Cached generation-time reference-proposal concept-logic brief (extracted once, reused by naming + outline). null =
+  // attempted, no usable brief; undefined = not yet attempted. Project-scoped (cleared on a new RFP/project).
+  winningReferenceBrief?: WinningReferencePatternBrief | null;
   retrievalEvidence?: RetrievalEvidenceItem[];
   analysisBasis?: {
     type: 'full' | 'partial';

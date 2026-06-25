@@ -16,6 +16,8 @@ import { buildStrategyLayerMetadata } from '@/lib/strategyLayer';
 import { ensureProposalNarrative, summarizeProposalNarrative } from '@/lib/proposalNarrative';
 import { getConceptTagline, getPresentationConceptName } from '@/lib/conceptNamingGuard';
 import { buildPatternLearningSummary, formatProposalAvoidanceRulesForPrompt, formatProposalPatternDiagnostics, formatProposalPatternsForOutlinePrompt, formatProposalSuccessPatternComparisonForPrompt, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
+import { buildWinningReferencePatternBrief } from '@/lib/winningReferencePatternBrief';
+import type { WinningReferencePatternBrief } from '@/lib/types';
 import { buildRfpDifferentiationStrategy, summarizeDifferentiationStrategy } from '@/lib/rfpDifferentiation';
 import { applyDeckStructure, buildDeckDesignGuide, validateDeckStructure, type DeckSlideSeed } from '@/lib/deckStructure';
 
@@ -185,7 +187,7 @@ function repairRepeatedOutlineBoilerplate(slides: SlideOutline[]): { slides: Sli
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptGenerationResult?: ConceptCandidatesResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[]; projectId?: string | null; documentIds?: string[] };
+    const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; selectedConcept: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis; conceptDevelopmentLogic?: ConceptDevelopmentLogic; conceptGenerationResult?: ConceptCandidatesResult; proposalNarrative?: ProposalNarrative; documentChunks?: DocumentChunk[]; projectId?: string | null; documentIds?: string[]; winningReferenceBrief?: WinningReferencePatternBrief | null; winningReferenceBriefProvided?: boolean };
 
     if (!body.input || !body.analysis || !body.selectedConcept) {
       return NextResponse.json({ error: '프로젝트 입력값, 분석 결과, 선택된 콘셉트가 필요합니다.' }, { status: 400 });
@@ -237,6 +239,16 @@ export async function POST(request: Request) {
     const proposalPatternContext = formatProposalPatternsForOutlinePrompt(outlineProposalPatterns);
     const proposalAvoidanceRuleContext = formatProposalAvoidanceRulesForPrompt(proposalPatternGuidance.avoidanceRules);
     const proposalPatternDiagnostics = formatProposalPatternDiagnostics(proposalPatternGuidance.summary, differentiationStrategy.hasMultipleEntities);
+    // Phase 3-2b: distil the current project's OWN uploaded reference proposal into structure logic (one LLM call, reuses
+    // the client-cached brief when provided). Untagged reference = neutral. Falls back cleanly when none.
+    const outlineRefChunks = (body.documentChunks ?? []).filter((chunk) => chunk.documentType === 'finalProposal');
+    const outlineRefBrief = body.winningReferenceBriefProvided
+      ? (body.winningReferenceBrief ?? null)
+      : (outlineRefChunks.length ? (await buildWinningReferencePatternBrief({ referenceChunks: outlineRefChunks, currentRfpContext: JSON.stringify(body.analysis ?? {}).slice(0, 4000) })).brief : null);
+    if (outlineRefBrief) {
+      proposalPatternGuidance.comparison.winningReferencePatternBrief = outlineRefBrief;
+      proposalPatternGuidance.comparison.referenceBriefIsNeutral = proposalPatternGuidance.comparison.evidenceSource.wonCount === 0;
+    }
     // Phase 3: structured won-vs-lost learning (Priority 2 — advisory only, never overrides the current RFP / concept).
     const successComparisonContext = formatProposalSuccessPatternComparisonForPrompt(proposalPatternGuidance.comparison);
     const patternLearningSummary = buildPatternLearningSummary(proposalPatternGuidance.comparison);
@@ -404,7 +416,7 @@ ${JSON.stringify(body.selectedConcept, null, 2)}
     const deckSlides = applyDeckStructure(dedupedSlides, { finalConceptName, finalConceptSlogan, projectName: body.input.projectName, clientName: body.input.clientName, proposalTypeLabel, makeSlide: makeOutlineDeckSlide });
     const designGuide = buildDeckDesignGuide(body.input);
     console.info('[outline:deck-structure]', validateDeckStructure(deckSlides, finalConceptName));
-    return NextResponse.json({ slides: deckSlides, designGuide, patternLearningSummary });
+    return NextResponse.json({ slides: deckSlides, designGuide, patternLearningSummary, winningReferenceBrief: outlineRefBrief });
   } catch (error) {
     const message = error instanceof Error ? error.message : '아웃라인 생성 중 오류가 발생했습니다.';
     return NextResponse.json({ error: message }, { status: 500 });

@@ -3,7 +3,7 @@ import 'server-only';
 import { getSupabaseConfigState } from './supabase';
 import { buildAvoidanceRuleFromOutcomeReason, classifyFailureAreas, classifyOutcomeReason, getOutcomeReasonTypeFromMetadata, resolveFailureAreasFromMetadata, type FailureArea, type OutcomeReasonType } from './outcomeReasonClassifier';
 import type { JsonValue, ProposalPatternRecord } from './dbTypes';
-import type { PatternLearningSummary } from './types';
+import type { PatternLearningSummary, WinningReferencePatternBrief } from './types';
 
 export interface OutlineProposalPattern {
   pattern_type: string | null;
@@ -50,6 +50,11 @@ export interface ProposalSuccessPatternComparison {
   proofPatternToApply: string | null;
   confidence: 'high' | 'medium' | 'low';
   evidenceSource: { wonCount: number; lostQualityCount: number; lostExternalCount: number; typeMatchedCount: number; sameProjectOnly: true };
+  // Generation-time distilled concept-logic structure of the current project's OWN uploaded reference proposal (attached
+  // by the route AFTER extraction). referenceBriefIsNeutral = the reference exists but has no won outcome tag, so it is a
+  // neutral "uploaded reference" not a confirmed "winning" pattern.
+  winningReferencePatternBrief?: WinningReferencePatternBrief | null;
+  referenceBriefIsNeutral?: boolean;
 }
 export interface RetrievedProposalPatternGuidance {
   patterns: OutlineProposalPattern[];
@@ -381,8 +386,23 @@ function buildSuccessPatternComparison(sorted: ProposalPatternWithSourceMetadata
   };
 }
 
+const briefVal = (value?: string) => (value && value.trim().length >= 4 && value.trim() !== '없음' ? value.trim() : null);
+function hasMeaningfulBrief(comparison: ProposalSuccessPatternComparison): boolean {
+  const b = comparison.winningReferencePatternBrief;
+  return Boolean(b && [b.strategicReframingPattern, b.conceptEmergencePattern, b.brandTonePattern, b.contentArchitecturePattern, b.proofPattern, b.whatMadeItPersuasive].some(briefVal));
+}
+function referenceBriefHeader(comparison: ProposalSuccessPatternComparison): string {
+  return comparison.referenceBriefIsNeutral
+    ? '현재 프로젝트 업로드 레퍼런스 제안 구조(참고, 결과 미태깅 → 중립 참고)'
+    : '수주 레퍼런스 제안 구조(참고)';
+}
+function forbiddenCopyLine(comparison: ProposalSuccessPatternComparison): string | null {
+  const terms = comparison.winningReferencePatternBrief?.forbiddenCopyTerms ?? [];
+  return terms.length ? `복사 절대 금지(deny-list — conceptName/koreanSubtitle/oneLineSlogan/slideTitle에 그대로 출력 금지): ${terms.join(' / ')}` : null;
+}
+
 export function formatProposalSuccessPatternComparisonForPrompt(comparison: ProposalSuccessPatternComparison): string {
-  if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length) {
+  if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length && !hasMeaningfulBrief(comparison)) {
     return '수주 패턴 비교 데이터 없음 — 현재 RFP/선택 전략 방향/최종 컨셉 근거만 사용한다.';
   }
   const lines: string[] = [];
@@ -393,6 +413,16 @@ export function formatProposalSuccessPatternComparisonForPrompt(comparison: Prop
   if (comparison.recommendedPatternToApply) lines.push(`적용 권장 구조 패턴: ${comparison.recommendedPatternToApply}`);
   if (comparison.contentPatternToApply) lines.push(`콘텐츠/미디어 적용 패턴(컨셉 선언 이후 콘텐츠 페이지에 구체화): ${comparison.contentPatternToApply}`);
   if (comparison.proofPatternToApply) lines.push(`증명/실행 신뢰 패턴: ${comparison.proofPatternToApply}`);
+  if (hasMeaningfulBrief(comparison)) {
+    const b = comparison.winningReferencePatternBrief!;
+    lines.push(`[${referenceBriefHeader(comparison)}] 논리 구조만 적용(원문 복사 금지):`);
+    for (const [label, value] of [['덱 섹션 순서 로직', b.deckStructurePattern], ['콘텐츠 아키텍처', b.contentArchitecturePattern], ['미디어/인터랙션 구성', b.mediaAndInteractionPattern], ['공간 여정', b.spatialJourneyPattern], ['운영/실행 증명', b.operationProofPattern], ['증명 구조', b.proofPattern], ['시그니처 경험', b.signatureExperiencePattern]] as const) {
+      const v = briefVal(value);
+      if (v) lines.push(`- ${label}: ${v}`);
+    }
+    const deny = forbiddenCopyLine(comparison);
+    if (deny) lines.push(deny);
+  }
   lines.push(`신뢰도: ${comparison.confidence} · 근거: 수주 ${comparison.evidenceSource.wonCount} / 품질 미수주 ${comparison.evidenceSource.lostQualityCount} / 유형 일치 ${comparison.evidenceSource.typeMatchedCount} (현재 프로젝트 업로드 레퍼런스 한정)`);
   lines.push('주의: 위 패턴은 구조·논리 참고용이다. 현재 RFP·선택 전략 방향·최종 컨셉명/슬로건·RFP 위계를 절대 덮어쓰지 않는다. 과거 제안의 컨셉명/슬로건/원문/클라이언트명/프로젝트명을 복사하지 않는다.');
   return lines.join('\n');
@@ -402,7 +432,7 @@ export function formatProposalSuccessPatternComparisonForPrompt(comparison: Prop
 // reframing → strategy → concept emergence, content-after-concept, proof) so naming can apply a proven logic pattern —
 // structure only, never copying old names/slogans/copy, and never overriding the current RFP / direction / frame.
 export function formatWinningPatternInfluenceForConceptNaming(comparison: ProposalSuccessPatternComparison): string {
-  if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length) {
+  if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length && !hasMeaningfulBrief(comparison)) {
     return '수주 패턴 비교 데이터 없음 — 현재 RFP·선택 전략 방향·Concept Frame Synthesis 근거만 사용한다(수주 패턴을 가정하지 말 것).';
   }
   const conceptStage = comparison.similarWinningPatterns.find((p) => /concept|rationale|strategy|개념|컨셉|전략/.test(`${p.narrativeStage || ''} ${p.slideRole || ''}`.toLowerCase()))?.principle || comparison.recommendedPatternToApply;
@@ -411,22 +441,36 @@ export function formatWinningPatternInfluenceForConceptNaming(comparison: Propos
   if (comparison.winningDifferentiators.length) lines.push(`수주를 만든 차별 로직: ${comparison.winningDifferentiators.join(' / ')}`);
   if (comparison.contentPatternToApply) lines.push(`수주 콘텐츠 전개 패턴(컨셉 이후): ${comparison.contentPatternToApply}`);
   if (comparison.proofPatternToApply) lines.push(`수주 증명 패턴: ${comparison.proofPatternToApply}`);
+  if (hasMeaningfulBrief(comparison)) {
+    const b = comparison.winningReferencePatternBrief!;
+    lines.push(`[${referenceBriefHeader(comparison)}] 컨셉 로직 구조만 적용(원문 복사 금지):`);
+    for (const [label, value] of [['문제 재정의 방식', b.strategicReframingPattern], ['전략 → 컨셉 전환 로직', b.conceptEmergencePattern], ['관객 질문과 답', b.audienceQuestionPattern], ['브랜드 톤 작동 방식', b.brandTonePattern], ['시그니처 경험/장면 논리', b.signatureExperiencePattern], ['설득력의 핵심', b.whatMadeItPersuasive], ['재사용 가능한 논리', b.reusableLogicOnly]] as const) {
+      const v = briefVal(value);
+      if (v) lines.push(`- ${label}: ${v}`);
+    }
+    const deny = forbiddenCopyLine(comparison);
+    if (deny) lines.push(deny);
+  }
   if (comparison.losingRisksToAvoid.length) lines.push(`회피할 미수주 약점(리스크 경고로만, 긍정 영감 금지): ${comparison.losingRisksToAvoid.join(' / ')}`);
   lines.push(`신뢰도: ${comparison.confidence} · 근거: 수주 ${comparison.evidenceSource.wonCount} / 유형 일치 ${comparison.evidenceSource.typeMatchedCount} (현재 프로젝트 업로드 레퍼런스 한정)`);
-  lines.push('요구: 최소 1개 후보는 위 수주 컨셉 로직 구조를 현재 RFP·선택 전략 방향에 맞게 적용한다. 단, 과거 제안의 이름/슬로건/카피/클라이언트·프로젝트명을 복사하지 말고 현재 RFP 고유 톤으로 새로 만든다. 이 영향은 현재 RFP·전략 방향·Concept Frame Synthesis·Korean seed→English transcreation 순서를 절대 바꾸지 않는다. 미수주 패턴을 긍정 영감으로 쓰면 거부한다.');
+  lines.push('요구: 레퍼런스 제안 구조가 있으면 최소 1개 후보는 위 컨셉 로직 구조(문제 재정의·전략→컨셉 전환·브랜드 톤·증명)를 현재 RFP·선택 전략 방향에 맞게 적용해 현재 브랜드/프로젝트 세계가 더 강하게 드러나게 한다. 단, 과거 제안의 이름/슬로건/카피/페이지 제목/클라이언트·프로젝트명을 복사하지 말고(위 deny-list 포함) 현재 RFP 고유 톤으로 새로 만든다. 레퍼런스가 있을 때 공간·빛·기억·임팩트만 말하는 범용 이름, 무관한 브랜드에도 맞는 이름은 거부하고 재생성한다. 이 영향은 현재 RFP·전략 방향·Concept Frame Synthesis·Korean seed→English transcreation 순서를 절대 바꾸지 않는다. 미수주 패턴을 긍정 영감으로 쓰면 거부한다.');
   return lines.join('\n');
 }
 
 export function buildPatternLearningSummary(comparison: ProposalSuccessPatternComparison): PatternLearningSummary | null {
-  if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length) return null;
+  const brief = hasMeaningfulBrief(comparison) ? comparison.winningReferencePatternBrief! : null;
+  if (!comparison.similarWinningPatterns.length && !comparison.similarLosingPatterns.length && !brief) return null;
+  const referenceBriefSummary = brief ? (briefVal(brief.whatMadeItPersuasive) || briefVal(brief.reusableLogicOnly) || briefVal(brief.conceptEmergencePattern) || null) : null;
   return {
     used: true,
     confidence: comparison.confidence,
     winningPatternCount: comparison.similarWinningPatterns.length,
     riskCount: comparison.losingRisksToAvoid.length,
-    contentPatternUsed: Boolean(comparison.contentPatternToApply),
-    proofPatternUsed: Boolean(comparison.proofPatternToApply),
+    contentPatternUsed: Boolean(comparison.contentPatternToApply) || Boolean(briefVal(brief?.contentArchitecturePattern)),
+    proofPatternUsed: Boolean(comparison.proofPatternToApply) || Boolean(briefVal(brief?.proofPattern)),
     recommendedPatternRole: comparison.similarWinningPatterns[0]?.slideRole ?? comparison.similarWinningPatterns[0]?.narrativeStage ?? null,
+    referenceBriefSummary: referenceBriefSummary ? referenceBriefSummary.slice(0, 140) : null,
+    referenceBriefIsNeutral: brief ? Boolean(comparison.referenceBriefIsNeutral) : undefined,
   };
 }
 

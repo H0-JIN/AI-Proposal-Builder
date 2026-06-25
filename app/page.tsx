@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import pptxgen from 'pptxgenjs';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence, DesignGuide, PatternLearningSummary } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ConceptDevelopmentLogic, ConceptNameOption, ConceptNameOptionsResult, ConceptRecommendation, ExtractionStatus, ProjectInput, ProposalNarrative, OutcomeReasonType, ProposalOutcome, ProposalState, ProposalType, RetrievalEvidenceItem, SlideContent, SlideOutline, SupplementalInfo, UploadedDocument, VisionPageAnalysis, RfpDiagnosis, BrandProductIntelligence, DesignGuide, PatternLearningSummary, WinningReferencePatternBrief } from '@/lib/types';
 import { normalizeProposalType, proposalTypeLabels } from '@/lib/types';
 import { assessInputQuality } from '@/lib/inputQuality';
 import { sanitizeGeneratedSlides, sanitizeImagePlaceholderForPpt } from '@/lib/slideSanitizer';
@@ -1724,6 +1724,7 @@ const CLEARED_PROJECT_GENERATED_STATE = {
   selectedFinalConceptNameOption: undefined,
   selectedFinalConceptCandidateKey: undefined,
   conceptPatternLearningSummary: undefined,
+  winningReferenceBrief: undefined,
   outline: undefined,
   slides: undefined,
 } satisfies Partial<ProposalState>;
@@ -3662,10 +3663,15 @@ export default function Home() {
       const namingScopedDocuments = [...(state.uploadedDocuments ?? []), ...(state.dbUploadedDocuments ?? [])];
       const namingScopeProjectId = namingScopedDocuments.find((document) => document.dbProjectId)?.dbProjectId ?? null;
       const namingScopeDocumentIds = Array.from(new Set(namingScopedDocuments.map((document) => document.dbDocumentId).filter((id): id is string => Boolean(id))));
-      const namingPayload = { input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection: selectedDirectionForNaming, selectedStrategicDirection: selectedDirectionForNaming, selectedStrategicDirectionKey: directionKey, selectedStrategicDirectionId: selectedDirectionForNaming.conceptId, selectedStrategicDirectionConceptId: selectedDirectionForNaming.conceptId, directionAxis: selectedDirectionForNaming.directionAxis, strategicDirectionLabel: selectedDirectionForNaming.strategicDirectionLabel, oneLineStrategicBet: selectedDirectionForNaming.oneLineStrategicBet, representativePersuasionScene: selectedDirectionForNaming.representativePersuasionScene, generationNonce: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirectionForNaming.winningThesis, conceptLeap: selectedDirectionForNaming.conceptLeap, signatureProofIdea: selectedDirectionForNaming.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, brandProductIntelligence: state.brandProductIntelligence, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative, recentNameOptions: currentDirectionOptions.map((option) => option.conceptName), existingNamesForSelectedDirection: currentDirectionOptions.map((option) => option.conceptName), blockedOtherDirectionNames: otherDirectionOptions.map((option) => option.conceptName), projectId: namingScopeProjectId, documentIds: namingScopeDocumentIds };
+      // Reference-proposal concept-logic brief: pass the cached brief if already extracted, else the reference proposal's
+      // own chunks (documentType 'finalProposal') so the server distils it ONCE; the result is cached back into state.
+      const namingReferenceFields = state.winningReferenceBrief !== undefined
+        ? { winningReferenceBriefProvided: true, winningReferenceBrief: state.winningReferenceBrief }
+        : { winningReferenceChunks: documentChunks.filter((chunk) => chunk.documentType === 'finalProposal') };
+      const namingPayload = { ...namingReferenceFields, input: analysisInput, analysis: state.analysis, analysisSummary: state.analysis.projectOverview, selectedDirection: selectedDirectionForNaming, selectedStrategicDirection: selectedDirectionForNaming, selectedStrategicDirectionKey: directionKey, selectedStrategicDirectionId: selectedDirectionForNaming.conceptId, selectedStrategicDirectionConceptId: selectedDirectionForNaming.conceptId, directionAxis: selectedDirectionForNaming.directionAxis, strategicDirectionLabel: selectedDirectionForNaming.strategicDirectionLabel, oneLineStrategicBet: selectedDirectionForNaming.oneLineStrategicBet, representativePersuasionScene: selectedDirectionForNaming.representativePersuasionScene, generationNonce: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), primaryRfpConceptType: sanitizedNamingContext.primaryRfpConceptType, winningThesis: selectedDirectionForNaming.winningThesis, conceptLeap: selectedDirectionForNaming.conceptLeap, signatureProofIdea: selectedDirectionForNaming.signatureProofIdea, matrixType: sanitizedNamingContext.matrixType, activeMatrix: activeRelevantMatrix, currentRfpOnlyMode: state.conceptGenerationResult?.currentRfpOnlyMode, rfpDiagnosis: state.rfpDiagnosis, brandProductIntelligence: state.brandProductIntelligence, conceptDevelopmentLogic: state.conceptDevelopmentLogic, languageMode: 'bilingual', proposalNarrative: state.proposalNarrative, recentNameOptions: currentDirectionOptions.map((option) => option.conceptName), existingNamesForSelectedDirection: currentDirectionOptions.map((option) => option.conceptName), blockedOtherDirectionNames: otherDirectionOptions.map((option) => option.conceptName), projectId: namingScopeProjectId, documentIds: namingScopeDocumentIds };
       const namingResponse = await fetch('/api/concept-names', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, cache: 'no-store', body: JSON.stringify(namingPayload) });
       setFinalNamingDebug((current) => ({ ...current, responseStatus: namingResponse.status }));
-      const result = await parseJsonResponse<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string; patternLearningSummary?: PatternLearningSummary }> (namingResponse, '/api/concept-names');
+      const result = await parseJsonResponse<ConceptNameOptionsResult & { ok?: boolean; nameOptions?: ConceptNameOption[]; warning?: string; error?: string; details?: string; patternLearningSummary?: PatternLearningSummary; winningReferenceBrief?: WinningReferencePatternBrief | null }> (namingResponse, '/api/concept-names');
       if (!namingResponse.ok) throw new Error(result.details ? `${result.error || '컨셉명 생성 실패'} (${result.details})` : (result.error || '컨셉명 생성 중 오류가 발생했습니다.'));
       const blockedOptions = [...currentDirectionOptions, ...otherDirectionOptions];
       // Stamp every candidate with its project + direction provenance so the render filter can never show it under a
@@ -3684,7 +3690,7 @@ export default function Home() {
         // Stale response (direction/project changed while in flight): keep the captured direction's bucket up to date for
         // when the user returns, but do NOT overwrite the currently visible candidates or final selection.
         if (!stillCurrent) return { ...current, conceptNameOptionsByDirection: nextByDirection };
-        return { ...current, conceptNameOptions: nextOptions, conceptNameOptionsByDirection: nextByDirection, selectedFinalConceptNameOption: options.append ? current.selectedFinalConceptNameOption : undefined, selectedFinalConceptCandidateKey: options.append ? current.selectedFinalConceptCandidateKey : undefined, conceptPatternLearningSummary: result.patternLearningSummary ?? current.conceptPatternLearningSummary, outline: undefined, slides: undefined };
+        return { ...current, conceptNameOptions: nextOptions, conceptNameOptionsByDirection: nextByDirection, selectedFinalConceptNameOption: options.append ? current.selectedFinalConceptNameOption : undefined, selectedFinalConceptCandidateKey: options.append ? current.selectedFinalConceptCandidateKey : undefined, conceptPatternLearningSummary: result.patternLearningSummary ?? current.conceptPatternLearningSummary, winningReferenceBrief: result.winningReferenceBrief !== undefined ? result.winningReferenceBrief : current.winningReferenceBrief, outline: undefined, slides: undefined };
       });
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : '컨셉명 후보 생성 중 오류가 발생했습니다.';
@@ -3780,11 +3786,12 @@ export default function Home() {
       const scopedDocuments = [...(state.uploadedDocuments ?? []), ...(state.dbUploadedDocuments ?? [])];
       const projectId = scopedDocuments.find((document) => document.dbProjectId)?.dbProjectId ?? null;
       const documentIds = Array.from(new Set(scopedDocuments.map((document) => document.dbDocumentId).filter((id): id is string => Boolean(id))));
-      const outlineResponse = await postJson<{ slides: SlideOutline[]; designGuide?: DesignGuide; patternLearningSummary?: PatternLearningSummary } | SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, selectedStrategicDirection: state.selectedStrategicDirection, rfpDiagnosis: state.rfpDiagnosis, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, proposalNarrative: state.proposalNarrative, documentChunks, projectId, documentIds });
+      const outlineResponse = await postJson<{ slides: SlideOutline[]; designGuide?: DesignGuide; patternLearningSummary?: PatternLearningSummary; winningReferenceBrief?: WinningReferencePatternBrief | null } | SlideOutline[]>('/api/outline', { input: analysisInput, analysis: state.analysis, selectedConcept: state.selectedConcept, selectedStrategicDirection: state.selectedStrategicDirection, rfpDiagnosis: state.rfpDiagnosis, conceptDevelopmentLogic: state.conceptDevelopmentLogic, conceptGenerationResult: state.conceptGenerationResult, proposalNarrative: state.proposalNarrative, documentChunks, projectId, documentIds, winningReferenceBriefProvided: state.winningReferenceBrief !== undefined, winningReferenceBrief: state.winningReferenceBrief ?? null });
       const outline = Array.isArray(outlineResponse) ? outlineResponse : outlineResponse.slides;
       const designGuide = Array.isArray(outlineResponse) ? undefined : outlineResponse.designGuide;
       const patternLearningSummary = Array.isArray(outlineResponse) ? undefined : outlineResponse.patternLearningSummary;
-      setState((current) => ({ ...current, outline, designGuide, patternLearningSummary, slides: undefined }));
+      const outlineWinningReferenceBrief = Array.isArray(outlineResponse) ? undefined : outlineResponse.winningReferenceBrief;
+      setState((current) => ({ ...current, outline, designGuide, patternLearningSummary, winningReferenceBrief: outlineWinningReferenceBrief !== undefined ? outlineWinningReferenceBrief : current.winningReferenceBrief, slides: undefined }));
       setStep('outline');
     } catch (err) {
       setError(err instanceof Error ? err.message : '구조 생성 중 오류가 발생했습니다.');
@@ -4326,12 +4333,13 @@ export default function Home() {
                 </div>
                 {state.conceptPatternLearningSummary?.used && (
                   <details className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3">
-                    <summary className="cursor-pointer text-sm font-bold text-slate-600">수주 패턴 참고 · 신뢰도 {state.conceptPatternLearningSummary.confidence === 'high' ? '높음' : state.conceptPatternLearningSummary.confidence === 'medium' ? '보통' : '낮음'}</summary>
+                    <summary className="cursor-pointer text-sm font-bold text-slate-600">{state.conceptPatternLearningSummary.referenceBriefSummary ? (state.conceptPatternLearningSummary.referenceBriefIsNeutral ? '업로드 제안 구조 참고' : '수주안 구조 참고') : '수주 패턴 참고'} · 신뢰도 {state.conceptPatternLearningSummary.confidence === 'high' ? '높음' : state.conceptPatternLearningSummary.confidence === 'medium' ? '보통' : '낮음'}</summary>
                     <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
+                      {state.conceptPatternLearningSummary.referenceBriefSummary && <li>참고한 구조: {state.conceptPatternLearningSummary.referenceBriefSummary}</li>}
                       {state.conceptPatternLearningSummary.winningPatternCount > 0 && <li>유사 수주 제안서의 컨셉 도출 로직 구조를 참고했습니다.</li>}
                       {state.conceptPatternLearningSummary.riskCount > 0 && <li>미수주 제안서의 약점 패턴은 리스크로만 피했습니다.</li>}
                       {state.conceptPatternLearningSummary.contentPatternUsed && <li>콘텐츠 전개에는 유사 프로젝트의 패턴을 참고했습니다.</li>}
-                      <li className="text-xs text-slate-400">현재 프로젝트에 업로드한 레퍼런스 제안서의 구조·논리만 참고하며, 과거 제안의 이름·슬로건·원문은 사용하지 않습니다.</li>
+                      <li className="text-xs text-slate-400">과거 제안의 이름·슬로건·페이지 제목·원문은 복사하지 않고, 현재 RFP에 맞게 논리 구조만 변환했습니다.</li>
                     </ul>
                   </details>
                 )}
@@ -4424,8 +4432,9 @@ export default function Home() {
             </div>
             {state.patternLearningSummary?.used && (
               <details className="mb-4 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3">
-                <summary className="cursor-pointer text-sm font-bold text-slate-600">수주 패턴 참고 {state.patternLearningSummary.winningPatternCount}개 · 신뢰도 {state.patternLearningSummary.confidence === 'high' ? '높음' : state.patternLearningSummary.confidence === 'medium' ? '보통' : '낮음'}</summary>
+                <summary className="cursor-pointer text-sm font-bold text-slate-600">{state.patternLearningSummary.referenceBriefSummary ? (state.patternLearningSummary.referenceBriefIsNeutral ? '업로드 제안 구조 참고' : '수주안 구조 참고') : '수주 패턴 참고'} · 신뢰도 {state.patternLearningSummary.confidence === 'high' ? '높음' : state.patternLearningSummary.confidence === 'medium' ? '보통' : '낮음'}</summary>
                 <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
+                  {state.patternLearningSummary.referenceBriefSummary && <li>참고한 구조: {state.patternLearningSummary.referenceBriefSummary}</li>}
                   {state.patternLearningSummary.winningPatternCount > 0 && <li>유사 수주 제안서의 설득 구조를 참고했습니다.</li>}
                   {state.patternLearningSummary.riskCount > 0 && <li>미수주 제안서의 약점 패턴을 리스크로 반영했습니다.</li>}
                   {state.patternLearningSummary.contentPatternUsed && <li>콘텐츠 구성에는 유사 프로젝트의 미디어/체험 패턴을 참고했습니다.</li>}
