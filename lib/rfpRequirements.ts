@@ -136,6 +136,7 @@ const supplementGroups: Array<{ title: string; pattern: RegExp; direction: strin
   { title: 'Budget & Scope', pattern: /예산|견적|비용|금액|범위|scope|budget|제외|포함/i, direction: '포함/제외 범위, 견적 요약, 과업 경계를 명확히 정리합니다.' },
   { title: 'System / Equipment', pattern: /시스템|장비|LED|음향|조명|프롬프터|키오스크|등록|equipment|system/i, direction: '현장 시스템과 장비 운영 기준, 백업 운영 방식을 통합 제시합니다.' },
   { title: 'Setup / Dismantling', pattern: /설치|철거|셋업|반입|반출|시공|전환|dismantling|setup/i, direction: '설치, 전환, 철거 일정과 현장 반입·반출 계획을 묶어 관리합니다.' },
+  { title: 'Space Execution / Feasibility', pattern: /리모델링|공간\s*개선|외관\s*개선|내부\s*개선|입구\s*개선|인테리어|renovation|remodel|interior\s*fit|space\s*improvement/i, direction: '공간 리모델링·개선·시공 요구는 방문객 경험 콘텐츠가 아니라 실행/타당성/공간 구현 관점에서 범위·일정·구현 방식·feasibility로 정리합니다.' },
   { title: 'Content Production', pattern: /콘텐츠|영상|디자인|제작|KV|PPT|템플릿|content|production/i, direction: '제작물의 역할, 산출 형식, 검수 기준을 콘텐츠 제작 계획으로 통합합니다.' },
   { title: 'Hospitality / Reception', pattern: /의전|리셉션|접수|안내|케이터링|만찬|네트워킹|hospitality|reception/i, direction: '등록, 안내, 의전, 케이터링과 네트워킹 운영을 참석자 경험 관점에서 정리합니다.' },
   { title: 'Compliance / Exclusions', pattern: /법규|안전|보안|개인정보|보험|준수|제외|리스크|compliance|risk/i, direction: '준수 사항, 리스크, 제외 조건과 확인 필요 범위를 명확히 분리합니다.' },

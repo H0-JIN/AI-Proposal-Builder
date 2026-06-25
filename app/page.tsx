@@ -2286,6 +2286,19 @@ async function downloadPptx(input: ProjectInput, slides: SlideContent[], selecte
       return;
     }
 
+    // ===== CONCEPT STRATEGY: split — principle bullets + a diagram card (distinct from the concept hero and overview) =====
+    if (section === 'conceptStrategy') {
+      const cardX = 7.0;
+      slide.addShape(pptx.ShapeType.rect, { x: cardX, y: 1.7, w: 5.7, h: 5.0, fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1' } });
+      slide.addText((getImagePlaceholder(slideData) || 'CONCEPT DIAGRAM').toUpperCase(), { x: cardX, y: 4.0, w: 5.7, h: 0.5, align: 'center', valign: 'middle', fontSize: 11, color: '94A3B8', bold: true, fontFace: FONT });
+      if (hasText(heroCopy)) slide.addText(heroCopy, { x: 0.62, y: 1.7, w: 6.0, h: 0.9, fontSize: 18, bold: true, color: C_MAIN, fontFace: FONT, valign: 'top' });
+      const stratBullets = contentBullets(slideData, false).slice(0, 5);
+      if (stratBullets.length) slide.addText(stratBullets.map((b) => `• ${b}`).join('\n'), { x: 0.62, y: 2.75, w: 6.0, h: 3.7, fontSize: 13, color: C_INK, fontFace: FONT, valign: 'top', lineSpacingMultiple: 1.25, fit: 'shrink' });
+      else if (hasText(slideData.mainCopy)) slide.addText(slideData.mainCopy, { x: 0.62, y: 2.75, w: 6.0, h: 3.7, fontSize: 13, color: C_INK, fontFace: FONT, valign: 'top', lineSpacingMultiple: 1.25, fit: 'shrink' });
+      addFooter(slide, num);
+      return;
+    }
+
     // ===== DEFAULT text-led (overview / approach / operation) — clean, no image card, no module dump =====
     if (hasText(slideData.keyMessage)) slide.addText(slideData.keyMessage, { x: 0.58, y: 1.36, w: 11.7, h: 0.5, fontSize: 13, color: C_SUB, bold: true, fontFace: FONT });
     const cap = slideData.textDensity === 'low' ? 3 : slideData.textDensity === 'high' ? 7 : 5;
