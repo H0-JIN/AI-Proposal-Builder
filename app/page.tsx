@@ -2024,7 +2024,7 @@ function buildCurrentProjectKey(input?: ProjectInput, documents?: UploadedDocume
 }
 
 
-const INVALID_DIRECTION_LABEL_PATTERN = /(KINTEX|2025|12월|2,?520㎡|Hero\s*콘텐츠\s*40%|콘텐츠\s*60%|B2B\s*대상|전시\s*목표|콘텐츠\s*개발|운영\s*구성|실체\s*Proof\s*장면|Proof\s*장면|\d{4}|\d+%|\d+㎡|킨텍스)/i;
+const INVALID_DIRECTION_LABEL_PATTERN = /(KINTEX|COEX|BEXCO|킨텍스|코엑스|벡스코|20\d{2}|\d{1,2}월|\d{1,2}일|\d+%|\d+[,.]?\d*\s*(?:㎡|m2|m²)|B2B\s*대상|B2C\s*대상|VIP|방문객|관람객|고객|타깃|대상|전시\s*목표|콘텐츠\s*개발|운영\s*구성|부스|산출물|일정|기간|장소|규모|Hero\s*콘텐츠|Proof\s*장면)/i;
 const INTERNAL_DIRECTION_AXIS_PATTERN = /\b(?:category_shift|audience_perception_change|representative_position|technology_reality_proof|product_value_proof|process_trust|ecosystem_proof|system\/ecosystem_proof|spatial_journey|brand_memory|operational_confidence|evaluator_clarity|emotional_affinity|signature_scene|audience_understanding|directionAxis|proof|evidence)\b/gi;
 const AXIS_USER_LABELS: Record<string, string> = { category_shift: '카테고리 관점 전환', audience_perception_change: '관람객 인식 전환', representative_position: '대표 포지션 각인', technology_reality_proof: '기술 현실감 설득', product_value_proof: '제품 가치 체감', process_trust: '과정 신뢰 형성', ecosystem_proof: '생태계 설득', 'system/ecosystem_proof': '생태계 설득', spatial_journey: '공간 여정 설계', brand_memory: '브랜드 기억 형성', operational_confidence: '운영 확신 설계', evaluator_clarity: '심사 이해도 강화', emotional_affinity: '정서적 친밀감 형성', signature_scene: '대표 장면 각인', audience_understanding: '관람 이해 전환', proof: '설득 포인트', evidence: '근거' };
 function userFacingDirectionCopy(value = '', fallback = '') {
@@ -2032,7 +2032,7 @@ function userFacingDirectionCopy(value = '', fallback = '') {
   return clean || fallback;
 }
 
-const REQUIREMENT_SUMMARY_PATTERN = /(일정|장소|부스|규모|평가|배점|납품|제출|착수|완료|대상|운영\s*구성|콘텐츠\s*개발)/;
+const REQUIREMENT_SUMMARY_PATTERN = /(일정|장소|부스|규모|평가|배점|납품|제출|착수|완료|대상|운영\s*구성|콘텐츠\s*개발|제작|설치|시공|행사|프로젝트|전시관|홍보관|쇼룸)$/;
 
 type NormalizedStrategicDirection = Pick<ConceptCandidate, 'conceptId' | 'strategicDirectionLabel' | 'directionAxis' | 'oneLineStrategicBet' | 'conceptLeap' | 'signatureProofIdea' | 'mainRisk'> & {
   winningThesis?: ConceptCandidate['winningThesisUse'];
@@ -2047,9 +2047,12 @@ function isValidStrategicDirectionLabel(label?: string) {
   const value = (label || '').trim();
   if (!value || INVALID_DIRECTION_LABEL_PATTERN.test(value)) return false;
   const words = value.split(/[\s/·|]+/).filter(Boolean);
-  if (words.length > 8) return false;
-  if (REQUIREMENT_SUMMARY_PATTERN.test(value) && words.length > 4) return false;
-  return true;
+  if (words.length < 2 || words.length > 8) return false;
+  if (/(은|는|이|가|을|를|의|에|에서|으로|로|와|과|및)$/.test(value)) return false;
+  if (REQUIREMENT_SUMMARY_PATTERN.test(value)) return false;
+  if (/^.{2,24}\s+(?:경험|체험|전시|부스|행사|공간|대상|고객|방문객|관람객|일정|프로젝트|콘텐츠)$/.test(value)) return false;
+  if (/^(?:현장감|Presence|연결|전환|경험|체험|가치|신뢰|여정|흐름)$/i.test(value)) return false;
+  return /(전환|재정의|증명|실증|확신|신뢰|각인|선언|리더십|포지션|구조화|체계화|차별|설득|이해|기억|태도|인식|관점)/.test(value);
 }
 
 function normalizeSelectedDirectionForNaming(concept?: ConceptCandidate): NormalizedStrategicDirection | undefined {
@@ -3946,7 +3949,7 @@ export default function Home() {
       const directionValidation = validateStrategicDirectionForDisplay(selectedDirection);
       const selectedDirectionForNaming = normalizeSelectedDirectionForNaming(selectedDirection);
       setFinalNamingDebug({ selectedDirectionKey: directionKey, missingFields: directionValidation.missingFields });
-      if (!selectedDirectionForNaming || !directionValidation.canGenerateConceptNames) throw new Error(`missing_fields=${directionValidation.missingFields.join(',') || 'invalid_direction'}`);
+      if (!selectedDirectionForNaming || !directionValidation.canGenerateConceptNames) throw new Error(`invalid_direction_label_or_missing_fields=${directionValidation.missingFields.join(',') || 'invalid_direction'}`);
       const priorDirectionOptions = state.conceptNameOptionsByDirection?.[directionKey] ?? [];
       const otherDirectionOptions = Object.entries(state.conceptNameOptionsByDirection ?? {}).filter(([key]) => key !== directionKey).flatMap(([, value]) => value);
       const sanitizedNamingContext = sanitizeConceptContextByRfpType({

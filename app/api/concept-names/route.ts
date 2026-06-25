@@ -5,6 +5,7 @@ import { normalizeProposalType } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
 import { getActiveMatrix, sanitizeConceptContextByRfpType } from '@/lib/conceptContextSanitizer';
 import { extractRfpConceptHierarchy, type RfpProvidedConceptHierarchy } from '@/lib/rfpConceptHierarchy';
+import { isWeakGenericConceptName, validateStrategicDirectionLabel } from '@/lib/strategicDirectionValidation';
 import { buildPatternLearningSummary, formatWinningPatternInfluenceForConceptNaming, retrieveProposalPatternsForOutline } from '@/lib/proposalPatternOutline';
 import { buildWinningReferencePatternBrief } from '@/lib/winningReferencePatternBrief';
 import type { DocumentChunk } from '@/lib/rag';
@@ -122,6 +123,7 @@ const BRAND_NOUN_GENERIC_TAILS = /^(experience|journey|moment|signature|insight|
 function isWeakConceptName(name: string, input: { clientName?: string; projectName?: string }) {
   const trimmed = (name || '').trim();
   if (!trimmed) return true;
+  if (isWeakGenericConceptName(trimmed)) return true;
   if (SPEC_BANNED_NAME_PATTERNS.some((pattern) => pattern.test(trimmed))) return true;
   const brandTokens = [input.clientName, input.projectName]
     .filter(Boolean)
@@ -543,6 +545,15 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { input: ProjectInput; analysis: AnalysisResult; analysisSummary?: string; selectedDirection: ConceptCandidate; selectedStrategicDirection?: ConceptCandidate; proposalNarrative?: ProposalNarrative; conceptDevelopmentLogic?: ConceptDevelopmentLogic; entityDifferentiationMatrix?: EntityDifferentiationItem[]; relevantMatrix?: unknown; activeMatrix?: unknown; brandExperienceMatrix?: BrandExperienceMatrixItem[]; matrixType?: MatrixType; primaryRfpConceptType?: string; languageMode?: string; rfpDiagnosis?: RfpDiagnosis; brandProductIntelligence?: BrandProductIntelligence; recentNameOptions?: string[]; existingNamesForSelectedDirection?: string[]; blockedOtherDirectionNames?: string[]; projectId?: string | null; documentIds?: string[]; winningReferenceChunks?: DocumentChunk[]; winningReferenceBrief?: WinningReferencePatternBrief | null; winningReferenceBriefProvided?: boolean; candidateCount?: number; candidateRole?: string };
     if (!body.input || !body.analysis || (!body.selectedDirection && !body.selectedStrategicDirection)) return json(errorResponse('프로젝트 입력값, 분석 결과, 선택한 전략 방향이 필요합니다.'), { status: 400 });
     body.selectedDirection = normalizeSelectedDirectionForNaming(body) as ConceptCandidate;
+    const directionLabelValidation = validateStrategicDirectionLabel(body.selectedDirection.strategicDirectionLabel || '', {
+      clientName: body.input.clientName,
+      brandName: body.input.clientName,
+      eventName: body.input.projectName,
+      projectName: body.input.projectName,
+      targetAudience: body.analysis.targetInfo,
+      evidenceAnchors: [body.analysis.projectOverview, body.analysis.targetInfo, ...(body.analysis.requiredDeliverables ?? []), ...(body.analysis.requiredScope ?? []), ...(body.analysis.productInfo ?? [])].filter(Boolean) as string[],
+    });
+    if (!directionLabelValidation.valid) return json(errorResponse('전략 방향 라벨이 원시 RFP 근거처럼 보여 컨셉명 생성을 중단했습니다. 전략 방향을 먼저 수리해 주세요.', `invalid_direction_label=${directionLabelValidation.reasons.join(',')}`), { status: 422 });
 
     const sanitizedContext = sanitizeConceptContextByRfpType({
       primaryRfpConceptType: body.selectedDirection.rfpConceptType || body.primaryRfpConceptType || body.analysis.primaryRfpConceptType || 'unknown',
