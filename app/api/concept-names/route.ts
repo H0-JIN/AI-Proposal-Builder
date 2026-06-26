@@ -193,7 +193,7 @@ function isDescriptiveOrStrategyLabelName(name: string, dir: ConceptCandidate): 
 }
 
 // Stricter-filter instruction appended to the prompt for the single allowed regeneration when the first pass is all-weak.
-const STRICTER_RETRY_ADDENDUM = '\n\n[재생성 지시] 앞선 후보가 너무 일반적이거나 선택한 전략 방향과 약하게 연결되어 모두 거부되었다. 더 엄격하게 다시 생성하라: (1) 가치 증명/기억의 증명/인식 전환/경험 이해/가치 체험/실체화/한눈에 보는/___ 중심/___ 시그니처/Core Experience/Insight/Panorama/Signature/Experience/Journey/Moment 형태를 절대 쓰지 말 것. (2) 선택한 전략 방향의 directionAxis와 대표 설득 장면, 그리고 currentRfpVocabularySet의 실제 RFP 어휘에서 직접 도출할 것. (3) 브랜드/클라이언트명 단독 + 일반 명사 조합 금지. (4) 다른 RFP에도 그대로 쓸 수 있는 범용 이름 금지. (5) 표지 제목으로 바로 쓸 수 있는 짧고 구체적인 이름만. (6) 전시/콘텐츠/에너지/기술/쇼케이스 유형이면 모든 후보가 클라이언트·브랜드명 중심이 되지 않게 하고, 선택한 전략 방향의 관점·경험·전환·공간/콘텐츠 프레임을 표현하는 제안 표지 콘셉트 타이틀로 만든다. 후보마다 어휘와 논리를 다르게 한다. (7) 전략을 설명하는 서술형/전략 라벨/방향 라벨을 그대로 옮긴 이름, 슬로건이 있어야 의미가 생기는 이름은 거부한다. Concept Frame Synthesis의 symbolicFrame·experientialImage에서 압축한, 단독으로 서는 콘셉트 타이틀만 출력한다.';
+const STRICTER_RETRY_ADDENDUM = '\n\n[재생성 지시] 앞선 후보가 너무 일반적이거나 선택한 전략 방향과 약하게 연결되어 모두 거부되었다. 더 엄격하게 다시 생성하라: (1) 가치 증명/기억의 증명/인식 전환/경험 이해/가치 체험/실체화/한눈에 보는/___ 중심/___ 시그니처/Core Experience/Insight/Panorama/Signature/Experience/Journey/Moment 형태를 절대 쓰지 말 것. (2) 선택한 전략 방향의 directionAxis와 대표 설득 장면, currentRfpVocabularySet의 실제 RFP 어휘에서 도출하되, 선택 방향의 라벨 단어만 반복하지 말고 현재 RFP 전체·brandProductIntelligence·confirmed diagnosis를 통합한 "전체 제안의 대표 제목"으로 만들 것. (3) 브랜드/클라이언트명 단독 + 일반 명사 조합 금지. (4) 다른 RFP에도 그대로 쓸 수 있는 범용 이름 금지. (5) 표지 제목으로 바로 쓸 수 있는 짧고 구체적인 이름만. (6) 전시/콘텐츠/에너지/기술/쇼케이스 유형이면 모든 후보가 클라이언트·브랜드명 중심이 되지 않게 하고, 선택한 전략 방향의 관점·경험·전환·공간/콘텐츠 프레임을 표현하는 제안 표지 콘셉트 타이틀로 만든다. 후보마다 어휘와 논리를 다르게 한다. (7) 전략을 설명하는 서술형/전략 라벨/방향 라벨을 그대로 옮긴 이름, 슬로건이 있어야 의미가 생기는 이름은 거부한다. Concept Frame Synthesis의 symbolicFrame·experientialImage에서 압축한, 단독으로 서는 콘셉트 타이틀만 출력한다.';
 
 function normalizeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9가-힣]/gi, '');
@@ -427,7 +427,7 @@ function isLatinDominantName(value: string): boolean {
 // identity is itself the concept. Generic category signals only — no hardcoded brand/company/RFP names.
 function decidePrimaryConceptLanguage(body: { input: ProjectInput; analysis: AnalysisResult; selectedDirection: ConceptCandidate; rfpDiagnosis?: RfpDiagnosis }): { language: 'english_default' | 'korean_primary'; reason: string } {
   const text = [body.input.projectName, body.input.clientName, body.input.briefText, body.analysis?.projectOverview, body.selectedDirection?.strategicDirectionLabel, body.selectedDirection?.rfpConceptType, body.rfpDiagnosis?.coreWinningCondition].filter(Boolean).join(' \n ');
-  const koreanCultural = /전통\s*문화|문화\s*유산|무형\s*유산|국가\s*유산|문화재|민속|향토|향교|서원|국악|판소리|한복|한지|종가|세시|마을\s*공동체|지역\s*공동체|지역\s*주민|주민\s*참여|공공\s*문화|생활\s*문화|역사\s*문화|heritage|folk\s*culture|intangible\s*cultural|traditional\s*korean/i.test(text);
+  const koreanCultural = /전통\s*문화|전통\s*놀이|문화\s*유산|문화\s*교류|무형\s*유산|국가\s*유산|문화재|민속|향토|향교|서원|국악|판소리|한복|한지|종가|세시|한국관|마을\s*공동체|지역\s*공동체|지역\s*주민|주민\s*참여|공공\s*문화|생활\s*문화|역사\s*문화|heritage|folk\s*culture|intangible\s*cultural|traditional\s*korean|korea\s*pavilion/i.test(text);
   if (koreanCultural) return { language: 'korean_primary', reason: 'Korean/local/cultural/heritage identity is the concept' };
   return { language: 'english_default', reason: 'global/B2B/technology/exhibition/brand-showcase/international context defaults to an English title with Korean subtitle/slogan' };
 }
@@ -476,14 +476,15 @@ function buildFinalOptions(
   });
   // Cross-option guard (cover-title types only): if EVERY surviving name is brand/client-name-centered, the set reads
   // like brand+noun labels rather than proposal-cover concept titles — drop the whole pool so the regenerate-once path
-  // fires (and, if still all brand-centered, the existing 422 error). Requires >=2 so a single lone name is not zeroed.
+  // fires. If it is still all brand-centered after the retry, the candidates are now soft-shown (softOptions) with a
+  // namingQualityNotice reason 'all_brand_centered_after_retry' instead of a hard 422. Requires >=2 so a single lone name is not zeroed.
   const brandTokens = brandTokensOf(body.input);
   const allBrandCentered = coverTitleFamily && quality.length >= 2 && quality.every((entry) => isBrandCenteredName(entry.option.conceptName || '', brandTokens));
   const qualityPool = allBrandCentered ? [] : quality;
   // Soft preference: still rank vocab-matching names first within the quality pool.
   const vocabMatched = qualityPool.filter((entry) => entry.usesVocabulary);
   const ranked = (vocabMatched.length ? [...vocabMatched, ...qualityPool.filter((entry) => !entry.usesVocabulary)] : qualityPool).map((entry) => entry.option);
-  const options = ranked.slice(0, 3).map((option, index) => {
+  const toFinalOption = (option: (typeof prepared)[number]['option'], index: number) => {
     const whyItFits = option.whyItFitsRfp || option.whyItFits || option.whyItFitsSelectedDirection || option.shortMeaning;
     const mainRisk = option.mainRisk || option.risk || '';
     // Scores / validation / expandability are server-derived (no longer required from the model output).
@@ -510,8 +511,12 @@ function buildFinalOptions(
       expandabilityScore: option.expandabilityScore ?? 4,
       risk: option.risk ?? mainRisk,
     };
-  });
-  return { options, diag: { returned: (result.options ?? []).length, deduped: deduped.length, safe: safe.length, quality: quality.length, blockedNameDrops, coverTitleFamily, allBrandCentered, descriptiveDrops } };
+  };
+  const options = ranked.slice(0, 3).map(toFinalOption);
+  // Soft set: the model's de-duplicated candidates BEFORE the firewall/quality gate, so a weak-but-present pool can be
+  // surfaced with a warning instead of a hard 422. Empty only when there were no de-duplicated candidates at all.
+  const softOptions = prepared.map((entry) => entry.option).slice(0, 3).map(toFinalOption);
+  return { options, softOptions, diag: { returned: (result.options ?? []).length, deduped: deduped.length, safe: safe.length, quality: quality.length, blockedNameDrops, coverTitleFamily, allBrandCentered, descriptiveDrops } };
 }
 
 export async function POST(request: Request) {
@@ -594,7 +599,9 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
 - 필드 역할 분리: conceptName=압축 타이틀(설명/문장/요약 금지), oneLineSlogan=타이틀을 설명·날카롭게(타이틀보다 직접적이어도 됨), shortMeaning=타이틀이 왜 맞는지, whyItFitsRfp=RFP 근거. conceptName이 다른 필드의 역할을 대신하지 말라. forbiddenDescriptiveWords를 타이틀의 주 단어로 쓰지 말라.
 - 각 option의 oneLineSlogan은 conceptName이 주장하는 승리 논리를 1문장으로 설명한다. whyItFitsSelectedDirection은 선택한 전략 방향과 confirmed diagnosis의 coreWinningCondition, strategicTension, proofBurden, signatureProofIdea 중 최소 2개와 연결한다.
 - generic English word combinations, vague abstract nouns, consulting-style labels, literal RFP summaries, any-name-fits-any-exhibition 후보를 거부하고 재생성한다.\n- final slogan 후보는 oneLineSlogan에 쓰되, conceptName에 슬로건 문장을 넣지 말라.\n- Generate names only for the selected strategic direction. The names must not be usable for the other two directions. If a name could fit another direction with no change, reject it. 전체 전략 방향 3안을 재생성하지 말고 선택한 primaryRfpConceptType과 선택한 전략 방향 하나만 기반으로 네이밍하라.
-- Use the selected direction’s directionAxis and 대표 설득 장면 as the primary naming source.
+- 선택한 전략 방향(directionAxis·대표 설득 장면·라벨)은 conceptName의 "참고 축"일 뿐이다. 최종 conceptName은 선택 방향의 단어만 반복하거나 한 장면·한 공간 연출·한 키워드만 설명하는 이름이 아니라, 현재 RFP 전체 + brandProductIntelligence + confirmed diagnosis + 선택한 방향을 통합해 제안서 표지에 올릴 수 있는 "전체 제안의 대표 제목"이어야 한다.
+- 약한 후보로 보고 다시 쓸 것: 선택 방향 라벨의 단어(예: 신뢰/빛/직관/Trust/Light/Clarity/Intuition/Perception 등)만 조합한 이름, 특정 효과·장면·공간 연출만 설명하는 이름, 어떤 브랜드 경험관·전시에도 그대로 붙일 수 있는 범용 영어/추상 명사 조합(예: Light/Flow/Path/Trace/Trust/Clarity + of/with + 일반명사). 이 단어들은 hard-ban이 아니라 현재 RFP 맥락과 결합되지 않을 때만 약하다.
+- [조건부] 먼저 RFP 유형을 판단해 visitor center / factory tour / brand experience / customer journey / product understanding / process proof / trust-building / consumer brand experience(예: 포카리)일 때만 적용: conceptName이 "방문객이 브랜드·제품을 어떻게 다시 이해하게 되는지"를 담고, 현재 RFP에서 실제로 중요한 축(제품/공정/품질/신뢰/체험 동선/방문 전후 인식 변화) 중 하나 이상을 반영한다. 이 기준 때문에 후보를 '브랜드 기억 1개 / 공정 신뢰 1개 / 방문 동선 1개'처럼 역할별로 고정 배분하지는 말라(위 (A)주제형/(B)장면형/(C)선언형 다양화는 그대로 유지). 이 기준을 다른 유형(글로벌 B2B 기술 전시·엑스포 국가관·제품 홍보관 등)에 강제하지 말라. 한국관·한국 전시·전통놀이·문화교류는 자연스러운 한글 컨셉명을 우선 고려한다.
 - 추가 후보 요청이면 Existing names for selected direction과 Names already generated for other directions를 모두 피하고, 같은 slogan structure / strategic claim / shortMeaning 반복을 거부하라.
 - 각 후보 생성 전 내부적으로 What must this proposal prove? What belief shift should evaluator make? Strongest claim? Cover first-page fit? Expandable to space/content/media/operation? 을 검증하고 실패하면 버려라.
 - 위 Concept Name Language Policy의 네이밍 시퀀스를 따른다: Concept Frame Synthesis → 강한 한국어 컨셉 시드 → (english_default면) 시드를 영어 conceptName으로 trans-create → koreanSubtitle=시드 의미 보존 → 한국어 oneLineSlogan. 영어 conceptName은 시드에서 trans-create한 타이틀이어야 하고 새로 만든 범용 영어 라벨/비즈니스 키워드/일반 명사가 아니다. 영어가 한국어 시드보다 약하거나 더 범용/추상적이면 거부하고 재작성한다. korean_primary면 한국어 시드가 conceptName이며 여전히 설명 문장/서술형 라벨이 아니어야 한다.
@@ -620,10 +627,23 @@ Names already generated for other directions to block: ${body.blockedOtherDirect
       built = buildFinalOptions(result, body, currentRfpVocabularySet);
     }
     if (!built.options.length) {
-      const { returned, deduped, safe, quality, blockedNameDrops, descriptiveDrops } = built.diag;
-      // When the model kept producing descriptive / strategy-label names that could not be turned into concept titles,
-      // surface the conversion-specific error; otherwise the generic weak-naming error.
+      const { returned, deduped, safe, quality, blockedNameDrops, descriptiveDrops, allBrandCentered } = built.diag;
       const conversionFailure = descriptiveDrops > 0 && safe > 0;
+      // Accurate dev reason: allBrandCentered zeroes a full quality pool (safe>0/quality>0), so it is not "weak".
+      const softReason = allBrandCentered ? 'all_brand_centered_after_retry' : (conversionFailure ? 'descriptive_after_retry' : 'weak_after_retry');
+      // Soft warning, not a hard failure: the model DID return de-duplicated candidates (>=1) but the quality firewall
+      // judged them all weak. Show those candidates with a user-facing warning + dev diagnostics instead of blocking with
+      // a 422. Genuine failures (no de-duplicated candidate at all, JSON/schema errors, exceptions) still fail below / in
+      // the catch. No fallback names are synthesized — softOptions are the model's own de-duplicated outputs.
+      if (built.softOptions.length) {
+        return json({
+          ...successResponse({ ...result, selectedDirectionId: body.selectedDirection.conceptId, options: built.softOptions }),
+          patternLearningSummary,
+          warning: '품질 필터가 약하다고 평가한 컨셉명 후보를 그대로 표시합니다. 더 강한 후보가 필요하면 컨셉명을 다시 생성해 주세요.',
+          namingQualityNotice: { soft: true, reason: softReason, returned, deduped, safe, quality, blockedNameDrops, descriptiveDrops, allBrandCentered },
+        });
+      }
+      // Genuine failure: no de-duplicated candidate to show at all.
       const message = conversionFailure ? DESCRIPTIVE_NAMING_ERROR : WEAK_NAMING_ERROR;
       return json(errorResponse(message, `reason=${conversionFailure ? 'descriptive_after_retry' : 'weak_after_retry'}; returned=${returned}; deduped=${deduped}; safe=${safe}; quality=${quality}; blockedNameDrops=${blockedNameDrops}; descriptiveDrops=${descriptiveDrops}`), { status: 422 });
     }
