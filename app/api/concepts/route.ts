@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { conceptCandidatesJsonSchema } from '@/lib/schemas';
-import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProjectInput, ProposalNarrative, RfpConceptType, MatrixType, BrandExperienceMatrixItem, RfpDiagnosis, BrandProductIntelligence } from '@/lib/types';
+import type { AnalysisResult, ConceptCandidate, ConceptCandidatesResult, ProjectInput, ProposalNarrative, RfpConceptType, MatrixType, BrandExperienceMatrixItem, RfpDiagnosis, BrandProductIntelligence, StrategicDirection } from '@/lib/types';
 import type { ChunkCategory, DocumentChunk } from '@/lib/rag';
 import { proposalTypeLabels } from '@/lib/types';
 import { createStructuredJson } from '@/lib/openai';
@@ -1097,6 +1097,7 @@ export async function POST(request: Request) {
       proposalNarrative?: ProposalNarrative;
       rfpDiagnosis?: RfpDiagnosis;
       brandProductIntelligence?: BrandProductIntelligence;
+      selectedStrategicDirection?: StrategicDirection;
       documentChunks?: DocumentChunk[];
       options?: { retryLight?: boolean; maxCandidates?: number; maxProposalPatterns?: number };
       conceptPromptVersion?: string;
@@ -1227,8 +1228,12 @@ export async function POST(request: Request) {
       'mainStrength와 mainRisk는 짧은 중립 문장으로 작성한다. mainRisk는 결함이 아니라 해당 방향 선택 시 보완할 trade-off로 설명한다.',
     ].join('\n');
 
-    const userPrompt = `제안서 유형: ${proposalTypeLabels[effectiveProposalType]}
+    const selectedDirectionSeed = body.selectedStrategicDirection
+      ? `\n[선택된 전략 방향 — AUTHORITATIVE]\n사용자가 아래 전략 방향을 이미 선택했다. 새로운 전략 방향을 만들지 말고, 이 선택된 방향을 실현하는 컨셉 후보 3개를 생성하라. 3개 후보는 모두 이 방향을 따르되 컨셉 표현/실행 각도/네이밍 방향에서 서로 달라야 한다.\n- strategicDirectionLabel: ${body.selectedStrategicDirection.strategicDirectionLabel}\n- oneLineSummary: ${body.selectedStrategicDirection.oneLineSummary}\n- whyThisDirectionExists: ${body.selectedStrategicDirection.whyThisDirectionExists}\n- representativePersuasionScene: ${body.selectedStrategicDirection.representativePersuasionScene}\n- conceptLeap: ${body.selectedStrategicDirection.conceptLeap}\n- signatureProofIdea: ${body.selectedStrategicDirection.signatureProofIdea}\n- evidenceUsed: ${(body.selectedStrategicDirection.evidenceUsed ?? []).join(' / ')}\n`
+      : '';
 
+    const userPrompt = `제안서 유형: ${proposalTypeLabels[effectiveProposalType]}
+${selectedDirectionSeed}
 Request Debug Metadata (캐시 방지 및 재생성 추적):
 ${JSON.stringify(metadata, null, 2)}
 

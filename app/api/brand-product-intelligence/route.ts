@@ -4,6 +4,7 @@ import type { AnalysisResult, BrandProductIntelligence, ProjectInput, RfpDiagnos
 import { createStructuredJson } from '@/lib/openai';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 function compact(value: unknown, max = 9000) {
   const text = JSON.stringify(value, null, 2);

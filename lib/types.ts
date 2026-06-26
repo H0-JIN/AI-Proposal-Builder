@@ -840,6 +840,26 @@ export interface SlideContent extends SlideNarrativeMetadata {
   };
 }
 
+export interface StrategicDirection {
+  id: string;
+  strategicDirectionLabel: string;
+  oneLineSummary: string;
+  whyThisDirectionExists: string;
+  selectedReason: string;
+  representativePersuasionScene: string;
+  conceptLeap: string;
+  signatureProofIdea: string;
+  mainStrength: string;
+  mainRisk: string;
+  evidenceUsed: string[];
+}
+
+export interface StrategicDirectionsResult {
+  directions: StrategicDirection[];
+  generatedAt?: string;
+  promptVersion?: string;
+}
+
 export interface ProposalState {
   input: ProjectInput;
   supplementalInfo?: SupplementalInfo;
@@ -849,11 +869,12 @@ export interface ProposalState {
   rfpDiagnosis?: RfpDiagnosis;
   brandProductIntelligence?: BrandProductIntelligence;
   conceptDevelopmentLogic?: ConceptDevelopmentLogic;
+  strategicDirections?: StrategicDirection[];
   conceptCandidates?: ConceptCandidate[];
   conceptRecommendation?: ConceptRecommendation;
   conceptGenerationResult?: ConceptCandidatesResult;
   proposalNarrative?: ProposalNarrative;
-  selectedStrategicDirection?: ConceptCandidate;
+  selectedStrategicDirection?: StrategicDirection;
   selectedConcept?: ConceptCandidate;
   conceptNameOptions?: ConceptNameOption[];
   selectedFinalConceptNameOption?: ConceptNameOption;

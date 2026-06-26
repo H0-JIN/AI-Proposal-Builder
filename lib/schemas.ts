@@ -38,6 +38,34 @@ export const brandProductIntelligenceJsonSchema = {
   required: ['clientOrBrandRole', 'productOrServiceMeaning', 'categoryContext', 'audiencePerceptionGap', 'brandSpecificVocabulary', 'wordsToAvoid', 'toneGuidance', 'strategyImplication', 'namingImplication'],
 } as const;
 
+const strategicDirectionItemSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string' },
+    strategicDirectionLabel: { type: 'string' },
+    oneLineSummary: { type: 'string' },
+    whyThisDirectionExists: { type: 'string' },
+    selectedReason: { type: 'string' },
+    representativePersuasionScene: { type: 'string' },
+    conceptLeap: { type: 'string' },
+    signatureProofIdea: { type: 'string' },
+    mainStrength: { type: 'string' },
+    mainRisk: { type: 'string' },
+    evidenceUsed: { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string' } },
+  },
+  required: ['id', 'strategicDirectionLabel', 'oneLineSummary', 'whyThisDirectionExists', 'selectedReason', 'representativePersuasionScene', 'conceptLeap', 'signatureProofIdea', 'mainStrength', 'mainRisk', 'evidenceUsed'],
+} as const;
+
+export const strategicDirectionsJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    directions: { type: 'array', minItems: 3, maxItems: 3, items: strategicDirectionItemSchema },
+  },
+  required: ['directions'],
+} as const;
+
 const slidePurposeEnum = ['Problem', 'Insight', 'Strategy', 'Concept', 'Experience', 'Content', 'Proof', 'Impact'] as const;
 
 
