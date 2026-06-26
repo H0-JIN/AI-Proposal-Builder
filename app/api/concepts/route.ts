@@ -1802,6 +1802,10 @@ export async function POST(request: Request) {
       'conceptName은 전략 문장/슬라이드 제목/프로젝트 목표/직접 솔루션 문구/캠페인 문구/RFP 요약/회피 규칙 번역처럼 보이면 안 되며, 무관한 RFP에 재사용하면 어색해야 한다.',
       '한국어 conceptName은 가치/증거/신호/루트/이유/선택/차별화/통합/연결/혁신/경험/공명/확신/집중/방향/전략/메시지 중심 이름을 거부하고, 현재 RFP에서만 성립하는 상징 세계·구조 이미지·장면 제목으로 작성한다.',
       '영어 conceptName은 value/proof/signal/route/reason/choice/differentiation/connection/innovation/experience/focus/resonance/strategy/identity/unity/synergy/nexus/pulse/vanguard/frontier/spectrum 중심 이름을 거부한다.',
+      '[방문객·브랜드 경험형 컨셉명 품질 기준 — 조건부, 후보 슬롯 강제 아님] 먼저 현재 RFP 유형을 판단한다. 현재 RFP가 visitor center, factory tour, brand experience, customer journey, product understanding, process proof, trust-building, consumer brand experience(예: 포카리 방문객 경험) 성격일 때만 이 컨셉명 기준을 적용한다. 글로벌 B2B 기술 전시·엑스포 국가관·제품 홍보관 등 다른 유형에는 적용하지 말고 해당 RFP의 맥락을 우선한다.',
+      '위 성격일 때 proposalCoreConceptName/conceptName은 현재 RFP에 실제로 나타난 제품·공정·방문객 경험·브랜드 신뢰·공간 조건·방문 전후 인식 변화 중 최소 하나와 제목·부제·핵심 문장에서 직접 연결되어야 한다. 브랜드·제품·방문 맥락 없이 추상어만 조합한 이름은 약한 후보로 보고 최종 출력 전에 이름만 스스로 다시 쓴다(전체 생성을 실패시키거나 강제 검증/대체 카드를 만들지 말고 이름만 재작성).',
+      '위 성격에서 약한 패턴(현재 RFP 맥락과 결합되지 않을 때만 약함, hard-ban 아님): 빛·흐름·길·조화·여정·증언·흔적·서약·인장 같은 추상어만의 조합, 브랜드 맥락 없는 영어 Title Case 조합, Adjective+Generic Noun, Generic Noun of Generic Noun, 공간 연출 제목·공정 설명 제목·컨설팅 프레임워크처럼 보이는 이름, 아무 브랜드 체험관/공장투어에나 붙일 수 있는 이름. 실제 약한 예시: ClearShift, Rhythm of Light, Flow of Light, Testimony of Value, Garden of Harmony, Path of Clarity, Trace of Light, Pledge of Afterglow, Final Seal, Transparent Flow, Beam of Process. 이런 형태가 나오면 현재 RFP의 제품·공정·방문 경험 어휘와 결합해 다시 쓴다.',
+      '위 성격의 소비자 브랜드/방문객 경험형은 영어 이름만 고집하지 않는다 — 3개 이상 후보 중 최소 1개는 한국어 또는 자연스러운 혼합형으로 제안하되 억지 한글 조어를 피하고 브랜드 경험의 감각·신뢰가 느껴지게 한다. 단 특정 후보를 브랜드 기억/공정 신뢰/방문 동선 같은 역할 슬롯으로 고정 배분하지는 말라(후보 구성을 역할별로 강제하지 않는다). 유형과 무관하게 한국관·한국 전시·전통놀이·문화교류는 한글 컨셉명을 우선 고려하고, 글로벌 B2B 기술 전시는 영어 이름이 더 적합할 수 있다.',
       'conceptSlogan은 평가자가 이해할 수 있게 RFP 목표와 제안 약속을 1문장으로 설명하되, conceptName 자체는 간결하게 유지한다.',
       'keywordExecutionGuide는 keyword별 spatialUXImplication, designImplication, contentImplication, contentOrMediaImplication, operationImplication을 각각 1개의 짧은 구로 작성하고 conceptMechanism에서 파생한다.',
       'experienceNarrativeFlow는 3~4개의 짧은 단계만 작성한다.',
@@ -1811,8 +1815,6 @@ export async function POST(request: Request) {
       'mainStrength와 mainRisk는 짧은 중립 문장으로 작성한다. mainRisk는 결함이 아니라 해당 방향 선택 시 보완할 trade-off로 설명한다.',
       '[방문객·브랜드 경험형 보정] 현재 RFP가 방문객 센터·공장 투어·브랜드 경험·소비자 브랜드·고객 여정·공정/제품 이해·신뢰 형성 성격이면, 전략 방향과 컨셉 후보가 다음 중 최소 2개에 구체적으로 연결되어야 한다: 방문객이 현장에서 갖는 질문, 제품/공정의 실제 증명, 브랜드 신뢰 형성, 감각적 기억, 이동 동선과 체험 단계, 이해의 전환, 실제 제조/과정/품질에 대한 납득. 이 중 최소 1개 컨셉 후보는 "방문객이 제품을 다시 이해하는 순간 / 제조 공정이 신뢰로 전환되는 장면 / 브랜드가 말이 아니라 과정으로 증명되는 구조 / 방문 전과 후의 인식 변화" 중 하나와 직접 연결한다.',
       '[추상 경영어 회피] 위 성격의 프로젝트에서 "공동 임무의 축, 역할의 성취, 수행 역량의 무대, 대표성, 생태계, 현재화, 현장증명, 현장응답"처럼 아무 프로젝트에나 붙는 추상 경영/컨설팅 표현은 전략 방향명·컨셉명으로 쓰지 말고(금지가 아니라 약한 후보로 보고) 현재 RFP의 브랜드·제품·공정·방문 어휘로 다시 쓴다.',
-      '[약한 영어 조합 회피] 소비자 브랜드·방문객 경험형(예: 포카리)에서 컨셉명이 브랜드 맥락 없이 "형용사+일반명사" 또는 "일반명사 of 일반명사" 영어 조합으로만 끝나면 약한 후보다(예: Transparent Flow, Beam of Process, Clear Path, Process Journey, Proof Line, Experience Flow). Transparent/Clear/Flow/Process/Beam/Path/Line/Proof/Journey/Experience/Link/Core/Moment는 금지어가 아니라 브랜드·제품·방문 맥락과 결합될 때만 쓰며, 시스템명·공정 설명 제목·컨설팅 프레임워크·아무 공장투어나 기술 데모에 붙을 이름 톤은 피한다.',
-      '[언어 선택 보정] 한국관·한국 전시·전통놀이·문화교류·Play Together처럼 한국적 맥락이 강하면 한글 컨셉명을 우선 고려한다. 포카리처럼 소비자/브랜드 경험형은 영어·한국어·혼합 중 브랜드 톤에 자연스러운 이름을 우선한다(억지 한글화·억지 영어화 금지). 글로벌 B2B 기술 전시는 영어 이름이 더 적합할 수 있다. 최종 컨셉명은 제안서 표지에 쓸 수 있어야 한다.',
     ].join('\n');
 
     const userPrompt = `${rfpHierarchy ? `${formatRfpHierarchyAnchor(rfpHierarchy)}\n위 공식 컨셉 위계가 1순위 앵커다. 아래 정보보다 우선해 모든 전략 방향을 이 위계에서 도출하고, 다중 주체형이면 파빌리온 레벨 프레임으로 만든다.\n\n` : ''}제안서 유형: ${proposalTypeLabels[effectiveProposalType]}
