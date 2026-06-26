@@ -1308,9 +1308,8 @@ function ProposalNarrativePanel({ narrative }: { narrative?: ProposalNarrative }
   ];
 
   return (
-    <div className="mt-6 rounded-3xl border border-violet-100 bg-violet-50 p-5 text-violet-950">
-      <p className="text-sm font-black uppercase tracking-[0.2em] text-violet-700">Proposal Narrative</p>
-      <h3 className="mt-2 text-xl font-black">설득형 제안 내러티브</h3>
+    <details className="mt-6 rounded-3xl border border-violet-100 bg-violet-50 p-5 text-violet-950">
+      <summary className="cursor-pointer select-none text-sm font-black uppercase tracking-[0.2em] text-violet-700">Proposal Narrative · 설득형 제안 내러티브 <span className="ml-1 font-bold normal-case tracking-normal text-violet-500">(클릭해 펼치기)</span></summary>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         {rows.filter(([, value]) => Boolean(value?.trim())).map(([label, value]) => (
           <div key={label} className="rounded-2xl bg-white/80 p-3 text-sm leading-6">
@@ -1327,7 +1326,7 @@ function ProposalNarrativePanel({ narrative }: { narrative?: ProposalNarrative }
           </ol>
         </div>
       ) : null}
-    </div>
+    </details>
   );
 }
 
@@ -1336,9 +1335,8 @@ function EntityDifferentiationMatrixPanel({ matrix, matrixType, primaryRfpConcep
   if (matrixType !== 'entityDifferentiationMatrix' || primaryRfpConceptType !== 'multi_entity_pavilion' || !matrix?.length) return null;
 
   return (
-    <div className="mt-6 rounded-3xl border border-emerald-100 bg-emerald-50 p-5 text-emerald-950">
-      <p className="text-sm font-black uppercase tracking-[0.2em] text-emerald-700">Entity Differentiation Matrix</p>
-      <h3 className="mt-2 text-xl font-black">콘셉트 생성 전 역할·메시지 차별화</h3>
+    <details className="mt-6 rounded-3xl border border-emerald-100 bg-emerald-50 p-5 text-emerald-950">
+      <summary className="cursor-pointer select-none text-sm font-black uppercase tracking-[0.2em] text-emerald-700">Entity Differentiation Matrix · 역할·메시지 차별화 <span className="ml-1 font-bold normal-case tracking-normal text-emerald-500">(클릭해 펼치기)</span></summary>
       <div className="mt-4 overflow-x-auto rounded-2xl bg-white/85">
         <table className="min-w-full text-left text-xs leading-5">
           <thead className="bg-emerald-100 text-emerald-900">
@@ -1362,16 +1360,15 @@ function EntityDifferentiationMatrixPanel({ matrix, matrixType, primaryRfpConcep
           </tbody>
         </table>
       </div>
-    </div>
+    </details>
   );
 }
 
 function BrandExperienceMatrixPanel({ matrix, matrixType }: { matrix?: ConceptCandidatesResult['brandExperienceMatrix']; matrixType?: ConceptCandidatesResult['matrixType'] }) {
   if (matrixType !== 'brandExperienceMatrix' || !matrix?.length) return null;
   return (
-    <div className="mt-6 rounded-3xl border border-sky-100 bg-sky-50 p-5 text-sky-950">
-      <p className="text-sm font-black uppercase tracking-[0.2em] text-sky-700">브랜드 경험 설계</p>
-      <h3 className="mt-2 text-xl font-black">브랜드 경험 설계 매트릭스</h3>
+    <details className="mt-6 rounded-3xl border border-sky-100 bg-sky-50 p-5 text-sky-950">
+      <summary className="cursor-pointer select-none text-sm font-black uppercase tracking-[0.2em] text-sky-700">브랜드 경험 설계 매트릭스 <span className="ml-1 font-bold normal-case tracking-normal text-sky-500">(클릭해 펼치기)</span></summary>
       <div className="mt-4 overflow-x-auto rounded-2xl bg-white/85">
         <table className="min-w-full text-left text-xs leading-5">
           <thead className="bg-sky-100 text-sky-900">
@@ -1392,7 +1389,7 @@ function BrandExperienceMatrixPanel({ matrix, matrixType }: { matrix?: ConceptCa
           </tbody>
         </table>
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -1429,9 +1426,8 @@ function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLog
   ];
 
   return (
-    <div className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50 p-5 text-indigo-950">
-      <p className="text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Strategy + Experience Approach</p>
-      <h3 className="mt-2 text-xl font-black">전략 메시지 추출 및 경험 설계 접근</h3>
+    <details className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50 p-5 text-indigo-950">
+      <summary className="cursor-pointer select-none text-sm font-black uppercase tracking-[0.2em] text-indigo-700">Strategy + Experience Approach · 전략 메시지·경험 설계 접근 <span className="ml-1 font-bold normal-case tracking-normal text-indigo-500">(클릭해 펼치기)</span></summary>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         {rows.filter(([, value]) => Boolean(value?.trim())).map(([label, value]) => (
           <div key={label} className="rounded-2xl bg-white/80 p-3 text-sm leading-6">
@@ -1448,7 +1444,7 @@ function ConceptDevelopmentLogicPanel({ logic }: { logic?: ConceptDevelopmentLog
           </ul>
         </div>
       ) : null}
-    </div>
+    </details>
   );
 }
 
